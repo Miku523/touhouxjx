@@ -6,6 +6,7 @@
 import { Renderer, VIEW_W, VIEW_H } from './engine/renderer.js';
 import { Input, ACTION_DEFS, keyLabel } from './engine/input.js';
 import { Loop } from './engine/loop.js';
+import { setPriority, preloadWhenIdle } from './engine/lazy_preload.js';
 import { AudioEngine } from './engine/audio.js';
 import { LEVELS } from './assets/levels.js';
 import { Stage } from './game/stage.js';
@@ -117,16 +118,22 @@ class Game {
     this._applyAudio();
 
     /* ---------- 标题画面素材：插画背景 + 两套主角立绘 ---------- */
+    // 这三张是首屏唯一必需的图：给最高优先级，其余预加载会自动让路（见 engine/lazy_preload.js）
     this._titleBgImg = new Image();
     this._titleBgImg.decoding = 'async';
+    setPriority(this._titleBgImg, 'high');
     this._titleBgImg.src = new URL('./art/gen/title_bg.jpg', import.meta.url).href;
 
     this._titleCharImgs = {};
     for (const key of ['reimu', 'marisa']) {
       const img = new Image();
       img.decoding = 'async';
+      setPriority(img, 'high');
       img.src = new URL(`./art/gen/${key}_title.png`, import.meta.url).href;
       this._titleCharImgs[key] = img;
+    }
+    if (typeof window !== 'undefined') {
+      window.__titleArt = [this._titleBgImg, ...Object.values(this._titleCharImgs)];
     }
 
     window.addEventListener('keydown', (e) => this._onMenuKey(e));
@@ -272,14 +279,14 @@ class Game {
         try {
           const im = new Image();
           im.decoding = 'async';
+          setPriority(im, 'low');
           im.src = new URL(`./art/gen/bg/${s.img}.jpg`, import.meta.url).href;
         } catch (e) {
           // 预热失败无所谓，_applyScene 里还会再请求一次
         }
       }
     };
-    if ('requestIdleCallback' in window) window.requestIdleCallback(go, { timeout: 1500 });
-    else setTimeout(go, 300);
+    preloadWhenIdle(go);
   }
 
   /**

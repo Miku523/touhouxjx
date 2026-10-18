@@ -14,6 +14,8 @@
  *   3. 生成一张纯白剪影，用于受击闪白。
  */
 
+import { preloadWhenIdle, setPriority } from '../engine/lazy_preload.js';
+
 const BASE = new URL('./gen/run/', import.meta.url);
 const FRAME_N = 4;
 /** 画到游戏里的角色身高（碰撞盒 56，视觉 104 更有立绘感） */
@@ -139,6 +141,7 @@ function prep(img) {
 function loadOne(src) {
   const img = new Image();
   img.decoding = 'async';
+  setPriority(img, 'low');
   const holder = { frame: null, failed: false };
   img.onload = () => {
     const f = prep(img);
@@ -150,9 +153,11 @@ function loadOne(src) {
   return holder;
 }
 
-(function preload() {
+// 首屏只需要标题素材：角色帧等首屏稳定后再排队（未就绪时调用方回退到程序化绘制）
+preloadWhenIdle(() => {
   if (typeof Image === 'undefined') return;
   for (const ch of SUPPORTED) {
+    if (SHEETS[ch]) continue;
     const run = [];
     for (let i = 0; i < FRAME_N; i++) {
       run.push(loadOne(new URL(ch + '_run_' + i + '.png', BASE).href));
@@ -165,7 +170,7 @@ function loadOne(src) {
       fly: loadOne(new URL(ch + '_fly.png', BASE).href),
     };
   }
-})();
+});
 
 function ready(sheet) {
   if (!sheet) return false;

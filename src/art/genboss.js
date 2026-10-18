@@ -10,6 +10,8 @@
  *   3. 生成纯白剪影（受击闪白）、暗贴纸光晕（从亮背景里分离）、上缘受光剪影。
  */
 
+import { preloadWhenIdle, setPriority } from '../engine/lazy_preload.js';
+
 const BASE = new URL('./gen/boss/', import.meta.url);
 const KEYS = ['rumia', 'wriggle', 'cirno', 'aya', 'yuyuko', 'kaguya', 'flandre'];
 /** 游戏内显示高度（程序化 BOSS_BOX 是 240） */
@@ -110,16 +112,18 @@ function prep(img) {
 function loadOne(src) {
   const img = new Image();
   img.decoding = 'async';
+  setPriority(img, 'low');
   const holder = { art: null };
   img.onload = () => { holder.art = prep(img); };
   img.src = src;
   return holder;
 }
 
-(function preload() {
+// 首屏只需要标题素材：Boss 立绘等首屏稳定后再排队（未就绪时 drawGenBoss 返回 false，走程序化绘制）
+preloadWhenIdle(() => {
   if (typeof Image === 'undefined') return;
-  for (const k of KEYS) IMGS[k] = loadOne(new URL(k + '.png', BASE).href);
-})();
+  for (const k of KEYS) IMGS[k] = IMGS[k] || loadOne(new URL(k + '.png', BASE).href);
+});
 
 /**
  * @param {CanvasRenderingContext2D} ctx 已 translate 到 Boss 脚底中心

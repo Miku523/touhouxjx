@@ -9,6 +9,7 @@
  */
 import * as BossArt from '../art/bosses.js';
 import { drawCharacter } from '../art/chars.js';
+import { preloadWhenIdle } from '../engine/lazy_preload.js';
 
 /* ---------------- AI 立绘（Seedream 生成，tools/cutout.py 抠图） ---------------- */
 const AI_PORTRAITS = {
@@ -24,14 +25,16 @@ const AI_PORTRAITS = {
 };
 const AI_BASE = new URL('../art/gen/', import.meta.url);
 const aiImages = {};
-(function preloadAiPortraits() {
+// 首屏只需要标题素材：对话立绘等首屏稳定后再排队（没就绪时 paintAiPortrait 返回 false，回退矢量立绘）
+preloadWhenIdle(() => {
   for (const key of Object.keys(AI_PORTRAITS)) {
+    if (aiImages[key]) continue;
     const img = new Image();
     img.decoding = 'async';
     img.onload = () => { aiImages[key] = img; };
     img.src = new URL(AI_PORTRAITS[key], AI_BASE).href;
   }
-})();
+});
 
 /** 有 AI 立绘就用它（底部中心对齐、高度 560），返回是否画了 */
 function paintAiPortrait(ctx, o) {

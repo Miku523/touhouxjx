@@ -10,6 +10,7 @@
  * 视角约定与主循环一致：逻辑分辨率 1280x720，由 Renderer 统一缩放。
  */
 import { VIEW_W, VIEW_H } from '../engine/renderer.js';
+import { setPriority } from '../engine/lazy_preload.js';
 import { ENDINGS } from './endings.js';
 import { CHAR_NAMES } from './dialogue.js';
 
@@ -101,12 +102,14 @@ export class Ending {
     for (const name of bgs) {
       const img = new Image();
       img.decoding = 'async';
+      setPriority(img, 'low');
       img.src = new URL(`${name}.jpg`, BG_BASE).href;
       this.bgImgs.set(name, img);
     }
     for (const key of chars) {
       const img = new Image();
       img.decoding = 'async';
+      setPriority(img, 'low');
       img.src = new URL(`${key}.png`, ART_BASE).href;
       this.charImgs.set(key, img);
     }
