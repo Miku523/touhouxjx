@@ -492,6 +492,8 @@ export class StgStage {
     this.waveIdx = 0;
     this.finished = false;
     this.reachedBoss = false;
+    // Boss 战期间暂停刷道中敌机（由 Stage 按时间轴置位）
+    this.spawnPaused = false;
 
     // 分面密度：2–6 面道中更稀（齐射发数变少、开火间隔变长）；Extra 传 0 → 1.00
     const dens = Math.min(1.5, Math.max(0.4, Number(stageDensity) || 1));
@@ -564,7 +566,7 @@ export class StgStage {
     }
 
     // 波次生成
-    while (this.waveIdx < this.waves.length && this.waves[this.waveIdx].at <= this.scroll + 1400) {
+    while (!this.spawnPaused && this.waveIdx < this.waves.length && this.waves[this.waveIdx].at <= this.scroll + 1400) {
       const w = this.waves[this.waveIdx++];
       for (let i = 0; i < w.count; i++) {
         const x = this.scroll + 1400 + i * 70;

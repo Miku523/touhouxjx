@@ -26,8 +26,14 @@
 
 import { BOSS_SONGS } from './touhou.js';
 import { ORIGINAL_SONGS } from './original.js';
+import { TITLE_CHRONICLE } from './title_chronicle.js';
+import { EXTRA_ENDING } from './extra_ending.js';
 
 export const SONGS = {
   ...ORIGINAL_SONGS,
   ...BOSS_SONGS,
+  // 标题画面：13 作主题曲融合 medley（见 tools/build_medley.py）
+  title: TITLE_CHRONICLE,
+  // EXTRA 结局 W1/W2：《魔法少女達の百年祭》8-bit 柔和版（见 tools/build_extra_ending.py）
+  ...EXTRA_ENDING,
 };

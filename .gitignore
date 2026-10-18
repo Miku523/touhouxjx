@@ -21,6 +21,10 @@ __pycache__/
 models.json
 arktest.json
 tools/build/themes.json
+# 乐曲试听渲染（8.8MB / 1.5MB，按需重跑 tools/build_*.py 生成）
+tools/build/*_preview.wav
+# midi2js 改版前的 JS 备份
+tools/build/touhou.before.js
 
 # 通用
 node_modules/

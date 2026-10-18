@@ -134,6 +134,44 @@ export const DIFFICULTIES = {
     enemyDifficulty: 'hard',
     blurb: '6 面 · 解锁 Extra · 完整符卡 · 弹数约 +80%、弹速约 +22%，最凶弹幕',
   },
+
+  /**
+   * EXTRA 专用隐藏档：不进 DIFFICULTY_KEYS（不出现在难度菜单 / 读档），
+   * 只在 inExtra 时由 Stage / Boss 内部取用。
+   * 比 L 更极端：弹量约 2×、预算 1600、弹速上限 520、环间距压到 22px，
+   * 同时放宽三道护栏（pressure 下限、变招放弃阈值、单圈上限），
+   * 让「极大增加弹幕」真的落到屏幕上，而不是被预算/环缝夹回原样。
+   */
+  EX: {
+    key: 'EX',
+    label: 'EXTRA',
+    cn: 'EXTRA',
+    stageCount: 6,
+    unlockExtra: false,
+    trimHardCards: [],
+    // 芙兰 27080 × 2.4 × 全局 0.9 ≈ 58,493（约为原来 H 档 28,028 的 2.1 倍）
+    hpScale: 2.4,
+    // 弹幕：弹量翻倍，弹速继续抬，开火间隔压到 L 的九成
+    bulletCountScale: 2.05,
+    bulletSpeedScale: 1.18,
+    fireIntervalScale: 0.72,
+    // 护栏：上限整体放宽，避免新弹量被夹住
+    bulletSpeedCap: 520,
+    bulletBudget: 1600,
+    ringGapPx: 22,
+    bossRingCap: 72,
+    pressureStart: 0.72,
+    pressureFloor: 0.62,
+    wildAbort: 0.92,
+    // 道中 / 平台杂兵
+    enemyBulletScale: 1.35,
+    enemyFireScale: 0.55,
+    flyerShots: 3,
+    stgScoutShots: 3,
+    stgGunnerShots: 6,
+    enemyDifficulty: 'hard',
+    blurb: 'EXTRA 专用隐藏档 · 芙兰血量约 2.1× · 弹数约 2×、弹速 +18% · 护栏放宽',
+  },
 };
 
 /** 取难度配置；未知键回退到 N */

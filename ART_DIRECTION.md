@@ -160,3 +160,18 @@ P4：HUD / 标题 / 对话框排版
 - 对比页：`_p4_compare.html` → `_p4_compare.png`（旧 P3 / 新 P4，两行）。
 - 旧图备份：`_p3_backup/boss_prev/flandre.prev3.png`（P3 蝴蝶翼版）、`kaguya.prev3.png`（P3 鲑粉版）。
 - 实机截图：`_fE-1.png`（EX 芙兰，七色水晶翼）、`_k5-1.png`（辉夜，深红和服）。
+
+### P5 EX 中途 Boss：雷米莉亚·斯卡雷特（2026-10-19）
+
+EXTRA 关改成「14 分钟长道中 + 5:00 中途 Boss（雷米莉亚）+ 14:00 芙兰终盘」后补的中途 Boss 素材与剧情。
+
+- 身份先立住：**对话立绘** `src/art/gen/remilia.png`（`tools/gen_remilia.py`，无参考图、纯文字描述正作形象：淡紫蓝短发 + 侧边红蝴蝶结 + 红瞳竖裂、粉色洋装 + 白色泡泡袖 / 白围裙 / 胸前红缎带、紫蓝蝠翼）。
+  - 这是唯一一张**先出对话立绘、再用立绘当身份参考**去出战斗图的角色（其余七位是反过来的历史遗留）：`tools/gen_remilia.py --n 2` → `--pick 1`，随后把 `gen_boss_action.py` 的 `CHAR['remilia'].ref` 指到 `remilia`。
+  - 白底抠图沿用 `gen_boss_action.whiten()` 的四边 flood fill；对话立绘内容高 560，与其他七张一致。
+- 战斗立绘 `src/art/gen/boss/remilia.png`（`tools/gen_boss_action.py remilia`，POSE_OVERRIDE 出「无弹幕、无血雾、无武器」的干净版，选 `_cand/remilia-2clean.png`）：
+  - 首轮版本带血枪与血雾，进游戏后弹幕和特效叠在一起读不出脸，故重出一版「只有人 + 翼」的干净构图；血枪留给符卡演出，不烧进立绘。
+  - `src/art/genboss.js`：`KEYS` 加 `remilia`，`BOSS_H.remilia = 236`（翼展比芙兰宽，身高压一点，头顶才不会顶到 Boss 血条）。
+- 对白：`src/game/dialogue.js` 的 `AI_PORTRAITS` 加 `remilia`，`CHAR_NAMES` 已有条目 → 雷米莉亚可以开口，不再回退灵梦矢量头像。
+- 文案（`src/game/story.js` 的 `STORY.extra.midBoss` / `midBossOut`）：按正作性格写——大小姐口吻、端着架子又孩子气、护着妹妹、输赢都要体面；开打前 9 句（含「五分零七秒」「打完请你喝茶」），击破后 7 句（认输、放行、留茶会位子），`midBossOut` 由 `main.js` 在「MID BOSS CLEAR」横幅后 1.8s 用 `_after()` 排进对话，避免盖住横幅。
+- 场景兼容：程序化 `bossRemilia`（`src/art/bosses.js`）保留为**图未加载时的 fallback**，实机已走 AI 图。
+- 验收截图：`_boss-art.png`（实机战斗立绘）、`_flow-3-mid-dialogue.png`（战前对话 + 立绘）、`_flow-6-midout.png`（击破后台词）、`_flow-5-midclear.png`（中途击破横幅）；`node tools/_qa_map.mjs` 全绿。

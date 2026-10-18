@@ -9,7 +9,7 @@ import { Loop } from './engine/loop.js';
 import { setPriority, preloadWhenIdle } from './engine/lazy_preload.js';
 import { AudioEngine } from './engine/audio.js';
 import { LEVELS } from './assets/levels.js';
-import { Stage } from './game/stage.js';
+import { Stage, EXTRA_TIMELINE } from './game/stage.js';
 import { Hud } from './game/hud.js';
 import { Dialogue } from './game/dialogue.js';
 import { Ending } from './game/ending.js';
@@ -97,6 +97,8 @@ class Game {
     // 开局给一点 POWER（32 = 火力 2 级），否则第一关 Boss 只能拿 1 级火力磨
     this.carryPower = 32;
     this.unlockedExtra = false;
+    // 解锁 EXTRA 的那次通关里使用的人物：EXTRA 必须用这个人打（老存档没记录则回退当前选择）
+    this.extraChar = null;
     this.t = 0;
     this.frameCap = 0;
     this.musicOn = true;
@@ -558,7 +560,11 @@ class Game {
     }));
   }
 
-  showTitle() {
+  /**
+   * 回标题。
+   * @param {string} [notice] 底部提示行（例如「已重置进度」），留空则不显示
+   */
+  showTitle(notice = '') {
     // 先掐断上一局的残留：隐藏中的对话、关卡结算的延迟回调，
     // 否则回到标题后按 Enter 会被旧剧本吃掉，甚至把游戏重新拉进关卡。
     this._pendingTimeout = 0;
@@ -590,7 +596,7 @@ class Game {
       '東方新紀行',
       '～ Chronicle of Gensokyo ～',
       buttons,
-      '',
+      notice || '',
       { title: true, page: 'title' }
     );
   }
@@ -812,18 +818,21 @@ class Game {
     if (!this.unlockedExtra) return;
     this._hidePanel();
     this.inExtra = true;
-    // Extra 是真·终盘关：满火力开局
-    this.carryPower = 128;
+    // EXTRA 固定使用「解锁 EXTRA 的那次通关里使用的人物」：
+    // 存档里记了是谁解锁的，就必须用那个人打；老存档没记录时回退到当前选择。
+    if (this.extraChar) this.char = this.extraChar;
+    // EXTRA 是零火力开局：道中边打边吃 P 点，中途 Boss 之前要自己攒出火力
+    this.carryPower = 0;
     this.levelIndex = 0;
     this.hudEl?.classList.remove('hidden');
     this.hud.setMaxLives(this.lives, this.char);
     this._playDialogue(STORY.extra.intro, () => this._startExtraStage());
   }
 
-  _startExtraStage() {
+  _startExtraStage(opts = {}) {
     const def = EXTRA_STAGE();
     if (!def) { this.showTitle(); return; }
-    this._createStage(def, 0, true);
+    this._createStage(def, 0, true, opts);
   }
 
   startStage(index, opts) {
@@ -842,11 +851,12 @@ class Game {
     this.stage = new Stage({
       def,
       index,
-      char: this.char,
+      // EXTRA 锁定解锁时使用的人物（普通关卡用当前选择）
+      char: (isExtra && this.extraChar) ? this.extraChar : this.char,
       lives: this.lives,
       // Extra 的强度在 Stage 内固定为 H；主线使用本局选择的难度
-      difficulty: isExtra ? 'H' : this.difficulty,
-      power: isExtra ? 128 : this.carryPower,
+      difficulty: isExtra ? 'EX' : this.difficulty,
+      power: this.carryPower,
       onEvent: (type, data) => this._onStageEvent(type, data),
     });
     this.stage.onEvent = (type, data) => this._onStageEvent(type, data);
@@ -854,14 +864,29 @@ class Game {
     // 等跑到 Boss 触发对话时已经就绪，不会闪回旧的矢量立绘。
     this.dialogue?.preparePortraits?.([this.char, def.boss]);
     if (this.stage.camera) this.stage.camera.shakeEnabled = this.screenShake;
-    // STG 关的玩家是另一个类（StgPlayer），这里统一补一次火力继承
-    if (this.stage.player && !this.stage.player.power) {
-      this.stage.player.power = isExtra ? 128 : this.carryPower;
+    // STG 关的玩家是另一个类（StgPlayer），这里统一补一次火力继承。
+    // 注意：EXTRA 是「零火力开局」，0 是合法值，不能当成「没取到」再补满。
+    if (this.stage.player && !this.stage.player.power && !isExtra) {
+      this.stage.player.power = this.carryPower;
+    }
+
+    // EXTRA 的「再战」：把时间轴直接拨到中途 / 终盘 Boss 前，跳过整段道中
+    if (isExtra && (opts.resumeFrom === 'midboss' || opts.resumeFrom === 'final')) {
+      const from = opts.resumeFrom;
+      this.stage.resumeExtra(from);
+      const rp = this.stage.player;
+      if (rp) { rp.invuln = Math.max(rp.invuln || 0, 1.5); rp.vx = 0; rp.vy = 0; }
+      // 中途再战要指定雷米莉亚：时间轴还没来得及写 pendingBossKey，
+      // 直接调 beginBoss() 会退回关底配置（芙兰）。
+      if (from === 'midboss') {
+        this.stage.beginBoss(EXTRA_TIMELINE.midbossKey, { midboss: true });
+      } else {
+        this.stage.beginBoss();
+      }
     }
 
     // 重挑战回 Boss：把玩家放回 Boss 前的检查点，Boss 直接登场，
     // 不用把整段跑图再走一遍（战前对白也跳过，因为已经看过）。
-    let resumedBoss = false;
     if (!isExtra && opts.resumeBoss) {
       const p = this.stage.player;
       if (p && typeof p.reset === 'function') {
@@ -872,10 +897,12 @@ class Game {
         p.invuln = Math.max(p.invuln || 0, 1.5);  // 出场给一小段无敌，别一复活就挨弹
         this.stage.beginBoss();
         this.stage.camera?.snapTo?.(p.x + p.w / 2);
-        resumedBoss = true;
       }
     }
 
+    // 结局 / 游戏结束时 _onGameOver 会隐藏整个 HUD；重新进关必须恢复显示，
+    // 否则 POWER 条、残机、计时、Boss 血条在重开后全部不可见。
+    this.hudEl?.classList.remove('hidden');
     this.hud.reset();
     this.hud.setInvincible(isInvincible());
     this.hud.setMaxLives(this.lives, this.char);
@@ -888,13 +915,11 @@ class Game {
 
     // 关卡开场对话（Extra 的开场已经在外面播过了；重挑战本关时也跳过，直接继续）
     const script = (isExtra || opts.skipIntro) ? [] : (STORY.stages[STAGE_KEY(index)]?.intro || []);
-    const showTip = () => { if (!resumedBoss) this.hud.tip(def.hint || '', 5.5); };
     if (script.length) {
       this.state = 'dialogue';
-      this._playDialogue(script, () => { this.state = 'play'; showTip(); });
+      this._playDialogue(script, () => { this.state = 'play'; });
     } else {
       this.state = 'play';
-      showTip();
     }
   }
 
@@ -942,7 +967,8 @@ class Game {
         this.audio.play?.('win');
         break;
       case 'bossTrigger':
-        this._onBossTrigger();
+        // 事件带信息：EXTRA 靠 data.midboss 区分「中途 Boss」和「终盘 Boss」
+        this._onBossTrigger(data);
         break;
       case 'bossStart':
         seedReset?.(); // 从开战这一帧把随机序列拨回起点，弹幕才有复现意义
@@ -951,6 +977,22 @@ class Game {
         break;
       case 'bossPhase':
         this.hud.banner('', data.name || '', 1.4);
+        break;
+      case 'midbossClear':
+        this.hud.banner('MID BOSS CLEAR', '', 1.4);
+        this.audio.play?.('win');
+        // 姐姐认输的几句话：等横幅播完再弹，别把 MID BOSS CLEAR 盖掉
+        if (this.inExtra) {
+          const st = this.stage;
+          if (st && !st.skipBossDialogue) {
+            this._after(1.8, () => {
+              if (this.stage !== st || this.state !== 'play') return;
+              this._playDialogue(STORY.extra.midBossOut || [], () => {
+                if (this.stage === st) this.state = 'play';
+              });
+            });
+          }
+        }
         break;
       case 'clear':
         this._onStageClear();
@@ -965,12 +1007,20 @@ class Game {
     }
   }
 
-  _onBossTrigger() {
+  _onBossTrigger(data) {
     if (!this.stage) return;
     this.state = 'dialogue';
-    const script = this.inExtra
-      ? (STORY.extra.postBoss ? [] : []) // Extra 的战前对话已在开场
-      : (STORY.stages[STAGE_KEY(this.levelIndex)]?.preBoss || []);
+    const stage = this.stage;
+    let script;
+    if (this.inExtra) {
+      // 中途 Boss（雷米莉亚）有自己的登场对话；终盘芙兰的战前对话已在开场播过。
+      // 再战（resumeExtra）时整段跳过，别把看过的台词重复一遍。
+      if (stage.skipBossDialogue) script = [];
+      else if (data && data.midboss) script = STORY.extra.midBoss || [];
+      else script = [];
+    } else {
+      script = STORY.stages[STAGE_KEY(this.levelIndex)]?.preBoss || [];
+    }
     const start = () => {
       this.state = 'play';
       this.stage.beginBoss();
@@ -1017,11 +1067,13 @@ class Game {
   }
 
   _onAllCleared() {
-    const diff = getDifficulty(this.inExtra ? 'H' : this.difficulty);
+    const diff = getDifficulty(this.inExtra ? 'EX' : this.difficulty);
 
     // N 及以上通关解锁 Extra；E 不解锁，也不会把已解锁的 Extra 锁回去
     if (!this.inExtra && diff.unlockExtra && !this.unlockedExtra) {
       this.unlockedExtra = true;
+      // 记住「是谁打通了解锁 EXTRA 的那一关」——EXTRA 只能用这个人打
+      this.extraChar = this.char;
       this._saveProgress();
     }
 
@@ -1045,7 +1097,8 @@ class Game {
     this.hudEl?.classList.add('hidden');
     this.hud.hideBossBar();
     this.hud.clearBanner();
-    this.audio.playMusic?.('ending');
+    // EXTRA 胜利（W1/W2）用《魔法少女達の百年祭》8-bit 柔和版，其余结局用原创 ending 曲
+    this.audio.playMusic?.(mode === 'extra' ? 'endingW' : 'ending');
     this.audio.play?.('win');
     this.ending.play(spec, {
       onFinish: () => this.showTitle(),
@@ -1074,7 +1127,14 @@ class Game {
   _retryStage() {
     this._hidePanel();
     this.lives = Math.max(1, this.lives);
-    if (this.inExtra) this._startExtraStage();
+    if (this.inExtra) {
+      // EXTRA 失败：打到中途 Boss 之后就从 5:00 接上，打到芙兰就从终盘接上，
+      // 不用把十几分钟道中重跑一遍（火力用 retryPower 兜底，不从零开始）。
+      const s = this.stage;
+      const from = (s && s.midbossDone) ? 'final' : (s && s.bossStarted) ? 'midboss' : null;
+      this._startExtraStage(from ? { resumeFrom: from } : {});
+      return;
+    }
     // 重挑战是「续命重来」，不是重开一局：跳过已看过的开场对白，直接回到操作
     else if (this._canResumeBoss()) {
       const s = this.stage;
@@ -1195,7 +1255,7 @@ class Game {
     this.state = 'paused';
     this._captureAction = null;
     const left = this.stage?.player?.lives ?? this.lives;
-    const diff = this.inExtra ? 'H' : this.difficulty;
+    const diff = this.inExtra ? 'EXTRA' : this.difficulty;
     this._setPanel('暂停', `游戏已暂停 · 难度 ${diff} · 剩余残机 ${left}`, [
       { label: '继续', key: 'ESC', cls: 'primary', onPick: () => this._resume() },
       { label: '设置', key: 'S', hotkey: 'KeyS', onPick: () => this._showSettings(0, 'pause') },
@@ -1321,12 +1381,21 @@ class Game {
       },
     ];
 
-    /* ---- 底部：重开（仅暂停来源）/ 返回 ---- */
+    /* ---- 底部：重开（仅暂停来源）/ 重置进度（仅标题来源）/ 返回 ---- */
     if (this._settingsOrigin === 'pause') {
       rows.push({
         group: 'foot', cls: 'set-foot-btn', key: 'R', hotkey: 'KeyR',
         html: '<span class="set-label">重新开始本关</span><span class="k">R</span>',
         onPick: () => { this._hidePanel(); this._retryStage(); },
+      });
+    } else {
+      rows.push({
+        group: 'foot', cls: 'set-foot-btn set-foot-danger', key: 'X',
+        html: '<span class="set-label">重置进度</span><span class="k">X</span>',
+        onPick: (i) => {
+          this._settingsIndex = i;
+          this.showResetProgress();
+        },
       });
     }
     rows.push({
@@ -1340,6 +1409,45 @@ class Game {
       '↑ ↓ 选择　← → 调整　ENTER 切换　ESC 返回',
       { screen: true, en: 'OPTIONS', grid: 'set-grid', scene: 'moon', select: index, page: 'settings' }
     );
+  }
+
+  /**
+   * 重置进度（标题 → 设置页底部）：清掉 EXTRA 解锁，回到玩家尚未通关的状态。
+   * 设置 / 键位 / 无敌秘籍各用独立的存储键，不会被这一步带走。
+   */
+  showResetProgress() {
+    this.state = 'paused';
+    this._captureAction = null;
+    this._setPanel(
+      '重置进度',
+      '清除通关记录？',
+      [
+        {
+          label: '确认重置', en: 'RESET', key: 'ENTER', cls: 'primary danger',
+          onPick: () => this._doResetProgress(),
+        },
+        {
+          label: '取消', key: 'ESC', back: true,
+          onPick: () => this._showSettings(this._settingsIndex || 0, 'title'),
+        },
+      ],
+      '重置后 EXTRA 回到封闭状态，设置与键位不受影响',
+      // 危险操作：初始高亮落在「取消」上，避免手快再按一次 Enter 就把档删了
+      { noDirect: true, select: 1 }
+    );
+  }
+
+  _doResetProgress() {
+    this.unlockedExtra = false;
+    this.extraChar = null;
+    try {
+      // 直接删掉进度键：下次启动读到的是「未通关」，EXTRA 保持封闭
+      window.localStorage.removeItem(PROGRESS_KEY);
+    } catch (e) {
+      // 无 localStorage：内存里已经清掉，本局内同样保持封闭
+    }
+    this.audio.play?.('select');
+    this.showTitle('已重置进度 · EXTRA 重新封闭');
   }
 
   /** 残机 ±1（1–4 条），下一局 / 重开本关时生效 */
@@ -1534,7 +1642,10 @@ class Game {
       const raw = window.localStorage.getItem(PROGRESS_KEY);
       if (!raw) return;
       const p = JSON.parse(raw);
-      if (p && typeof p === 'object') this.unlockedExtra = !!p.extraUnlocked;
+      if (p && typeof p === 'object') {
+        this.unlockedExtra = !!p.extraUnlocked;
+        this.extraChar = (typeof p.extraChar === 'string' && p.extraChar) ? p.extraChar : null;
+      }
     } catch (e) {
       // 无 localStorage / 数据损坏：保持未解锁
     }
@@ -1544,6 +1655,7 @@ class Game {
     try {
       window.localStorage.setItem(PROGRESS_KEY, JSON.stringify({
         extraUnlocked: !!this.unlockedExtra,
+        extraChar: this.extraChar || null,
       }));
     } catch (e) {
       // 忽略写入失败

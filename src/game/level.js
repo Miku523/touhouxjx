@@ -1,9 +1,13 @@
 /**
  * 关卡：把字符地图解析成瓦片网格 + 实体列表，并提供碰撞查询。
  *
- * 尺寸：一个 tile = 32 逻辑像素，关卡高 22 行（704px，正好一屏）。
+ * 尺寸：一个 tile = 32 逻辑像素。22 行关正好一屏（704px），34 行关给 5/6 面做纵向空间。
  * 坐标约定：左上角为原点，y 向下为正，与 Canvas 一致。
+ *
+ * def.gen 存在时（见 levelgen.js），rows 由生成器产出，同时带回崩落砖坐标。
  */
+
+import { buildLevelRows } from '../assets/levelgen.js';
 
 export const T = 32;
 
@@ -61,8 +65,12 @@ export class Level {
     this.boss = def.boss || null;
     this.music = def.music || null;
 
-    this.rows = def.rows.length;
-    this.cols = def.rows.reduce((m, r) => Math.max(m, r.length), 0);
+    const built = def.gen ? buildLevelRows(def.gen) : null;
+    const rows = built ? built.rows : def.rows || [];
+    this.gen = def.gen || null;
+
+    this.rows = rows.length;
+    this.cols = rows.reduce((m, r) => Math.max(m, r.length), 0);
     this.w = this.cols * T;
     this.h = this.rows * T;
 
@@ -74,7 +82,16 @@ export class Level {
     this.entities = [];
     this.playerSpawn = { x: T * 2, y: T * (this.rows - 4) };
 
-    this._parse(def.rows);
+    /** 崩落砖：格子坐标 + 世界坐标，Stage 负责计时/复原 */
+    this.crumble = (built ? built.crumble : []).map(([cx, cy]) => ({ cx, cy, x: cx * T, y: cy * T }));
+
+    this._parse(rows);
+  }
+
+  /** 运行期改瓦片（崩落砖），越界忽略。 */
+  setTile(cx, cy, tile) {
+    if (cx < 0 || cx >= this.cols || cy < 0 || cy >= this.rows) return;
+    this.grid[cy * this.cols + cx] = tile;
   }
 
   _parse(rows) {
@@ -131,6 +148,20 @@ export class Level {
 
   isWaterTile(cx, cy) {
     return this.tileAt(cx, cy) === WATER;
+  }
+
+  /** 身体是否泡在水里（给游泳手感用） */
+  isInWater(x, y, w, h) {
+    const cx0 = Math.floor((x + 4) / T);
+    const cx1 = Math.floor((x + w - 5) / T);
+    const cy0 = Math.floor((y + 6) / T);
+    const cy1 = Math.floor((y + h - 4) / T);
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        if (this.isWaterTile(cx, cy)) return true;
+      }
+    }
+    return false;
   }
 
   /** 是否踩在冰面上（脚下瓦片是冰） */

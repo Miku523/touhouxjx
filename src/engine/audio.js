@@ -34,6 +34,8 @@ export class AudioEngine {
     this._master = null;      // 总输出增益（静音用）
     this._sfxGain = null;     // 音效总线（音量 / 音效开关）
     this._musicGain = null;   // BGM 总线（比音效更轻）
+    this._softIn = null;      // 柔和总线入口（低通 + 短回声），仅 soft 曲目走这条
+    this._songSoft = false;   // 当前曲目是否走柔和总线（歌曲数据里的 soft 标记）
     this._noiseBuffer = null; // 白噪声 buffer，懒创建
     this._muted = false;
     this._sfxOn = true;       // 音效开关（菜单可关）
@@ -84,6 +86,7 @@ export class AudioEngine {
         this._musicGain = this.ctx.createGain();
         this._musicGain.gain.value = 0.9 * this._musicVolume;
         this._musicGain.connect(this._master);
+        this._buildSoftBus();
         this._ensureNoiseBuffer();
       }
       // 浏览器策略下 ctx 可能处于 suspended，需要 resume
@@ -117,7 +120,8 @@ export class AudioEngine {
   }
 
   /**
-   * 切换 BGM 曲目。name 必须是曲库 key（title / stage1..stage6 / extra / gameover / ending）。
+   * 切换 BGM 曲目。name 必须是曲库 key
+   * （title / stage1..stage6 / extra / gameover / ending / endingW）。
    * 音乐开关关闭时只记住曲目，等 setMusic(true) 再播。
    * @param {string} name
    */
@@ -346,7 +350,7 @@ export class AudioEngine {
    */
   _tone(type, f0, f1, dur, peak, when, music = false) {
     const ctx = this.ctx;
-    const dest = music ? this._musicGain : this._sfxGain;
+    const dest = music ? this._musicOut() : this._sfxGain;
     if (!ctx || !dest) return;
 
     const osc = ctx.createOscillator();
@@ -384,7 +388,7 @@ export class AudioEngine {
    */
   _noise(dur, peak, filterType, f0, f1, when, q = 1, music = false) {
     const ctx = this.ctx;
-    const dest = music ? this._musicGain : this._sfxGain;
+    const dest = music ? this._musicOut() : this._sfxGain;
     if (!ctx || !dest) return;
     this._ensureNoiseBuffer();
     if (!this._noiseBuffer) return;
@@ -439,12 +443,65 @@ export class AudioEngine {
   /* BGM 调度                                                            */
   /* ------------------------------------------------------------------ */
 
+  /**
+   * 柔和总线：给带 soft 标记的曲目（EXTRA 结局 BGM）再兜一层软边。
+   *
+   *   softIn → 低通(2.4kHz, Q 0.7) ─┬→ 干声 0.92 → musicGain
+   *                                 └→ 回声 0.28s（反馈 0.22）→ 湿声 0.15 → musicGain
+   *
+   * 低通削掉方波的高次谐波（硬边变软），短回声补一点空间感，
+   * 让「8-bit 原作曲」在安静的结局画面里不扎耳。整条链只在 unlock 时建一次。
+   * 实测：220Hz 方波过这条链，频谱质心 3.3kHz → 1.1kHz；整首歌 -27dBFS / 峰值 0.18。
+   */
+  _buildSoftBus() {
+    const ctx = this.ctx;
+    if (!ctx || this._softIn || !this._musicGain) return;
+    try {
+      const input = ctx.createGain();
+      input.gain.value = 1;
+
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 2400;
+      lp.Q.value = 0.7;
+
+      const dry = ctx.createGain();
+      dry.gain.value = 0.92;
+
+      const delay = ctx.createDelay(1.0);
+      delay.delayTime.value = 0.28;
+      const fb = ctx.createGain();
+      fb.gain.value = 0.22;
+      const wet = ctx.createGain();
+      wet.gain.value = 0.15;
+
+      input.connect(lp);
+      lp.connect(dry);
+      dry.connect(this._musicGain);
+      lp.connect(delay);
+      delay.connect(fb);
+      fb.connect(delay); // 含延迟节点的环路，WebAudio 允许
+      delay.connect(wet);
+      wet.connect(this._musicGain);
+
+      this._softIn = input;
+    } catch (e) {
+      this._softIn = null;
+    }
+  }
+
+  /** 当前曲目的发声出口：soft 曲目走柔和总线，其余直接进 BGM 总线 */
+  _musicOut() {
+    return this._songSoft && this._softIn ? this._softIn : this._musicGain;
+  }
+
   _startMusic() {
     if (!this.ctx || this._musicOn) return; // 幂等守卫：绝不叠音
     const name = this._songName || 'title';
     const song = SONGS[name];
     if (!song || !song.duration) return; // 没有曲目数据就保持安静
     this._song = song;
+    this._songSoft = !!song.soft;
     this._events = this._getEvents(name, song);
     if (!this._events || !this._events.length) return;
 
@@ -537,7 +594,7 @@ export class AudioEngine {
    */
   _musicNote(waveIdx, midi, dur, gain, vel, when) {
     const ctx = this.ctx;
-    const dest = this._musicGain;
+    const dest = this._musicOut();
     if (!ctx || !dest) return;
     const d = Math.max(0.03, Math.min(dur, 4));
     const peak = Math.max(0.0004, Math.min(0.2, gain * (0.4 + 0.6 * vel / 127)));

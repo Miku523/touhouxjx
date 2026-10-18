@@ -932,6 +932,13 @@ export class EnemyManager {
     const py = player.y + player.h / 2;
 
     for (const e of this.list) {
+      // 长关卡（3000+ 列）里大部分敌人离屏很远：跳过 update，避免每帧白算巡逻/贴地。
+      // 2400px ≈ 两屏多一点，弹出视野后不会看到「卡住」的敌人。
+      if (Math.abs(e.x - px) > 2400) {
+        e.prevX = e.x;
+        e.prevY = e.y;
+        continue;
+      }
       if (!e.alive) {
         e.deadT += dt;
         continue;

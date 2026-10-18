@@ -61,6 +61,13 @@ export const TUNE = {
 
   mushroomBounce: 1250,
 
+  // 游泳：水里重力变轻、下落变慢、水平略慢，按跳给一次划水冲量
+  swimGravityMul: 0.3,
+  swimMaxFall: 240,
+  swimRunMul: 0.8,
+  swimStroke: 640,
+  swimStrokeCd: 0.26,
+
   castTime: 0.42,
   castCost: POWER.castCost,
   castInvuln: 2.0,
@@ -121,6 +128,8 @@ export class Player {
     this.dashTime = 0;
     this.dashCooldown = 0;
     this.dashDir = 1;
+
+    this.swimCd = 0;
 
     this.invuln = 0;
     this.hearts = TUNE.heartsPerLife;
@@ -189,9 +198,11 @@ export class Player {
 
     const grounded = this.onGround;
     const onIce = grounded && this.level.isIceUnder(this.x, this.y, this.w, this.h);
+    const inWater = this.level.isInWater(this.x, this.y, this.w, this.h);
 
     // ---------- 计时器 ----------
     this.coyote = grounded ? TUNE.coyote : Math.max(0, this.coyote - dt);
+    this.swimCd = Math.max(0, this.swimCd - dt);
     this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
     this.invuln = Math.max(0, this.invuln - dt);
@@ -257,6 +268,7 @@ export class Player {
     if (!this.dashing) {
       // 按住 Shift 低速移动：目标极速降到 55%，加速度/摩擦不变，手感更可控
       const maxRun = this.focus ? TUNE.maxRun * TUNE.focusMul : TUNE.maxRun;
+      const runCap = inWater ? maxRun * TUNE.swimRunMul : maxRun;
       let accel = grounded ? TUNE.accelGround : TUNE.accelAir;
       let friction = grounded ? TUNE.frictionGround : TUNE.frictionAir;
       if (onIce) {
@@ -266,7 +278,7 @@ export class Player {
       if (dir !== 0) {
         let a = accel;
         if (this.vx * dir < 0) a = grounded ? TUNE.accelTurn : accel * 1.6;
-        this.vx = approach(this.vx, dir * maxRun, a * dt);
+        this.vx = approach(this.vx, dir * runCap, a * dt);
       } else {
         this.vx = approach(this.vx, 0, friction * dt);
       }
@@ -276,8 +288,20 @@ export class Player {
     if (!this.dashing) {
       let g = this.vy < 0 ? TUNE.gravityRise : TUNE.gravityFall;
       if (Math.abs(this.vy) < TUNE.apexSpeed) g *= TUNE.apexMul;
+      if (inWater) g *= TUNE.swimGravityMul;
       this.vy += g * dt;
-      if (this.vy > TUNE.maxFall) this.vy = TUNE.maxFall;
+      const fallCap = inWater ? TUNE.swimMaxFall : TUNE.maxFall;
+      if (this.vy > fallCap) this.vy = fallCap;
+    }
+
+    // ---------- 游泳划水 ----------
+    if (inWater && this.jumpBuffer > 0 && this.swimCd <= 0) {
+      this.vy = -TUNE.swimStroke;
+      this.jumpBuffer = 0;
+      this.jumpsLeft = 1;
+      this.jumping = false;
+      this.onGround = false;
+      this.swimCd = TUNE.swimStrokeCd;
     }
 
     // ---------- 跳跃 ----------

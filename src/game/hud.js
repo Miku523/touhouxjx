@@ -22,7 +22,6 @@ export class Hud {
     this.elBossPhase = document.getElementById('bossPhase');
     this.elBossFill = document.getElementById('bossFill');
     this.elBanner = document.getElementById('banner');
-    this.elTip = document.getElementById('tip');
 
     // 秘籍「无敌模式」徽章：挂在残机左侧，默认隐藏
     this.elCheatBadge = document.createElement('span');
@@ -223,24 +222,6 @@ export class Hud {
     this.elBanner?.classList.remove('show');
   }
 
-  /** 关卡提示条：进关时显示几秒后自动淡出（数据来自 level.hint） */
-  tip(text, dur = 5) {
-    const el = this.elTip || (this.elTip = document.getElementById('tip'));
-    if (!el || !text) return;
-    el.textContent = text;
-    el.classList.remove('show');
-    void el.offsetWidth;
-    el.classList.add('show');
-    clearTimeout(this._tipTimer);
-    this._tipTimer = setTimeout(() => el.classList.remove('show'), Math.max(1, dur) * 1000);
-  }
-
-  clearTip() {
-    clearTimeout(this._tipTimer);
-    const el = this.elTip || document.getElementById('tip');
-    if (el) el.classList.remove('show');
-  }
-
   hideBossBar() {
     this._bossVisible = false;
     this._bossRatio = -1;
@@ -278,6 +259,5 @@ export class Hud {
     this.elPowerPop?.classList.remove('show', 'up', 'down', 'gain');
     this.hideBossBar();
     this.clearBanner();
-    this.clearTip();
   }
 }

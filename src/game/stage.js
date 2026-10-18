@@ -8,7 +8,7 @@
  * 事件通过 onEvent(type, data) 回报给上层 Game：
  *  'death' | 'gameover' | 'checkpoint' | 'bossStart' | 'bossPhase' | 'clear' | 'coin' | 'power'
  */
-import { Level } from './level.js';
+import { Level, BRICK, EMPTY } from './level.js';
 import { Player, TUNE } from './player.js';
 import { Camera } from './camera.js';
 import { Fx } from './fx.js';
@@ -21,6 +21,26 @@ import { scalePlayerDamage } from './balance.js';
 import { StgPlayer, StgStage } from './stg.js';
 import { POWER, powerLevel } from './power.js';
 import { drawSky, drawParallax, drawTiles, drawAmbient } from '../art/scenes.js';
+
+/**
+ * EXTRA 关的时间轴（秒）。
+ *
+ * EXTRA 不再是「一进关就开打」的快速 Boss 战，而是一条完整的超长道中：
+ *   0:00 ─ 5:00   零火力起手的长道中 A（敌机波次一路铺到 5 分钟）
+ *   5:00          雷米莉亚当中途 Boss 拦路（两张符卡，不打通进不去）
+ *   5:00 ─ 14:00  击破后道中 B 继续推进（9 分钟）
+ *   14:00         芙兰朵露登场收尾
+ * 道中合计 14:00，叠上中途 Boss 约 2 分钟的实际战斗，
+ * 手感到芙兰登场大约是 15～16 分钟——正好是「一场 15 分钟的超长 STG」。
+ * 计时只在「可以操作道中」时推进：Boss 战、对话、死亡都暂停，
+ * 所以中途 Boss 打多久都不会把后面的节奏挤掉。
+ */
+export const EXTRA_TIMELINE = Object.freeze({
+  midbossKey: 'remilia', // 中途 Boss 的键：时间轴与「再战」共用，别两处写死
+  midbossAt: 300,   // 5:00 雷米莉亚
+  finalAt: 840,     // 14:00 芙兰登场（中途 Boss 击破后还有 9 分钟道中）
+  retryPower: 96,   // 中途 / 终盘再战时的起手火力（Lv.4 缺一颗，别让复习从零开始）
+});
 
 /* ------------------------------------------------------------------
  * 每关的厚涂背景图（src/art/gen/bg/<theme>.jpg）
@@ -316,8 +336,8 @@ export class Stage {
     this.level = new Level(this.def, opts.index);
     this.mode = this.level.mode === 'stg' ? 'stg' : 'platform';
     this.extra = !!this.level.extra;
-    // Extra 固定按 H 的强度；主线按玩家选择的难度
-    this.difficulty = this.extra ? 'H' : getDifficulty(opts.difficulty).key;
+    // Extra 固定按 EX 隐藏档的强度；主线按玩家选择的难度
+    this.difficulty = this.extra ? 'EX' : getDifficulty(opts.difficulty).key;
     this.diff = getDifficulty(this.difficulty);
 
     this.fx = new Fx();
@@ -333,6 +353,14 @@ export class Stage {
     this.boss = null;
     this.bossStarted = false;
     this.bossPending = false;
+    // EXTRA 专用：中途 Boss（雷米莉亚）的排队 / 打完标记 / 时间轴
+    this.bossMid = false;
+    this.pendingBossKey = null;
+    this.pendingBossMid = false;
+    this.midbossDone = false;
+    this.extraT = 0;
+    // 中途 / 终盘再战：跳过已经看过的 Boss 战前对白
+    this.skipBossDialogue = false;
 
     this.pickups = [];
     this.checkpoints = [];
@@ -345,6 +373,8 @@ export class Stage {
       this.player = new StgPlayer({ char: this.char, lives: opts.lives || 3, power: opts.power || 0 });
       // 分面密度：2–6 面道中敌机齐射更稀（Extra 传 0 → 1.00）
       this.stg = new StgStage(this.level, this.diff, enemyStageDensityOf(this.extra ? 0 : this.index + 1));
+      // EXTRA 的道中要撑满 5 分钟：换成更密、更有节奏起伏的波次表
+      if (this.extra) this._buildExtraWaves();
       this.camera.x = 0;
       this.camera.y = 0;
       this.camera.follow = false;
@@ -361,6 +391,55 @@ export class Stage {
 
     this.castFx = 0;
     this.deathT = 0; // 死亡→复活倒计时（用逻辑帧计时，暂停/切后台时冻结）
+
+    // 崩落砖：0 待机 / 1 抖动（踩上 0.5s 后塌）/ 2 消失（3s 后复原）
+    this.crumbleTiles = this.mode === 'platform'
+      ? (this.level.crumble || []).map((c) => ({ ...c, state: 0, t: 0 }))
+      : [];
+  }
+
+  /** 崩落砖：踩上去抖一下，随后塌掉，过几秒复原；复活时全部复原 */
+  _updateCrumble(dt) {
+    const p = this.player;
+    const feet = p.y + p.h;
+    for (const c of this.crumbleTiles) {
+      if (c.state === 2) {
+        c.t -= dt;
+        if (c.t <= 0) {
+          // 玩家还压在砖的位置上就晚点复原，避免把人顶进地形
+          const overlap = p.x + p.w > c.x + 2 && p.x < c.x + 30 && p.y < c.y + 32 && feet > c.y;
+          if (overlap) c.t = 0.4;
+          else {
+            this.level.setTile(c.cx, c.cy, BRICK);
+            c.state = 0;
+          }
+        }
+        continue;
+      }
+      const onIt = Math.abs(feet - c.y) < 6 && p.vy >= -1
+        && p.x + p.w > c.x + 2 && p.x < c.x + 30;
+      if (c.state === 0) {
+        if (onIt) { c.state = 1; c.t = 0.5; }
+      } else {
+        if (!onIt) { c.state = 0; c.t = 0; continue; }
+        c.t -= dt;
+        if (c.t <= 0) {
+          this.level.setTile(c.cx, c.cy, EMPTY);
+          c.state = 2;
+          c.t = 3.2;
+          this.fx.landDust(c.x + 16, c.y + 6, '#c9a06a');
+          this.fx.shockwave(c.x + 16, c.y + 16, '#c9a06a', 6, 180, 0.25);
+        }
+      }
+    }
+  }
+
+  _resetCrumble() {
+    for (const c of this.crumbleTiles) {
+      this.level.setTile(c.cx, c.cy, BRICK);
+      c.state = 0;
+      c.t = 0;
+    }
   }
 
   _buildPickups() {
@@ -442,6 +521,7 @@ export class Stage {
       this._updateStg(dt, input);
     } else {
       this._updatePlatform(dt, input);
+      this._updateCrumble(dt);
     }
 
     // 玩家事件
@@ -491,7 +571,10 @@ export class Stage {
           this.onEvent('bossPhase', { phase: i, name });
         },
       });
-      if (before !== 'dead' && this.boss.state === 'dead') {
+      if (this.bossMid) {
+        // 中途 Boss 被击破：不算过关，清场后继续推道中
+        if (this.boss.state === 'dead') this._onMidbossDefeated();
+      } else if (before !== 'dead' && this.boss.state === 'dead') {
         this._onBossDefeated();
       }
       // 冲刺撞 Boss
@@ -565,18 +648,12 @@ export class Stage {
 
   _updateStg(dt, input) {
     const p = this.player;
-    if (this.extra && this.stg) {
-      // Extra 关：纯 Boss 战 —— 不生成杂兵，只保留缓慢背景滚动
-      this.stg.speed = 40;
-      if (this.stg.waves.length) this.stg.waves.length = 0;
-      if (this.t > 1.4 && !this.bossPending && !this.bossStarted) {
-        this.bossPending = true;
-        this.onEvent('bossTrigger');
-      }
-    }
+    if (this.extra && this.stg) this._updateExtraTimeline(dt);
     if (input.pressed('shoot') || input.down('shoot')) this._tryShoot(input);
     this.stg.update(dt, p, this.bullets, this.shots, this.fx, {
       onReachBoss: () => {
+        // EXTRA 的 Boss 由时间轴调度（5:00 中途 / 终盘），不看滚动条
+        if (this.extra) return;
         if (!this.bossPending && !this.bossStarted) {
           this.bossPending = true;
           this.onEvent('bossTrigger');
@@ -599,6 +676,95 @@ export class Stage {
     // STG 里玩家子弹打 Boss 走通用路径
     this.camera.x = this.stg.scroll;
     this.camera.y = 0;
+  }
+
+  /**
+   * EXTRA 的关内时间轴：
+   *   道中计时 → 5:00 雷米莉亚（中途 Boss）→ 击破后继续道中 → 终盘芙兰。
+   * 计时只在「能操作道中」时推进（Boss 战 / 对话 / 复活倒计时都暂停），
+   * 这样中途 Boss 打得久也不会把终盘节奏往后推。
+   */
+  _updateExtraTimeline(dt) {
+    const stg = this.stg;
+    const running = this.state === 'play' && !this.bossPending && !this.bossStarted;
+    if (running) this.extraT += dt;
+    // Boss 战期间不再刷道中敌机：打完回来不会满屏妖精糊脸
+    stg.spawnPaused = !!(this.bossPending || this.bossStarted);
+    if (this.bossPending || this.bossStarted) return;
+
+    if (!this.midbossDone && this.extraT >= EXTRA_TIMELINE.midbossAt) {
+      this.bossPending = true;
+      this.pendingBossKey = EXTRA_TIMELINE.midbossKey;
+      this.pendingBossMid = true;
+      this.onEvent('bossTrigger', { midboss: true });
+    } else if (this.midbossDone && this.extraT >= EXTRA_TIMELINE.finalAt) {
+      this.bossPending = true;
+      this.pendingBossKey = null;
+      this.pendingBossMid = false;
+      this.onEvent('bossTrigger');
+    }
+  }
+
+  /**
+   * EXTRA 的敌方波次表：柱状推进 5 分钟，每 14 波（约 20 秒）为一个节奏段，
+   * 段落收尾叠一波密集齐射，避免长时间道中变成一条匀速的直线。
+   */
+  _buildExtraWaves() {
+    const stg = this.stg;
+    if (!stg) return;
+    const usable = this.level.w - 1280 - 200;
+    const step = 470;
+    const waves = [];
+    let n = 0;
+    for (let s = 420; s < usable; s += step, n++) {
+      const zone = Math.floor(n / 14);
+      const heavy = zone % 3 === 2;      // 每三段来一段「密集段」
+      const roll = n % 7;
+      if (roll === 0) waves.push({ at: s, kind: 'scout', count: heavy ? 5 : 4, gapY: 0 });
+      else if (roll === 1) waves.push({ at: s, kind: 'gunner', count: heavy ? 3 : 2, gapY: 130 });
+      else if (roll === 2) waves.push({ at: s, kind: 'diver', count: 5, gapY: 0 });
+      else if (roll === 3) {
+        waves.push({ at: s, kind: 'scout', count: 3, gapY: 180 });
+        waves.push({ at: s + 150, kind: 'diver', count: 3, gapY: -160 });
+      } else if (roll === 4) waves.push({ at: s, kind: 'gunner', count: 3, gapY: 0 });
+      else if (roll === 5) {
+        waves.push({ at: s, kind: 'scout', count: 2, gapY: -120 });
+        waves.push({ at: s + 120, kind: 'gunner', count: 2, gapY: 150 });
+      } else {
+        waves.push({ at: s, kind: 'diver', count: 4, gapY: 90 });
+        // 段落收尾：补一波横向齐射，做「潮水」的段落感
+        waves.push({ at: s + 240, kind: 'scout', count: 5, gapY: 40 });
+      }
+    }
+    stg.waves = waves;
+    stg.waveIdx = 0;
+  }
+
+  /** 把波次指针推到当前滚动位置之前，避免再战时一进场就刷出一大坨敌机 */
+  _skipPastWaves() {
+    const stg = this.stg;
+    if (!stg) return;
+    while (stg.waveIdx < stg.waves.length && stg.waves[stg.waveIdx].at < stg.scroll - 600) stg.waveIdx++;
+  }
+
+  /**
+   * EXTRA 的中途 / 终盘再战：把时间轴与滚动位置拨到指定检查点。
+   * @param {'midboss'|'final'|null} from
+   */
+  resumeExtra(from) {
+    if (!this.extra || !this.stg) return;
+    if (from !== 'midboss' && from !== 'final') return;
+    const at = from === 'midboss' ? EXTRA_TIMELINE.midbossAt : EXTRA_TIMELINE.finalAt;
+    this.midbossDone = from === 'final';
+    this.extraT = at;
+    this.stg.t = 0;
+    this.stg.scroll = Math.max(0, Math.min(this.stg.bossTriggerScroll, at * this.stg.speed));
+    this._skipPastWaves();
+    // 不白白回到 Lv.1：给到 Lv.4 差一颗的火力
+    // 火力等级由 POWER 派生（StgPlayer.fireLevel 是 getter），这里只补 POWER
+    this.player.power = Math.max(this.player.power || 0, EXTRA_TIMELINE.retryPower);
+    this.skipBossDialogue = true;
+    this.onEvent('respawn');
   }
 
   _tryShoot(input) {
@@ -788,6 +954,7 @@ export class Stage {
       this.onEvent('gameover');
       return;
     }
+    this._resetCrumble();
     this.state = this.bossStarted ? 'boss' : 'play';
     this.bullets.clear();
     this.shots.clear();
@@ -800,13 +967,23 @@ export class Stage {
     this.onEvent('respawn');
   }
 
-  beginBoss() {
+  /**
+   * 让 Boss 登场。
+   * @param {string|null} keyOverride 指定 Boss（EXTRA 的中途 Boss 不走关底配置）
+   * @param {{midboss?:boolean}} [opts]
+   */
+  beginBoss(keyOverride = null, opts = {}) {
     if (this.bossStarted) return;
     this.bossStarted = true;
     this.bossPending = false;
     this.state = 'boss';
 
-    const key = this.level.boss;
+    const key = keyOverride || this.pendingBossKey || this.level.boss;
+    const isMid = opts.midboss != null ? !!opts.midboss : this.pendingBossMid;
+    this.bossMid = isMid;
+    this.pendingBossKey = null;
+    this.pendingBossMid = false;
+
     const bx = this.mode === 'stg'
       ? this.stg.scroll + 900
       : this.level.w - 520;
@@ -824,7 +1001,28 @@ export class Stage {
       key,
       name: this.boss.def.name,
       title: this.boss.def.title,
+      midboss: isMid,
     });
+  }
+
+  _onMidbossDefeated() {
+    const b = this.boss;
+    this.boss = null;
+    this.bossStarted = false;
+    this.bossPending = false;
+    this.bossMid = false;
+    this.midbossDone = true;
+    this.state = 'play';
+    this.bullets.clear();
+    this.camera.shake(20, 0.7);
+    if (b) {
+      this.fx.burst(b.x, b.y - 80, b.def.accent, 34, 460);
+      this.fx.shockwave(b.x, b.y - 80, '#ffffff', 26, 1200, 0.7);
+    }
+    // 残机不补，但给一点点喘息的护身时间，别一睁眼就撞进新刷的妖精堆里
+    const p = this.player;
+    if (p) p.invuln = Math.max(p.invuln || 0, 1.2);
+    this.onEvent('midbossClear', { key: b ? b.key : 'remilia' });
   }
 
   _onBossDefeated() {
@@ -1747,7 +1945,8 @@ export class Stage {
       castCost: POWER.castCost,
       perLevel: POWER.perLevel,
       char: this.char,
-      time: this.time,
+      // EXTRA 显示「道中累计时间」：中途 Boss 战期间冻结，5:00 就是雷米莉亚的位置
+      time: this.extra ? this.extraT : this.time,
       boss: this.boss && this.boss.state !== 'dead'
         ? {
           name: this.boss.def.name,

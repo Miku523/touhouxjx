@@ -26,6 +26,7 @@ export const BOSS_INFO = {
   yuyuko:  { name: '西行寺幽幽子', title: '幽冥楼阁的亡灵少女', accent: '#ffa8d8', theme: 'ghost' },
   kaguya:  { name: '蓬莱山辉夜',   title: '永远与须臾的罪人',   accent: '#ffe9b0', theme: 'moon' },
   flandre: { name: '芙兰朵露',     title: '恶魔之妹',           accent: '#ff4d6a', theme: 'crimson' },
+  remilia: { name: '雷米莉亚·斯卡雷特', title: '永远鲜红的幼月',   accent: '#ff4d6a', theme: 'crimson' },
 };
 
 /** 战立绘的大致包围盒（供布局用） */
@@ -255,6 +256,19 @@ const PAL = {
     crystalA: '#ff4d6a', crystalB: '#ff9a4a', crystalC: '#ffe66a',
     crystalD: '#8ef07a', crystalE: '#6ae8e0', crystalF: '#6a9aff', crystalG: '#c07aff',
     shoe: '#8f2638', accent: '#ff4d6a',
+  }),
+  remilia: Object.assign({}, SKIN, {
+    line: '#20101e',
+    hair: '#b9c6f0', hair2: '#93a2d8', hair3: '#5f6aa0', hair4: '#eaf0ff',
+    dress: '#e8a8c4', dress2: '#c07e9c', dress3: '#f8c9dc',
+    white: '#fff6fa', white2: '#e8d0da',
+    ribbon: '#e8305a', ribbon2: '#b81f44',
+    trim: '#f7e8f0', trim2: '#d8c0cc',
+    eye: '#e8305a', eyeGlow: '#ff6a86',
+    bat: '#8a6ab8', bat2: '#5a4284',
+    spear: '#ff5a7a', spear2: '#c83050',
+    shoe: '#8f2638', dark: '#140810',
+    accent: '#ff4d6a',
   }),
   reimu: Object.assign({}, SKIN, {
     line: '#2a1418',
@@ -1303,6 +1317,7 @@ const BOSS_BACK_RIM = {
   yuyuko: [-36, -206, -58, -178, -60, -118, -50, -72],
   kaguya: [-36, -206, -54, -170, -56, -100, -50, -48],
   flandre: [-36, -198, -48, -176, -46, -152, -36, -142],
+  remilia: [-38, -198, -58, -168, -56, -108, -46, -56],
 };
 
 /**
@@ -2928,6 +2943,135 @@ function bossKaguya(ctx, p, P) {
  * 芙兰朵露 —— 恶魔之妹
  * 金发侧马尾 + 红白洋装 + 七色水晶翼 + 红眼 + 狂气笑
  * ---------------------------------------------------------------- */
+/* ----------------------------------------------------------------
+ * 雷米莉亚 —— 永远鲜红的幼月
+ * 淡紫色长发 + 蝙蝠之翼 + 红色发带 + 神枪「冈格尼尔」。
+ * 只作为 EXTRA 的中途 Boss 出场（两张符卡），不走关底 10 符卡那一套。
+ * ---------------------------------------------------------------- */
+function bossRemilia(ctx, p, P) {
+  const t = P.t;
+  const sway = P.sway * 1.3;
+
+  backAura(ctx, p.spear, 112, 0.55 + P.glow * 0.85);
+
+  /* ---------------- 蝙蝠之翼 ---------------- */
+  const flap = 0.95 + 0.07 * Math.sin(t * 2.4);
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(side * 16, -132);
+    ctx.scale(side * flap, flap);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(30, -58, 92, -78, 130, -50);
+    ctx.quadraticCurveTo(102, -22, 108, 10);
+    ctx.quadraticCurveTo(80, -8, 70, 20);
+    ctx.quadraticCurveTo(48, -2, 36, 22);
+    ctx.quadraticCurveTo(16, 6, 0, 18);
+    ctx.closePath();
+    ctx.fillStyle = LG(ctx, 4, -52, 100, 26, [
+      [0, rgba(p.bat, 0.96)], [0.5, rgba(p.bat2, 0.92)], [1, rgba(p.bat2, 0.55)],
+    ]);
+    ctx.fill();
+    ctx.strokeStyle = p.line;
+    ctx.lineWidth = 2.6;
+    ctx.stroke();
+    // 翼骨
+    ctx.strokeStyle = rgba(p.line, 0.8);
+    ctx.lineWidth = 2;
+    for (const [ax, ay] of [[118, -48], [96, 12], [62, 22], [30, 22]]) {
+      ctx.beginPath();
+      ctx.moveTo(2, 2);
+      ctx.quadraticCurveTo(ax * 0.55, ay * 0.7 - 30, ax, ay);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /* ---------------- 后发：及腰的长直发 ---------------- */
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(side * 28, -206);
+    ctx.bezierCurveTo(side * 70, -176, side * 74, -112, side * 64, -54);
+    ctx.quadraticCurveTo(side * 54, -22, side * 40, -42);
+    ctx.quadraticCurveTo(side * 48, -104, side * 34, -172);
+    ctx.closePath();
+    paint(ctx, LG(ctx, side * 66, -200, side * 34, -32, [
+      [0, p.hair2], [0.45, p.hair], [1, p.hair3],
+    ]), p.line, 2.6);
+    // 发丝分股
+    ctx.strokeStyle = rgba(p.hair3, 0.45);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(side * 44, -180);
+    ctx.quadraticCurveTo(side * 58, -120, side * 50, -58);
+    ctx.stroke();
+  }
+
+  /* ---------------- 身体 ---------------- */
+  drawBodyChibi(ctx, p, P, {
+    torsoTop: p.dress3, torsoBot: p.dress, skirtTop: p.dress3, skirtBot: p.dress2,
+    trim: p.trim, sash: p.ribbon, ribbon: p.ribbon,
+    sleeve: 'puff', sleeveColor: p.dress3, sleeve2: p.dress,
+    legColor: p.skin, shoeColor: p.shoe, legW: 9.5, hemHalf: 40,
+  });
+
+  /* ---------------- 脸：常时睁眼，施法时带一点笑 ---------------- */
+  drawFaceChibi(ctx, p, {
+    blink: P.blink,
+    mouth: P.st === 'cast' ? 'smile' : 'neutral',
+    eyeColor: p.eye, eyeGlow: p.eyeGlow,
+    browColor: darken(p.hair2, 0.2),
+    look: 0.1,
+  }, P);
+
+  /* ---------------- 前发 ---------------- */
+  ctx.beginPath();
+  ctx.moveTo(-40, -184);
+  ctx.bezierCurveTo(-42, -216, -20, -230, 0, -230);
+  ctx.bezierCurveTo(20, -230, 42, -216, 40, -184);
+  ctx.quadraticCurveTo(34, -198, 26, -196);
+  ctx.quadraticCurveTo(20, -186, 12, -197);
+  ctx.quadraticCurveTo(4, -186, -4, -198);
+  ctx.quadraticCurveTo(-14, -187, -22, -198);
+  ctx.quadraticCurveTo(-30, -190, -36, -200);
+  ctx.quadraticCurveTo(-40, -190, -40, -184);
+  ctx.closePath();
+  ctx.fillStyle = LG(ctx, -28, -232, 22, -180, [
+    [0, p.hair4], [0.4, p.hair], [0.85, p.hair2], [1, p.hair3],
+  ]);
+  ctx.fill();
+  ctx.strokeStyle = p.line;
+  ctx.lineWidth = 2.8;
+  ctx.stroke();
+
+  /* ---------------- 侧发（垂到肩下） ---------------- */
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(side * 38, -192);
+    ctx.quadraticCurveTo(side * (48 + sway), -158, side * 41, -124);
+    ctx.quadraticCurveTo(side * 30, -110, side * 26, -128);
+    ctx.quadraticCurveTo(side * 32, -158, side * 30, -188);
+    ctx.closePath();
+    paint(ctx, LG(ctx, side * 42, -192, side * 24, -120, [[0, p.hair], [1, p.hair3]]), p.line, 2.4);
+  }
+
+  /* ---------------- 发带（左侧红色蝴蝶结） ---------------- */
+  ctx.save();
+  ctx.translate(-34 + sway, -204);
+  ctx.rotate(-0.22);
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(s * 16, -14, s * 24, 2, s * 8, 9);
+    ctx.quadraticCurveTo(s * 3, 4, 0, 0);
+    ctx.closePath();
+    paint(ctx, LG(ctx, s * 2, -10, s * 20, 8, [[0, p.ribbon], [1, p.ribbon2]]), p.line, 2);
+  }
+  ellPath(ctx, 0, 2, 4.6, 4.6);
+  paint(ctx, p.ribbon2, p.line, 1.8);
+  ctx.restore();
+}
+
 function bossFlandre(ctx, p, P) {
   const t = P.t;
   backAura(ctx, p.crystalA, 105, 0.65 + P.glow * 0.9);
@@ -3199,6 +3343,7 @@ const BOSS_DRAW = {
   yuyuko: bossYuyuko,
   kaguya: bossKaguya,
   flandre: bossFlandre,
+  remilia: bossRemilia,
 };
 
 /**

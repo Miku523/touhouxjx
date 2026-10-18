@@ -517,34 +517,6 @@ body {
   opacity: .9;
 }
 
-/* ---------- 关卡提示 ---------- */
-.stage-tip {
-  position: absolute;
-  left: 50%;
-  bottom: calc(var(--s) * 126px);
-  transform: translateX(-50%) translateY(calc(var(--s) * 10px));
-  max-width: calc(var(--s) * 720px);
-  padding: calc(var(--s) * 9px) calc(var(--s) * 20px);
-  border-radius: calc(var(--s) * 999px);
-  border: 1px solid rgba(255, 214, 128, .26);
-  background: rgba(14, 9, 18, .62);
-  color: #f7e8cd;
-  font-size: calc(var(--s) * 13px);
-  letter-spacing: .16em;
-  line-height: 1.5;
-  text-align: center;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity .45s ease, transform .45s ease;
-  backdrop-filter: blur(calc(var(--s) * 2px));
-  -webkit-backdrop-filter: blur(calc(var(--s) * 2px));
-}
-.stage-tip.show {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
 /* ---------- 剧情对白 ---------- */
 #dialogue { position: absolute; inset: 0; pointer-events: auto; }
 
@@ -1509,6 +1481,14 @@ body {
   background: rgba(242, 210, 75, .08);
   color: #fff;
   box-shadow: 0 0 calc(var(--s) * 18px) rgba(242, 210, 75, .16);
+}
+/* 重置进度：危险操作，悬停 / 选中时换告警红，避免误按 */
+.overlay.screen-mode .set-foot-btn.set-foot-danger .set-label { color: rgba(255, 157, 157, .72); }
+.overlay.screen-mode .set-foot-btn.set-foot-danger:hover,
+.overlay.screen-mode .set-foot-btn.set-foot-danger.sel {
+  border-color: rgba(255, 157, 157, .52);
+  background: rgba(255, 157, 157, .08);
+  box-shadow: 0 0 calc(var(--s) * 18px) rgba(255, 157, 157, .16);
 }
 .overlay.screen-mode .set-group[data-g$="foot"] .set-rows > .btn:only-child {
   grid-column: 1 / -1;

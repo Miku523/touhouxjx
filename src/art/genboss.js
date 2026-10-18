@@ -13,7 +13,7 @@
 import { preloadWhenIdle, setPriority } from '../engine/lazy_preload.js';
 
 const BASE = new URL('./gen/boss/', import.meta.url);
-const KEYS = ['rumia', 'wriggle', 'cirno', 'aya', 'yuyuko', 'kaguya', 'flandre'];
+const KEYS = ['rumia', 'wriggle', 'cirno', 'aya', 'yuyuko', 'kaguya', 'flandre', 'remilia'];
 /** 游戏内显示高度（程序化 BOSS_BOX 是 240） */
 const DRAW_H = 236;
 /** 逐角色视觉身高微调：身形偏窄的（妖精系）放大一点，长裙系保持原样，避免同屏看起来大小不一致 */
@@ -26,6 +26,8 @@ const BOSS_H = {
   kaguya: 238,
   // EX 的芙兰要压场：动作幅度大，视觉身高再抬一点，别和 5/6 面看起来一样大
   flandre: 256,
+  // 中途 Boss：翼展比芙兰宽，身高压一点，头顶才不会顶到 Boss 血条
+  remilia: 236,
 };
 /** 暗贴纸放大倍率 / 光晕模糊半径 */
 const HALO_K = 1.05;

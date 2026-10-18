@@ -583,6 +583,36 @@ export const BOSS_DEFS = {
     ],
   },
 
+  /**
+   * EXTRA 的中途 Boss：雷米莉亚。
+   * 只打两张符卡（第一张高难、第二张中偏高），打完让路，关底仍是芙兰。
+   * 血量按「EX 档 × 2 分钟」估：单张有效约 5000，两张合计约 2 分钟。
+   */
+  remilia: {
+    name: '雷米莉亚·斯卡雷特', title: '永远鲜红的幼月', hp: 4500, accent: '#ff4d6a',
+    phases: [
+      {
+        // 第一张：弹幕密度最高 —— 血枪雨 + 多层螺旋 + 追踪蝙蝠，缝合式压场
+        name: '咒诅「弗拉德·特佩斯」', hp: 2400, patterns: [
+          { typeName: 'laser', n: 9, speed: 610, color: '#ffd0e0', rate: 0.5, angle: 0 },
+          { typeName: 'spiral', arms: 6, speed: 180, color: '#ff4d6a', rate: 0.055, spin: 3.8, r: 5, type: 3, weight: 0.95 },
+          { typeName: 'aimed', n: 7, spread: 0.34, speed: 360, color: '#ff8fa8', rate: 0.52, r: 4, weight: 0.9 },
+          { typeName: 'homing', n: 5, speed: 150, color: '#ffd0e0', rate: 0.95, r: 7, homing: 1.9, weight: 0.85 },
+          { typeName: 'scatter', n: 12, speed: 195, color: '#ff4d6a', rate: 0.85, r: 6, type: 2, aimed: true, arc: 1.4, weight: 0.8 },
+        ],
+      },
+      {
+        // 第二张：中偏高 —— 六芒星骨架 + 环弹 + 反向螺旋，读谱为主
+        name: '天罚「大卫之星」', hp: 2100, patterns: [
+          { typeName: 'cross', n: 4, dirs: 6, spread: 0.4, speed: 210, color: '#ff8fa8', rate: 0.68, r: 5 },
+          { typeName: 'ring', n: 26, speed: 145, color: '#ffd0e0', rate: 0.95, r: 6, rings: 2, spinAngle: 0.35, weight: 0.9 },
+          { typeName: 'spiral', arms: 4, speed: 165, color: '#ff4d6a', rate: 0.1, spin: -3.2, r: 5, type: 3, weight: 0.85 },
+          { typeName: 'fan', n: 13, spread: 1.3, speed: 200, color: '#ff8fa8', rate: 0.55, r: 5, weight: 0.85 },
+        ],
+      },
+    ],
+  },
+
   flandre: {
     name: '芙兰朵露', title: '恶魔之妹', hp: 27080, accent: '#ff4d6a',
     phases: [
@@ -714,10 +744,15 @@ export class Boss {
     // 单发弹速硬上限：再快也不会到躲不开的程度
     this.speedCap = Number(this.diff.bulletSpeedCap) || 520;
     // 环状弹幕最小间距折算出的单圈上限（按 240px 半径算弧长，保证留有判定缝）
-    this.ringGapPx = Math.max(26, Number(this.diff.ringGapPx) || 30);
-    this.ringLimit = clamp(Math.floor((TAU * 240) / this.ringGapPx), 6, 56);
+    this.ringGapPx = Math.max(18, Number(this.diff.ringGapPx) || 30);
+    // 单圈上限：默认 56；EXTRA 档放宽到 72，让 22px 环缝真的能排下更多弹
+    this.ringLimit = clamp(Math.floor((TAU * 240) / this.ringGapPx), 6, Number(this.diff.bossRingCap) || 56);
     // 屏幕密度自适应：1 = 全量开火，越低新招弹数越薄
     this.pressure = 1;
+    // 自适应阈值 / 下限 / 变招放弃阈值：EXTRA 档整体放宽，避免新弹量被旧护栏夹回去
+    this.pressureStart = Number(this.diff.pressureStart) || 0.6;
+    this.pressureFloor = Number(this.diff.pressureFloor) || 0.45;
+    this.wildAbort = Number(this.diff.wildAbort) || 0.8;
 
     this.t = 0;
     this.state = 'intro'; // intro | battle | defeat | dead
@@ -924,7 +959,7 @@ export class Boss {
   /** 一波计划外弹幕：环 / 扇 / 散射三选一，参数当场随机（跟着难度与密度自适应缩放） */
   _wildVolley(player, bullets) {
     // 变招是「额外」弹幕：屏幕比较满时直接放弃，优先保证已有弹幕的缝隙
-    if (!bullets || bullets.activeCount >= this.bulletBudget * 0.8) return;
+    if (!bullets || bullets.activeCount >= this.bulletBudget * this.wildAbort) return;
     const pc = this._playerCenter(player);
     const px = pc.x;
     const py = pc.y;
@@ -1081,10 +1116,12 @@ export class Boss {
     // 随机幅度：符卡越靠后、本张血越少，弹幕越乱
     this.wild = clamp(0.55 + this.spellIdx * 0.12 + (1 - this.hpRatio) * 0.3, 0.55, 1.4);
 
-    // 密度自适应：屏幕占用超过预算 60% 之后，新开的一招按比例收窄弹数（最低 0.45×）。
+    // 密度自适应：屏幕占用超过预算阈值（默认 60%，EXTRA 72%）之后，新开的一招按比例收窄弹数。
     // 这一层让「大量增加弹幕」的 L 也不会摊成没缝的墙——越满弹幕越薄，缝隙自动回流。
     const loadRatio = (bullets?.activeCount || 0) / this.bulletBudget;
-    this.pressure = loadRatio <= 0.6 ? 1 : clamp(1 - (loadRatio - 0.6) * 1.4, 0.45, 1);
+    this.pressure = loadRatio <= this.pressureStart
+      ? 1
+      : clamp(1 - (loadRatio - this.pressureStart) * 1.4, this.pressureFloor, 1);
 
     // 随机移动（替代原来的正弦漂浮）
     this._updateMovement(dt, fx);

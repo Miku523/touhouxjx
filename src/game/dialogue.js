@@ -22,6 +22,7 @@ const AI_PORTRAITS = {
   yuyuko: 'yuyuko.png',
   kaguya: 'kaguya.png',
   flandre: 'flandre.png',
+  remilia: 'remilia.png',
 };
 const AI_BASE = new URL('../art/gen/', import.meta.url);
 const aiImages = {};
@@ -127,6 +128,7 @@ export const CHAR_NAMES = {
   yuyuko: '西行寺幽幽子',
   kaguya: '蓬莱山辉夜',
   flandre: '芙兰朵露·斯卡雷特',
+  remilia: '雷米莉亚·斯卡雷特',
   youmu: '魂魄妖梦',
   sakuya: '十六夜咲夜',
   unknown: '？？？',
