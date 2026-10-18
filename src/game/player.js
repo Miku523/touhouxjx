@@ -348,8 +348,12 @@ export class Player {
     for (let i = 0; i < steps; i++) {
       this.x += sx;
       if (this.level.rectHitsSolid(this.x, this.y, this.w, this.h)) {
+        const blockedX = this.x;
         this.x -= sx;
-        if (!this._cornerCorrectX()) {
+        // 注意：必须在「被挡住的那个 x」上做抬升检测。
+        // 若在回退后的 x 上检测，旧位置本来就不重叠，会每帧误判成功、
+        // 把玩家往上顶 1px（贴墙时抖动 / 慢慢爬墙）。
+        if (!this._cornerCorrectX(blockedX)) {
           this.vx = 0;
           this.dashing = false;
         }
@@ -359,9 +363,9 @@ export class Player {
   }
 
   /** 水平撞墙但头顶有余量时，把玩家往上推一点，避免卡在墙角 */
-  _cornerCorrectX() {
+  _cornerCorrectX(blockedX) {
     for (let lift = 1; lift <= 10; lift++) {
-      if (!this.level.rectHitsSolid(this.x, this.y - lift, this.w, this.h)) {
+      if (!this.level.rectHitsSolid(blockedX, this.y - lift, this.w, this.h)) {
         this.y -= lift;
         return true;
       }

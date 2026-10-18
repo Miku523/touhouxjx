@@ -1392,7 +1392,10 @@ class Game {
     }
 
     if (this.stage && (this.state === 'play' || this.state === 'paused' || this.state === 'clear' || this.state === 'dialogue' || this.state === 'gameover')) {
-      this.stage.draw(ctx, alpha);
+      // 只有逻辑真的在推进时才做插值。暂停 / 对话 / 结算 / GameOver 时模拟已经冻结，
+      // 但循环的 alpha 仍在 0→1 循环，继续插值会让角色在上一/当前步之间来回抖。
+      const a = this.state === 'play' && !this.dialogue.active ? alpha : 1;
+      this.stage.draw(ctx, a);
       if (this.state === 'paused') this._drawDim(ctx, 0.45);
       if (this.state === 'dialogue') this._drawDim(ctx, 0.35);
     } else {

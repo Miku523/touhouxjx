@@ -374,6 +374,7 @@ export class Stage {
     if (this.state === 'clear') return;
     this.t += dt;
     if (this.state === 'play') this.time += dt;
+    this.camera.beginStep();
 
     const p = this.player;
     p.shootCd = Math.max(0, (p.shootCd || 0) - dt);
@@ -1103,7 +1104,7 @@ export class Stage {
 
   draw(ctx, alpha) {
     const theme = this.level.theme;
-    const cam = this.camera.view;
+    const cam = this.camera.viewAt(alpha);
 
     // 背景（屏幕坐标系）：优先使用厚涂背景图，程序化天空作为 fallback
     const bgs = _bgFor(theme);
@@ -1122,7 +1123,7 @@ export class Stage {
 
     // 世界坐标系
     ctx.save();
-    this.camera.apply(ctx);
+    this.camera.apply(ctx, alpha);
 
     // 地形（STG 关不绘制地形，只有背景 + 敌机）
     if (this.mode !== 'stg') drawTiles(ctx, this.level, cam, this.t);

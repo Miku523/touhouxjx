@@ -17,6 +17,9 @@ export class Camera {
     this.y = Math.min(0, Math.floor((VIEW_H - level.h) / 2));
     this.tx = this.x;
     this.ty = this.y;
+    // 上一步的位置，用于渲染插值（否则高刷新率下玩家相对世界会来回抖）
+    this.prevX = this.x;
+    this.prevY = this.y;
 
     this.shakeT = 0;
     this.shakeDur = 0;
@@ -35,6 +38,26 @@ export class Camera {
     const p = target;
     this.x = this._clampX(p - VIEW_W * 0.42);
     this.tx = this.x;
+    this.prevX = this.x;
+  }
+
+  /** 每个逻辑步开始前记录位置，供渲染在 prev → current 之间插值 */
+  beginStep() {
+    this.prevX = this.x;
+    this.prevY = this.y;
+  }
+
+  xAt(alpha) {
+    return this.prevX + (this.x - this.prevX) * alpha;
+  }
+
+  yAt(alpha) {
+    return this.prevY + (this.y - this.prevY) * alpha;
+  }
+
+  /** 供场景绘制用的相机（带震屏偏移，按 alpha 插值） */
+  viewAt(alpha = 1) {
+    return { x: this.xAt(alpha) + this.ox, y: this.yAt(alpha) + this.oy };
   }
 
   /** 震屏 */
@@ -102,9 +125,9 @@ export class Camera {
     return { x: this.x + this.ox, y: this.y + this.oy };
   }
 
-  /** 把 ctx 平移到相机坐标系 */
-  apply(ctx) {
-    ctx.translate(-Math.round(this.x + this.ox), -Math.round(this.y + this.oy));
+  /** 把 ctx 平移到相机坐标系（按渲染插值后的位置，像素对齐） */
+  apply(ctx, alpha = 1) {
+    ctx.translate(-Math.round(this.xAt(alpha) + this.ox), -Math.round(this.yAt(alpha) + this.oy));
   }
 
   /** 世界坐标矩形是否在视野内（带 margin） */
