@@ -82,10 +82,7 @@ class Game {
     // 场景底图在空闲时预热，避免第一次进设置页 / 难度页时闪一下黑底
     this._warmScenes();
 
-    this.input.pointerHandler = () => {
-      this.audio.unlock?.();
-      this._applyAudio();
-    };
+    this.input.pointerHandler = () => this._unlockAudio();
 
     this.state = 'menu';
     this.stage = null;
@@ -147,8 +144,7 @@ class Game {
 
     window.addEventListener('keydown', (e) => {
       // 只用键盘启动的玩家也要解锁音频：浏览器策略只认用户手势，按键同样算
-      this.audio.unlock?.();
-      this._applyAudio();
+      this._unlockAudio();
       this._onMenuKey(e);
     });
 
@@ -169,10 +165,7 @@ class Game {
     });
 
     // 鼠标点击解锁音频
-    window.addEventListener('pointerdown', () => {
-      this.audio.unlock?.();
-      this._applyAudio();
-    }, { once: true });
+    window.addEventListener('pointerdown', () => this._unlockAudio(), { once: true });
 
     this.loop = new Loop(
       (dt) => this.update(dt),
@@ -1234,10 +1227,7 @@ class Game {
     if (this.state === 'play' && this.stage) {
       if (this.input.pressed('pause')) { this._pause(); this.input.endFrame(); return; }
       if (this.input.pressed('restart')) { this._retryStage(); this.input.endFrame(); return; }
-      if (this.input.pressed('mute')) {
-        this.audio.setMuted?.(!this.audio.muted);
-        this._saveSettings();
-      }
+      if (this.input.pressed('mute')) this._toggleMute();
       this.stage.update(dt, this.input);
       this.hud.update(this.stage.hudState, dt);
     }
@@ -1297,8 +1287,7 @@ class Game {
         cls: 'set-row', key: 'M', hotkey: 'KeyM',
         html: row('全部静音', sw(!!this.audio.muted), 'M'),
         onPick: (i) => {
-          this.audio.setMuted?.(!this.audio.muted);
-          this._saveSettings();
+          this._toggleMute();
           this._showSettings(i, origin);
         },
       },
@@ -1660,6 +1649,27 @@ class Game {
     } catch (e) {
       // 忽略写入失败
     }
+  }
+
+  /**
+   * 每次用户手势都会调用：第一次真正建好音频链路时才灌一次持久化设置。
+   *
+   * 这里必须只在「刚刚创建 AudioContext」时灌设置：
+   * 之前每次按键都调 _applyAudio()，而 _settingsMuted 只是载入时的快照，
+   * 于是玩家用 M 解除静音后，按下任何一个键都会按快照把静音打回去
+   * （表现为「一按任意键游戏就没声音」，反过来静音也存不住）。
+   */
+  _unlockAudio() {
+    const hadCtx = !!this.audio.ctx;
+    this.audio.unlock?.();
+    if (!hadCtx && this.audio.ctx) this._applyAudio();
+  }
+
+  /** 全局静音开关：引擎状态为准，同时同步持久化快照 */
+  _toggleMute() {
+    this.audio.setMuted?.(!this.audio.muted);
+    this._settingsMuted = !!this.audio.muted;
+    this._saveSettings();
   }
 
   /** 把记忆中的设置灌进音频引擎（unlock 前后都可以调用） */
