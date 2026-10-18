@@ -30,7 +30,7 @@ export const LEVELS = [
     mode: 'platform',
     boss: 'rumia',
     music: 'stage1',
-    hint: '← → 移动　空格 跳跃　空中再按一次二段跳　X 冲刺',
+    hint: '← → 移动　空格 跳跃／二段跳　K 冲刺　按住 ↑ 向上射击',
     fairyTint: { main: 'purple', mix: ['yellow', 'red', 'blue'] },
     rows: [
       '....................................................................................................', //  0
@@ -135,7 +135,7 @@ export const LEVELS = [
     mode: 'stg',
     boss: 'aya',
     music: 'stage4',
-    hint: '落差很大　掉下去会回到检查点　多用二段跳',
+    hint: '方向键 自由飞行　空格 加速　Z 连射　X 释放符卡',
     fairyTint: { main: 'green', mix: ['blue', 'yellow', 'purple'] },
     rows: [
       '........................................................................................................................', //  0
@@ -170,7 +170,7 @@ export const LEVELS = [
     mode: 'platform',
     boss: 'yuyuko',
     music: 'stage5',
-    hint: '方向键 自由飞行　空格 加速　X 释放符卡',
+    hint: '平台跳跃关　砖块可以踩　掉下去会回到检查点　按住 ↑ 向上射击',
     fairyTint: { main: 'purple', mix: ['red', 'yellow', 'blue'] },
         rows: [
       '........................................................................................................................', //  0
@@ -217,7 +217,7 @@ export const LEVELS = [
     mode: 'platform',
     boss: 'kaguya',
     music: 'stage6',
-    hint: '方向键 自由飞行　空格 加速　X 释放符卡',
+    hint: '平台跳跃关　砖墙与浮台交错　掉下去会回到检查点',
     fairyTint: { main: 'blue', mix: ['purple', 'yellow', 'red'] },
         rows: [
       '........................................................................................................................', //  0

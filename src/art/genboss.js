@@ -22,7 +22,8 @@ const BOSS_H = {
   aya: 244,
   yuyuko: 236,
   kaguya: 238,
-  flandre: 240,
+  // EX 的芙兰要压场：动作幅度大，视觉身高再抬一点，别和 5/6 面看起来一样大
+  flandre: 256,
 };
 /** 暗贴纸放大倍率 / 光晕模糊半径 */
 const HALO_K = 1.05;

@@ -56,15 +56,17 @@ CHAR = {
     'aya': {
         'ref': 'aya',
         'size': '1536x1024',
-        'outfit': ('short black hair, black tengu tokin hat with a white triangle emblem and a white pom-pom, '
-                   'red and white reporter jacket with a PRESS armband, black trousers, black feather wings, '
-                   'a camera hanging from her neck'),
+        'outfit': ('short black bob hair with a cute inward flip, big round crimson eyes with long eyelashes, '
+                   'soft feminine face with a light blush, a black tengu tokin hat with a white triangle emblem and '
+                   'a fluffy white pom-pom on top, a red and white reporter jacket with a PRESS armband over a '
+                   'white blouse, a short red pleated skirt, black thigh-high socks, red shoes, black feathered '
+                   'crow wings, a camera hanging from her neck'),
         'pose': ('a split second of an extreme high-speed dash toward the right: body leaning far forward, '
                  'one leg stretched back, huge black wings swept in a sharp V, one hand raising a camera to '
                  'her eye with the flash firing a starburst, the other hand flinging a black feather fan open, '
-                 'jacket, scarf and hair streaming behind her, a mischievous toothy grin, '
+                 'jacket, skirt, scarf and hair streaming behind her, a bright mischievous girlish grin, '
                  'gusts of wind and faint afterimages of herself trailing behind'),
-        'vibe': 'energetic, nosy, playful paparazzi tengu, the fastest in Gensokyo',
+        'vibe': 'energetic, nosy, playful paparazzi girl tengu, the fastest in Gensokyo, cute but cheeky',
     },
     'yuyuko': {
         'ref': 'yuyuko',
@@ -201,10 +203,11 @@ def one(key: str, idx: int, tag: str = ''):
         v = os.environ.get(env)
         if v:
             cfg[field] = v
-    ref = ROOT / 'src' / 'art' / 'gen' / (cfg['ref'] + '.png')
-    if not ref.exists():
+    ref_path = os.environ.get('REF_PATH') or str(ROOT / 'src' / 'art' / 'gen' / (cfg['ref'] + '.png'))
+    ref = Path(ref_path) if ref_path != 'none' else None
+    if ref is not None and not ref.exists():
         raise SystemExit('missing portrait ref ' + str(ref))
-    b64 = base64.b64encode(ref.read_bytes()).decode()
+    b64 = base64.b64encode(ref.read_bytes()).decode() if ref else None
     prompt = (
         'Use the reference image ONLY for this character\'s identity and outfit. '
         'Keep her exact face, hairstyle, eye color, outfit colors and every clothing detail; do not redesign her.\n'
@@ -215,13 +218,15 @@ def one(key: str, idx: int, tag: str = ''):
         'MOOD: %s.\n'
         'STYLE: %s'
     ) % (cfg['outfit'], cfg['pose'], cfg['vibe'], STYLE)
-    url = post({
+    payload = {
         'model': MODEL,
         'prompt': prompt,
-        'image': ['data:image/png;base64,' + b64],
         'size': cfg['size'],
         'response_format': 'url',
-    })
+    }
+    if b64:
+        payload['image'] = ['data:image/png;base64,' + b64]
+    url = post(payload)
     CAND.mkdir(parents=True, exist_ok=True)
     raw = CAND / ('%s-%d%s.jpg' % (key, idx, tag))
     urllib.request.urlretrieve(url, raw)

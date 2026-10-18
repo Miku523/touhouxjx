@@ -39,3 +39,8 @@ _power_verify.json
 *.ark_key
 
 _power_live.json
+
+# 旧版立绘备份 / 纹理导出清单
+*.prev2.png
+_ice_tex_names.txt
+_fairy_src/

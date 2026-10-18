@@ -11,6 +11,8 @@ import { LEVELS } from './assets/levels.js';
 import { Stage } from './game/stage.js';
 import { Hud } from './game/hud.js';
 import { Dialogue } from './game/dialogue.js';
+import { Ending } from './game/ending.js';
+import { endingFor } from './game/endings.js';
 import { STORY } from './game/story.js';
 import { DIFFICULTY_KEYS, DIFFICULTIES, getDifficulty } from './game/difficulty.js';
 
@@ -18,6 +20,27 @@ const MAIN_STAGES = () => LEVELS.filter((l) => !l.extra);
 const EXTRA_STAGE = () => LEVELS.find((l) => l.extra);
 const STAGE_KEY = (i) => `stage${i + 1}`;
 const PROGRESS_KEY = 'hks.progress.v1';
+
+/**
+ * ?seed=数字 复现弹幕：把 Math.random 换成 mulberry32 的确定性序列。
+ * 换关时把序列重置回该 seed，保证「同一关 + 同样操作 → 同样的随机弹幕」，
+ * 不受菜单动画消耗随机数的影响。
+ */
+let seedReset = null;
+(() => {
+  const m = /[?&]seed=(\d+)/.exec(location.search);
+  if (!m) return;
+  const seed = (Number(m[1]) >>> 0) || 1;
+  let a = seed;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  seedReset = () => { a = seed; };
+})();
 
 /**
  * 难度卡的视觉素材：四档各一个主题色（tone 实色 / glow 供 rgba 用）
@@ -30,6 +53,19 @@ const DIFF_CARDS = {
   L: { tone: '#c79bff', glow: '186, 130, 255', stars: '★★★★☆', meters: [1.00, 0.96, 1.00, 1.00] },
 };
 
+/**
+ * 选择界面的场景底图：每个页面一套独立景别，避免所有子页共用同一块暗紫卡片。
+ * img 对应 src/art/gen/bg/*.jpg；mote 是前景粒子（petal 花瓣 / mote 光点 / ember 余烬）；
+ * jp 是画面右缘的竖排题签，en 是它下面那行小字。
+ */
+const SCENES = {
+  shrine: { img: 'shrine', jp: '博麗神社', en: 'HAKUREI SHRINE', mote: 'petal' },
+  mountain: { img: 'mountain', jp: '妖怪の山', en: 'YOUKAI MOUNTAIN', mote: 'mote' },
+  forest: { img: 'forest', jp: '魔法の森', en: 'FOREST OF MAGIC', mote: 'mote' },
+  mansion: { img: 'mansion', jp: '紅魔館', en: 'SCARLET MANSION', mote: 'ember' },
+  moon: { img: 'moon', jp: '迷いの竹林', en: 'BAMBOO OF THE LOST', mote: 'mote' },
+};
+
 class Game {
   constructor() {
     this.canvas = document.getElementById('game');
@@ -37,7 +73,10 @@ class Game {
     this.input = new Input();
     this.hud = new Hud();
     this.dialogue = new Dialogue();
+    this.ending = new Ending();
     this.audio = new AudioEngine();
+    // 场景底图在空闲时预热，避免第一次进设置页 / 难度页时闪一下黑底
+    this._warmScenes();
 
     this.input.pointerHandler = () => {
       this.audio.unlock?.();
@@ -143,6 +182,8 @@ class Game {
       this.overlay.classList.toggle('wide-mode', !!opts.wide);
       this.overlay.classList.toggle('screen-mode', !!opts.screen);
     }
+    // 场景底图只挂在屏幕式选择页上；标题页交给 canvas 插画，暂停面板保留游戏画面
+    this._applyScene(opts.screen && !opts.title ? opts.scene : '');
     if (this.titleEl) {
       this.titleEl.textContent = title;
       if (opts.en) this.titleEl.dataset.en = opts.en;
@@ -171,6 +212,7 @@ class Game {
           groupEl = document.createElement('section');
           groupEl.className = 'set-group';
           groupEl.dataset.g = b.group;
+          if (b.glyph) groupEl.dataset.glyph = b.glyph;
           if (b.groupTitle) {
             const h = document.createElement('h4');
             h.className = 'set-group-title';
@@ -219,6 +261,71 @@ class Game {
 
     this.menuButtons = Array.from(this.buttonsEl.querySelectorAll('.btn'));
     this._selectMenu(Number.isInteger(opts.select) ? opts.select : 0);
+  }
+
+  /** 空闲时把五张场景底图解码进缓存（不阻塞首屏，失败也不影响运行） */
+  _warmScenes() {
+    const go = () => {
+      for (const s of Object.values(SCENES)) {
+        try {
+          const im = new Image();
+          im.decoding = 'async';
+          im.src = new URL(`./art/gen/bg/${s.img}.jpg`, import.meta.url).href;
+        } catch (e) {
+          // 预热失败无所谓，_applyScene 里还会再请求一次
+        }
+      }
+    };
+    if ('requestIdleCallback' in window) window.requestIdleCallback(go, { timeout: 1500 });
+    else setTimeout(go, 300);
+  }
+
+  /**
+   * 场景底图：给屏幕式选择页铺一层插画背景 + 调色 / 暗角 / 颗粒 / 前景粒子，
+   * 右缘挂竖排题签、四角挂细框，让子页不再是一块黑紫卡片压在模糊底图上。
+   * 只有 id 变化时才重建 DOM，切换页面不会反复解码图片。
+   */
+  _applyScene(id) {
+    const ov = this.overlay;
+    if (!ov) return;
+    const scene = id ? SCENES[id] : null;
+    if (!scene) {
+      ov.dataset.scene = '';
+      this._ovBg?.remove();
+      this._ovBg = null;
+      this._sceneId = '';
+      return;
+    }
+    ov.dataset.scene = id;
+    if (this._sceneId === id && this._ovBg) return;
+    this._sceneId = id;
+    if (!this._ovBg) {
+      const bg = document.createElement('div');
+      bg.className = 'ov-bg';
+      ov.insertBefore(bg, ov.firstChild);
+      this._ovBg = bg;
+    }
+    // 前景粒子：位置 / 时长 / 漂移用内联变量，CSS 只负责一种运动曲线
+    const motes = Array.from({ length: 14 }, (_, i) => {
+      const x = (i * 37 + 9) % 96;
+      const dur = 15 + (i % 6) * 2.5;
+      const delay = -(i * 1.9);
+      const sz = 3 + (i % 4) * 1.6;
+      const drift = (i % 2 ? 1 : -1) * (26 + (i % 5) * 16);
+      return `<i style="--x:${x}%;--dur:${dur}s;--delay:${delay}s;--sz:${sz}px;--drift:${drift}px"></i>`;
+    }).join('');
+    this._ovBg.dataset.mote = scene.mote;
+    // 底图路径必须相对 main.js 解析（index.html 在上一级，故用 import.meta.url）
+    const sceneUrl = new URL(`./art/gen/bg/${scene.img}.jpg`, import.meta.url).href;
+    this._ovBg.innerHTML =
+      `<div class="ov-bg-img" style="background-image:url('${sceneUrl}')"></div>` +
+      '<div class="ov-bg-grade"></div>' +
+      '<div class="ov-bg-vignette"></div>' +
+      '<div class="ov-bg-grain"></div>' +
+      `<div class="ov-bg-motes">${motes}</div>` +
+      `<div class="ov-bg-caption"><span>${scene.jp}</span><em>${scene.en}</em></div>` +
+      '<span class="ov-corner tl"></span><span class="ov-corner tr"></span>' +
+      '<span class="ov-corner bl"></span><span class="ov-corner br"></span>';
   }
 
   /** 菜单选中态（键盘 / 鼠标共用），自动跳过 .info 纯文本行和 disabled 项 */
@@ -360,6 +467,7 @@ class Game {
     // 否则回到标题后按 Enter 会被旧剧本吃掉，甚至把游戏重新拉进关卡。
     this._pendingTimeout = 0;
     this.dialogue?.stop?.();
+    this.ending?.stop?.();
     this.inExtra = false;
     this.state = 'menu';
     this.stage = null;
@@ -429,7 +537,7 @@ class Game {
     const diff = getDifficulty(this.difficulty);
     this._setPanel('选择主角', `当前难度：${diff.cn} · ${diff.stageCount} 面`, rows,
       '← → 选择　ENTER 确认　ESC 返回难度',
-      { screen: true, en: 'SELECT HEROINE', grid: 'cc-grid', select: this.char === 'marisa' ? 1 : 0 }
+      { screen: true, en: 'SELECT HEROINE', grid: 'cc-grid', scene: 'shrine', select: this.char === 'marisa' ? 1 : 0 }
     );
   }
 
@@ -485,6 +593,7 @@ class Game {
         screen: true,
         en: 'SELECT DIFFICULTY',
         grid: 'diff-grid',
+        scene: 'mountain',
         select: Math.max(0, DIFFICULTY_KEYS.indexOf(this.difficulty)),
         onSelect: (el) => {
           const k = el?._spec?.diffKey;
@@ -529,15 +638,15 @@ class Game {
     });
 
     const rows = [
-      { ...row('help-move', '左右移动', cap('left') + cap('right')), groupTitle: '移动' },
+      { ...row('help-move', '左右移动', cap('left') + cap('right')), groupTitle: '移动', glyph: '動' },
       row('help-move', '上下移动 / 选择', cap('up') + cap('down')),
       row('help-move', '跳跃', cap('jump') + '<span class="help-tip">二段跳</span>'),
       row('help-move', '加速移动', cap('fast') + '<span class="help-tip">按住</span>'),
-      { ...row('help-act', '射击', cap('shoot')), groupTitle: '战斗' },
+      { ...row('help-act', '射击', cap('shoot')), groupTitle: '战斗', glyph: '戰' },
       row('help-act', '向上射击', cap('up') + '<span class="help-tip">按住打空中</span>'),
       row('help-act', '冲刺', cap('dash') + '<span class="help-tip">无敌</span>'),
       row('help-act', '符卡', cap('cast') + '<span class="help-tip">耗 50 · 火力等级下降</span>'),
-      { ...row('help-sys', '暂停菜单', cap('pause')), groupTitle: '系统' },
+      { ...row('help-sys', '暂停菜单', cap('pause')), groupTitle: '系统', glyph: '系' },
       row('help-sys', '界面', '<span class="help-tip">↑↓ 选择 · ENTER 确认</span>'),
       row('help-sys', '静音', cap('mute')),
       row('help-sys', '退出游戏', cap('quit')),
@@ -547,7 +656,7 @@ class Game {
     this._setPanel('操作说明', '键位可在「设置 → 按键设置」中修改',
       rows,
       '设置页内：S 返回　K 按键设置　R 重开本关　F 帧率',
-      { screen: true, en: 'HOW TO PLAY', grid: 'help-grid', select: rows.length - 1 }
+      { screen: true, en: 'HOW TO PLAY', grid: 'help-grid', scene: 'forest', select: rows.length - 1 }
     );
   }
 
@@ -630,6 +739,7 @@ class Game {
     this._hidePanel();
     this.state = 'play';
     this.levelIndex = index;
+    seedReset?.(); // ?seed= 时把关卡随机序列拨回起点，保证弹幕可复现
     this.stage = new Stage({
       def,
       index,
@@ -655,11 +765,13 @@ class Game {
 
     // 关卡开场对话（Extra 的开场已经在外面播过了）
     const script = isExtra ? [] : (STORY.stages[STAGE_KEY(index)]?.intro || []);
+    const showTip = () => this.hud.tip(def.hint || '', 5.5);
     if (script.length) {
       this.state = 'dialogue';
-      this._playDialogue(script, () => { this.state = 'play'; });
+      this._playDialogue(script, () => { this.state = 'play'; showTip(); });
     } else {
       this.state = 'play';
+      showTip();
     }
   }
 
@@ -685,6 +797,7 @@ class Game {
         this._onBossTrigger();
         break;
       case 'bossStart':
+        seedReset?.(); // 从开战这一帧把随机序列拨回起点，弹幕才有复现意义
         this.hud.banner(data.name || '', data.title || '', 2.0);
         this.audio.play?.('menu');
         break;
@@ -764,27 +877,30 @@ class Game {
       this._saveProgress();
     }
 
-    // E 没有第 6 面：打完第 5 面就是本次挑战的终点
-    if (!this.inExtra && !diff.unlockExtra) {
-      this.state = 'menu';
-      this.hudEl?.classList.add('hidden');
-      this.audio.play?.('win');
-      this._setPanel(
-        'EASY CLEAR',
-        `第 5 面结束 · ${this.char === 'reimu' ? '博丽灵梦' : '雾雨魔理沙'}的调查暂告一段落`,
-        [
-          { label: '返回标题', key: 'ENTER', cls: 'primary', onPick: () => this.showTitle() },
-          { label: '挑战更高难度', key: 'N', hotkey: 'KeyN', onPick: () => this.showDifficultySelect() },
-        ],
-        `EASY 难度没有第 6 面，也不解锁 Extra\n${this.unlockedExtra ? 'Extra 已解锁' : '用 N 及以上难度通关可解锁 Extra Stage'}`
-      );
-      return;
-    }
+    // E 只有前 5 面：进入「未完待续」的 EASY 结局；
+    // N/H/L 打完第 6 面：进入真结局；
+    // EXTRA 胜利：进入 W1 / W2 结局（EXTRA 失败由 _onGameOver 处理，不进结局）。
+    this._playEnding(this.inExtra ? 'extra' : (diff.unlockExtra ? 'main' : 'easy'));
+  }
 
-    this.state = 'dialogue';
-    this._playDialogue(STORY.ending, () => {
-      this.hudEl?.classList.add('hidden');
-      this.showTitle();
+  /**
+   * 结局演出入口。
+   * @param {'easy'|'main'|'extra'} mode E 流程 / N·H·L 流程 / EXTRA 胜利
+   */
+  _playEnding(mode) {
+    const spec = endingFor(this.char, mode);
+    if (!spec) { this.showTitle(); return; }
+    this.state = 'ending';
+    this._pendingTimeout = 0;
+    this._hidePanel();
+    this.dialogue?.stop?.();
+    this.hudEl?.classList.add('hidden');
+    this.hud.hideBossBar();
+    this.hud.clearBanner();
+    this.audio.setMusic?.(false);
+    this.audio.play?.('win');
+    this.ending.play(spec, {
+      onFinish: () => this.showTitle(),
     });
   }
 
@@ -795,7 +911,7 @@ class Game {
     this._setPanel('游戏结束', `残机用尽 · ${this.inExtra ? 'EXTRA STAGE' : 'STAGE ' + (this.levelIndex + 1)}`, [
       { label: '重新挑战本关', key: 'ENTER', cls: 'primary', onPick: () => this._retryStage() },
       { label: '返回标题', key: 'ESC', onPick: () => this.showTitle() },
-    ], '');
+    ], this.inExtra ? 'EXTRA 关失败不会触发结局\n整理好状态，再挑战一次' : '');
   }
 
   _retryStage() {
@@ -842,6 +958,17 @@ class Game {
         this._pendingTimeout = 0;
         fn();
       }
+    }
+
+    // 结局演出：优先处理，避免按键漏到菜单 / 关卡
+    if (this.state === 'ending') {
+      this.ending.update(dt);
+      if (this.input.pressed('confirm') || this.input.pressed('jump') || this.input.pressed('shoot')) {
+        this.ending.advance();
+      }
+      if (this.input.pressed('pause')) this.ending.skipToCard();
+      this.input.endFrame();
+      return;
     }
 
     // 对话优先
@@ -922,7 +1049,7 @@ class Game {
     const rows = [
       /* ---- 声音 ---- */
       {
-        group: 'sound', groupTitle: '声音',
+        group: 'sound', groupTitle: '声音', glyph: '音',
         cls: 'set-row', key: 'M', hotkey: 'KeyM',
         html: row('全部静音', sw(!!this.audio.muted), 'M'),
         onPick: (i) => {
@@ -970,7 +1097,7 @@ class Game {
 
       /* ---- 画面 ---- */
       {
-        group: 'display', groupTitle: '画面',
+        group: 'display', groupTitle: '画面', glyph: '畫',
         cls: 'set-row', key: 'H', hotkey: 'KeyH',
         html: row('屏幕震动', sw(this.screenShake), 'H'),
         onPick: (i) => {
@@ -993,7 +1120,7 @@ class Game {
 
       /* ---- 游戏 ---- */
       {
-        group: 'game', groupTitle: '游戏',
+        group: 'game', groupTitle: '游戏', glyph: '戲',
         cls: 'set-row', key: '← →',
         html: row('残机', pips, '← →'),
         adjust: (d) => this._adjustLives(d, origin),
@@ -1027,7 +1154,7 @@ class Game {
 
     this._setPanel('设置', '即时生效，自动保存 · 残机从下一局开始生效', rows,
       '↑ ↓ 选择　← → 调整　ENTER 切换　ESC 返回',
-      { screen: true, en: 'OPTIONS', grid: 'set-grid', select: index }
+      { screen: true, en: 'OPTIONS', grid: 'set-grid', scene: 'moon', select: index }
     );
   }
 
@@ -1060,9 +1187,9 @@ class Game {
     const cap = this._captureAction;
 
     const CATEGORIES = [
-      { id: 'kb-move', title: '移动', actions: ['left', 'right', 'up', 'down', 'fast'] },
-      { id: 'kb-act', title: '战斗', actions: ['jump', 'shoot', 'dash', 'cast'] },
-      { id: 'kb-sys', title: '系统', actions: ['confirm', 'pause', 'restart', 'mute', 'quit'] },
+      { id: 'kb-move', title: '移动', glyph: '動', actions: ['left', 'right', 'up', 'down', 'fast'] },
+      { id: 'kb-act', title: '战斗', glyph: '戰', actions: ['jump', 'shoot', 'dash', 'cast'] },
+      { id: 'kb-sys', title: '系统', glyph: '系', actions: ['confirm', 'pause', 'restart', 'mute', 'quit'] },
     ];
 
     const rows = [];
@@ -1074,7 +1201,7 @@ class Game {
         const capturing = cap === def.action;
         rowAt.set(action, rows.length);
         rows.push({
-          group: cat.id, groupTitle: cat.title,
+          group: cat.id, groupTitle: cat.title, glyph: cat.glyph,
           action: def.action,
           cls: 'set-row kb-row' + (capturing ? ' capturing' : ''),
           html: `<span class="set-label">${def.label}</span>` +
@@ -1120,7 +1247,7 @@ class Game {
       note || (cap ? '按下要绑定的新键…' : '点选一项，再按下新键；重复的键会自动互换'),
       rows,
       cap ? '按任意键绑定　ESC 取消　Del 恢复默认' : '↑ ↓ 选择　ENTER 改键　Del 恢复默认　ESC 返回',
-      { screen: true, en: 'KEY CONFIG', grid: 'kb-grid', noDirect: true, page: 'keybinds', select }
+      { screen: true, en: 'KEY CONFIG', grid: 'kb-grid', scene: 'mansion', noDirect: true, page: 'keybinds', select }
     );
   }
 
@@ -1257,6 +1384,12 @@ class Game {
 
   render(alpha) {
     const ctx = this.renderer.begin('#05030a');
+
+    if (this.state === 'ending') {
+      this.ending.draw(ctx);
+      this.renderer.present(this.t);
+      return;
+    }
 
     if (this.stage && (this.state === 'play' || this.state === 'paused' || this.state === 'clear' || this.state === 'dialogue' || this.state === 'gameover')) {
       this.stage.draw(ctx, alpha);

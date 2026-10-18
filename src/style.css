@@ -495,6 +495,34 @@ body {
   opacity: .9;
 }
 
+/* ---------- 关卡提示 ---------- */
+.stage-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--s) * 126px);
+  transform: translateX(-50%) translateY(calc(var(--s) * 10px));
+  max-width: calc(var(--s) * 720px);
+  padding: calc(var(--s) * 9px) calc(var(--s) * 20px);
+  border-radius: calc(var(--s) * 999px);
+  border: 1px solid rgba(255, 214, 128, .26);
+  background: rgba(14, 9, 18, .62);
+  color: #f7e8cd;
+  font-size: calc(var(--s) * 13px);
+  letter-spacing: .16em;
+  line-height: 1.5;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .45s ease, transform .45s ease;
+  backdrop-filter: blur(calc(var(--s) * 2px));
+  -webkit-backdrop-filter: blur(calc(var(--s) * 2px));
+}
+.stage-tip.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 /* ---------- 剧情对白 ---------- */
 #dialogue { position: absolute; inset: 0; pointer-events: auto; }
 
@@ -1842,3 +1870,938 @@ body {
   color: rgba(242, 233, 216, .34);
 }
 
+/* ============================================================
+   选择界面改版：场景化底图 + 去卡片化玻璃层
+   ------------------------------------------------------------
+   旧版所有子页共用「一块不透明暗紫方卡 + backdrop 模糊」，
+   观感接近系统对话框 / 小游戏面板。改版后：
+     1) 每张选择页一套独立景别（main.js SCENES → src/art/gen/bg）；
+     2) 面板本身透明，只留中央柔光晕，四周场景透出来；
+     3) 分组卡改成薄玻璃（细描金边 + 大字水印），层次靠光而不是黑块。
+   本章节的规则都写在文件末尾，用来覆盖上面的旧版样式。
+   ============================================================ */
+
+/* ---------- 场景层 ---------- */
+.ov-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ov-bg-img {
+  position: absolute;
+  inset: -3%;
+  background-size: cover;
+  background-position: center 44%;
+  filter: saturate(1.02) brightness(var(--scene-bright, 1)) contrast(1.03);
+  /* 淡入负责「还没解码完不要闪黑」，推镜负责呼吸感 */
+  animation:
+    ovSceneIn .55s ease both,
+    ovSceneDrift 70s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+@keyframes ovSceneIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+/* 极慢的推镜，让静止背景有呼吸感 */
+@keyframes ovSceneDrift {
+  0%   { transform: scale(1.02) translate3d(-.7%, .4%, 0); }
+  100% { transform: scale(1.10) translate3d(.9%, -.7%, 0); }
+}
+/* 上暗压标题、下暗压页脚，中段留亮给场景 */
+.ov-bg-grade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(5, 3, 10, .74) 0%,
+    rgba(5, 3, 10, .22) 18%,
+    rgba(5, 3, 10, .10) 56%,
+    rgba(5, 3, 10, .58) 100%);
+}
+/* 中央柔光晕：只压中间，四角场景保持可见 */
+.ov-bg-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 58% 62% at 50% 48%,
+      rgba(5, 3, 10, var(--veil, .38)) 0%,
+      rgba(5, 3, 10, calc(var(--veil, .38) * .72)) 42%,
+      rgba(5, 3, 10, calc(var(--veil, .38) * .14)) 72%,
+      rgba(5, 3, 10, calc(var(--veil, .38) * .68)) 100%),
+    radial-gradient(ellipse 132% 102% at 50% 50%, transparent 44%, rgba(2, 1, 6, .52) 100%);
+}
+/* 每套景别各自的明度 / 压暗量：夜景要提亮，日景要压住免得抢字 */
+.overlay[data-scene] { --veil: .40; --scene-bright: 1; }
+.overlay[data-scene="moon"]     { --veil: .24; --scene-bright: 1.42; }
+.overlay[data-scene="mansion"]  { --veil: .30; --scene-bright: 1.20; }
+.overlay[data-scene="forest"]   { --veil: .34; --scene-bright: 1.12; }
+.overlay[data-scene="shrine"]   { --veil: .46; --scene-bright: 1.00; }
+.overlay[data-scene="mountain"] { --veil: .48; --scene-bright: .94; }
+/* 细颗粒：打散渐变 banding，避免「纯色玻璃」的塑料感 */
+.ov-bg-grain {
+  position: absolute;
+  inset: 0;
+  opacity: .06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: calc(var(--s) * 160px) calc(var(--s) * 160px);
+}
+
+/* ---------- 前景粒子：花瓣 / 光点 / 余烬 ---------- */
+.ov-bg-motes { position: absolute; inset: 0; }
+.ov-bg-motes i {
+  position: absolute;
+  left: var(--x, 50%);
+  top: -6%;
+  width: var(--sz, 5px);
+  height: var(--sz, 5px);
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(circle,
+    rgba(255, 255, 255, .95) 0%, rgba(255, 224, 238, .6) 45%, transparent 72%);
+  box-shadow: 0 0 calc(var(--s) * 9px) rgba(255, 205, 230, .7);
+  animation: ovMote var(--dur, 18s) linear var(--delay, 0s) infinite;
+  will-change: transform, opacity;
+}
+.ov-bg[data-mote="petal"] .ov-bg-motes i {
+  border-radius: 62% 4% 62% 4%;
+  background: linear-gradient(140deg, #ffe2ee, #ff9ec4);
+  box-shadow: 0 0 calc(var(--s) * 7px) rgba(255, 140, 175, .5);
+}
+.ov-bg[data-mote="ember"] .ov-bg-motes i {
+  background: radial-gradient(circle,
+    #ffe0ad 0%, rgba(255, 110, 70, .85) 45%, transparent 74%);
+  box-shadow: 0 0 calc(var(--s) * 11px) rgba(255, 110, 60, .55);
+}
+@keyframes ovMote {
+  0%   { transform: translate3d(0, 0, 0) rotate(0deg); opacity: 0; }
+  10%  { opacity: .9; }
+  80%  { opacity: .66; }
+  100% { transform: translate3d(var(--drift, 30px), calc(var(--s) * 800px), 0) rotate(240deg); opacity: 0; }
+}
+
+/* ---------- 右缘竖排题签 + 四角细框 ---------- */
+.ov-bg-caption {
+  position: absolute;
+  right: calc(var(--s) * 30px);
+  top: 50%;
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
+  text-align: center;
+  color: rgba(242, 210, 75, .40);
+  text-shadow: 0 0 calc(var(--s) * 12px) rgba(0, 0, 0, .85);
+}
+.ov-bg-caption span {
+  font-size: calc(var(--s) * 12px);
+  letter-spacing: .46em;
+}
+.ov-bg-caption em {
+  display: block;
+  margin-block-start: calc(var(--s) * 14px);
+  font-family: "Optima", "Palatino Linotype", serif;
+  font-style: normal;
+  font-size: calc(var(--s) * 8px);
+  letter-spacing: .38em;
+  color: rgba(242, 233, 216, .22);
+}
+.ov-corner {
+  position: absolute;
+  width: calc(var(--s) * 26px);
+  height: calc(var(--s) * 26px);
+  border: 0 solid rgba(242, 210, 75, .22);
+}
+.ov-corner.tl { top: calc(var(--s) * 18px); left: calc(var(--s) * 18px); border-top-width: 1px; border-left-width: 1px; }
+.ov-corner.tr { top: calc(var(--s) * 18px); right: calc(var(--s) * 18px); border-top-width: 1px; border-right-width: 1px; }
+.ov-corner.bl { bottom: calc(var(--s) * 18px); left: calc(var(--s) * 18px); border-bottom-width: 1px; border-left-width: 1px; }
+.ov-corner.br { bottom: calc(var(--s) * 18px); right: calc(var(--s) * 18px); border-bottom-width: 1px; border-right-width: 1px; }
+
+/* 有场景时不再对 canvas 做 backdrop 模糊（省一层全屏合成） */
+.overlay[data-scene].screen-mode { backdrop-filter: none; }
+
+/* ---------- 面板：从「大黑卡」改成无底的排版容器 ---------- */
+.overlay.screen-mode .panel {
+  z-index: 1;
+  padding: calc(var(--s) * 14px) calc(var(--s) * 30px) calc(var(--s) * 16px);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.overlay.screen-mode .panel::before { display: none; }
+
+/* ---------- 分组卡：薄玻璃 + 描金边 + 大字水印 ---------- */
+.overlay.screen-mode .set-group {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  padding: calc(var(--s) * 14px) calc(var(--s) * 14px) calc(var(--s) * 12px);
+  border: 1px solid rgba(242, 210, 75, .15);
+  border-radius: calc(var(--s) * 6px);
+  background:
+    linear-gradient(166deg,
+      rgba(32, 18, 44, .62) 0%,
+      rgba(14, 8, 23, .56) 56%,
+      rgba(8, 5, 15, .64) 100%);
+  backdrop-filter: blur(10px) saturate(1.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .06),
+    0 calc(var(--s) * 16px) calc(var(--s) * 38px) rgba(0, 0, 0, .30);
+}
+.overlay.screen-mode .set-group::after {
+  content: attr(data-glyph);
+  position: absolute;
+  right: calc(var(--s) * 8px);
+  bottom: calc(var(--s) * -18px);
+  font-size: calc(var(--s) * 88px);
+  line-height: 1;
+  color: rgba(242, 210, 75, .05);
+  pointer-events: none;
+}
+.overlay.screen-mode .set-group-title { margin-bottom: calc(var(--s) * 12px); }
+/* 标题下的一道渐隐细线，横贯卡片 */
+.overlay.screen-mode .set-group-title::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--s) * -7px);
+  height: 1px;
+  background: linear-gradient(90deg, rgba(242, 210, 75, .26), rgba(242, 210, 75, .04) 72%, transparent);
+}
+
+/* ---------- 设置页：左声音（跨两行）/ 右画面 + 游戏，三张卡上下对齐 ---------- */
+.overlay.screen-mode .set-grid {
+  grid-template-columns: minmax(0, 1.06fr) minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: calc(var(--s) * 12px) calc(var(--s) * 14px);
+  align-items: stretch;
+}
+.overlay.screen-mode .set-grid > .set-group[data-g="sound"] {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+.overlay.screen-mode .set-grid > .set-group[data-g="display"] { grid-column: 2; grid-row: 1; }
+.overlay.screen-mode .set-grid > .set-group[data-g="game"] { grid-column: 2; grid-row: 2; }
+/* 行高按列均分，长短卡都不会在底部留一截空 */
+.overlay.screen-mode .set-grid .set-rows {
+  flex: 1 1 auto;
+  justify-content: space-evenly;
+}
+/* 三张选项卡给足最小高度：内容自然高度约 179，低于它会被 overflow 裁掉 */
+.overlay.screen-mode .set-grid > .set-group { min-height: calc(var(--s) * 180px); }
+.overlay.screen-mode .set-grid > .set-group[data-g$="foot"] { min-height: 0; }
+.overlay.screen-mode .set-rows > .set-row + .set-row {
+  border-top: 1px solid rgba(255, 255, 255, .045);
+}
+
+/* ---------- 选中态：描金左柱，不再是一条红底 ---------- */
+.overlay.screen-mode .btn:hover,
+.overlay.screen-mode .btn.sel {
+  color: #fff;
+  background: linear-gradient(90deg,
+    rgba(255, 168, 196, .15) 0%,
+    rgba(242, 210, 75, .05) 52%,
+    rgba(255, 255, 255, .015) 100%);
+  border-color: rgba(242, 210, 75, .34);
+  box-shadow:
+    inset calc(var(--s) * 2px) 0 0 rgba(242, 210, 75, .92),
+    0 0 calc(var(--s) * 20px) rgba(232, 54, 79, .10);
+}
+
+/* ---------- 热键提示：缩成小键帽，右侧对齐 ---------- */
+.overlay.screen-mode .set-row .k {
+  flex: none;
+  margin-left: calc(var(--s) * 4px);
+  min-width: calc(var(--s) * 20px);
+  padding: calc(var(--s) * 1px) calc(var(--s) * 4px);
+  border-radius: calc(var(--s) * 3px);
+  border: 1px solid rgba(242, 210, 75, .13);
+  background: rgba(0, 0, 0, .16);
+  font-size: calc(var(--s) * 9px);
+  line-height: 1.4;
+  letter-spacing: .02em;
+  text-align: center;
+  color: rgba(242, 210, 75, .55);
+}
+
+/* ---------- 页脚：从整条横杠收成居中小键 ---------- */
+.overlay.screen-mode .set-foot-btn,
+.overlay.screen-mode .back-ghost {
+  justify-self: center;
+  width: min(calc(var(--s) * 380px), 100%);
+  padding: calc(var(--s) * 8px) calc(var(--s) * 16px);
+  border-radius: calc(var(--s) * 3px);
+  border: 1px solid rgba(242, 233, 216, .13);
+  background: rgba(8, 5, 15, .46);
+  backdrop-filter: blur(8px);
+}
+.overlay.screen-mode .set-group[data-g$="foot"] .set-rows > .btn:only-child {
+  width: min(calc(var(--s) * 380px), 100%);
+  justify-self: center;
+}
+.overlay.screen-mode .hint {
+  color: rgba(242, 233, 216, .40);
+  text-shadow: 0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .9);
+}
+
+/* ---------- 难度卡：当前标记收回卡内 ---------- */
+.overlay.screen-mode .diff-card { padding-top: calc(var(--s) * 34px); }
+.overlay.screen-mode .diff-card .dc-now { top: calc(var(--s) * 9px); }
+.overlay.screen-mode .diff-card .dc-glyph { margin-top: calc(var(--s) * 2px); }
+.overlay.screen-mode .diff-detail {
+  border-radius: calc(var(--s) * 4px);
+  border-color: rgba(242, 210, 75, .16);
+  background: rgba(8, 5, 15, .50);
+  backdrop-filter: blur(8px);
+}
+.overlay.screen-mode .diff-detail:hover { background: rgba(8, 5, 15, .50); }
+
+
+
+/* ============================================================
+   可读性加固：场景提亮之后，靠「软光斑」而不是「方卡」压住内容区
+   ============================================================ */
+/* 面板本身完全透明：压暗交给中央椭圆光晕和上下渐层，
+   否则面板矩形边界会在亮景上切出一条直边 */
+.overlay.screen-mode .panel {
+  background: none;
+}
+/* 分组玻璃加厚一档：字要压得住景 */
+.overlay.screen-mode .set-group {
+  background: linear-gradient(166deg,
+    rgba(30, 17, 42, .80),
+    rgba(13, 8, 22, .78) 52%,
+    rgba(7, 4, 13, .84));
+  backdrop-filter: blur(14px) saturate(1.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .05),
+    0 calc(var(--s) * 10px) calc(var(--s) * 26px) rgba(0, 0, 0, .30);
+}
+/* 难度 / 主角卡同样加底，否则亮景下整块发白 */
+.overlay.screen-mode .diff-card {
+  background:
+    radial-gradient(ellipse 92% 60% at 50% 0%, rgba(var(--glow, 255, 158, 203), .14), transparent 64%),
+    linear-gradient(180deg, rgba(20, 12, 30, .62), rgba(6, 3, 12, .74) 62%, rgba(4, 2, 9, .82));
+  backdrop-filter: blur(10px) saturate(1.04);
+}
+.overlay.screen-mode .diff-card:hover,
+.overlay.screen-mode .diff-card.sel {
+  background:
+    radial-gradient(ellipse 92% 62% at 50% 0%, rgba(var(--glow, 255, 158, 203), .26), transparent 68%),
+    linear-gradient(180deg, rgba(26, 16, 38, .66), rgba(8, 4, 15, .76) 62%, rgba(4, 2, 9, .84));
+}
+.overlay.screen-mode .cc-card {
+  background:
+    radial-gradient(ellipse 88% 58% at 50% 8%, rgba(var(--glow, 255, 158, 203), .14), transparent 66%),
+    linear-gradient(180deg, rgba(20, 12, 30, .58), rgba(6, 3, 12, .78));
+  backdrop-filter: blur(10px) saturate(1.04);
+}
+/* 顶栏标题再压一点暗，避免亮景吃掉字 */
+.overlay.screen-mode .ov-bg-grade {
+  background: linear-gradient(180deg,
+    rgba(5, 3, 10, .86) 0%,
+    rgba(5, 3, 10, .58) 15%,
+    rgba(5, 3, 10, .16) 32%,
+    rgba(5, 3, 10, .08) 58%,
+    rgba(5, 3, 10, .60) 100%);
+}
+
+
+/* ============================================================
+   可读性：文字对比度加固
+   ------------------------------------------------------------
+   720p 投影 + 满月 / 樱花 / 夕照等亮场景下，次级信息容易糊进底图。
+   原则：
+     1) 次级文字抬到 .72 以上，关键数字接近实色；
+     2) 一律补深色投影，把字从亮底上「拔」出来；
+     3) 只改颜色与阴影，不动字号、不改版式，避免重排。
+   ============================================================ */
+
+/* ---------- 战斗 HUD ---------- */
+.pl {
+  opacity: 1;
+  text-shadow: 0 1px calc(var(--s) * 4px) rgba(0, 0, 0, .7);
+}
+.pdim {
+  color: rgba(242, 233, 216, .76);
+  text-shadow:
+    0 0 calc(var(--s) * 6px) rgba(0, 0, 0, .85),
+    0 1px 1px rgba(0, 0, 0, .7);
+}
+.pdim b { color: rgba(242, 233, 216, .95); }
+.plv { text-shadow: 0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .75), 0 1px 1px rgba(0, 0, 0, .6); }
+.plv b { opacity: .88; }
+.sn {
+  opacity: 1;
+  text-shadow: 0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .8), 0 1px 1px rgba(0, 0, 0, .6);
+}
+.tm {
+  color: rgba(242, 233, 216, .95);
+  text-shadow: 0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .8), 0 1px 1px rgba(0, 0, 0, .6);
+}
+.hud-settings { color: rgba(242, 233, 216, .92); }
+.hud-settings::before { opacity: .95; }
+
+/* ---------- Boss 名条：压在满月上时最容易糊 ---------- */
+/* 底衬放大一圈再用渐隐收边，避免在亮景上切出一条黑方块 */
+#bossBar { background: none; }
+#bossBar::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--s) * -44px) calc(var(--s) * -104px);
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(ellipse 50% 50% at 50% 50%,
+    rgba(4, 2, 9, .86) 0%,
+    rgba(4, 2, 9, .72) 32%,
+    rgba(4, 2, 9, .46) 58%,
+    rgba(4, 2, 9, .18) 82%,
+    rgba(4, 2, 9, 0) 100%);
+}
+.boss-head {
+  color: #ffdaea;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, .95),
+    0 0 calc(var(--s) * 6px) rgba(0, 0, 0, .90),
+    0 0 calc(var(--s) * 16px) rgba(0, 0, 0, .70),
+    0 0 calc(var(--s) * 22px) rgba(255, 94, 168, .30);
+}
+#bossPhase {
+  color: #ffe4a0;
+  opacity: 1;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, .95),
+    0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .85);
+}
+
+/* ---------- 选择界面：标题说明、卡面注脚、页脚提示 ---------- */
+.overlay.screen-mode #subtitle {
+  color: rgba(255, 240, 224, .84);
+  text-shadow:
+    0 1px calc(var(--s) * 4px) rgba(0, 0, 0, .85),
+    0 0 calc(var(--s) * 12px) rgba(0, 0, 0, .55);
+}
+.dc-meta { color: rgba(242, 233, 216, .80); }
+.dc-key {
+  color: rgba(242, 233, 216, .92);
+  border-color: rgba(242, 233, 216, .28);
+  background: rgba(0, 0, 0, .42);
+}
+.dd-m,
+.dd-blurb { color: rgba(242, 233, 216, .80); }
+.cc-note { color: rgba(242, 233, 216, .86); }
+.cc-key {
+  color: rgba(242, 233, 216, .96);
+  border-color: rgba(242, 233, 216, .34);
+  background: rgba(0, 0, 0, .50);
+}
+.help-tip { color: rgba(242, 233, 216, .68); }
+.overlay.screen-mode .back-ghost {
+  color: rgba(242, 233, 216, .82);
+  border-color: rgba(242, 233, 216, .18);
+  background: rgba(6, 3, 12, .58);
+}
+.overlay.screen-mode .set-row .k {
+  color: rgba(242, 210, 75, .86);
+  border-color: rgba(242, 210, 75, .32);
+  background: rgba(0, 0, 0, .34);
+}
+.overlay.screen-mode .btn .k { color: rgba(242, 210, 75, .86); }
+.seg b { color: rgba(242, 233, 216, .74); }
+.ov-bg-caption { color: rgba(242, 210, 75, .64); }
+.ov-bg-caption em { color: rgba(242, 233, 216, .40); }
+
+/* ---------- 标题页 ---------- */
+.title-mode .btn { color: rgba(255, 242, 226, .86); }
+.title-mode .btn .en { opacity: .72; }
+.title-mode .hint { color: rgba(255, 232, 208, .72); }
+.title-mode .title-ver { color: rgba(255, 228, 196, .58); }
+.title-mode .btn.locked .label { color: rgba(216, 208, 196, .62); }
+.title-mode .btn.locked .en { color: rgba(255, 211, 154, .34); }
+
+/* ---------- 对话：翻页提示闪到最暗时也别消失 ---------- */
+.dlg-next { color: rgba(242, 233, 216, .72); }
+@keyframes dlgBlink {
+  0%, 100% { opacity: .42; }
+  50%      { opacity: .95; }
+}
+
+/* 主角卡再压一档：立绘要浮在明确的黑底上，而不是透出日落 */
+.overlay.screen-mode .cc-card {
+  background:
+    radial-gradient(ellipse 88% 58% at 50% 6%, rgba(var(--glow, 255, 158, 203), .16), transparent 62%),
+    linear-gradient(180deg, rgba(14, 8, 22, .82), rgba(5, 3, 11, .90));
+}
+.overlay.screen-mode .cc-card.sel {
+  background:
+    radial-gradient(ellipse 88% 58% at 50% 6%, rgba(var(--glow, 255, 158, 203), .22), transparent 64%),
+    linear-gradient(180deg, rgba(22, 12, 32, .84), rgba(6, 3, 13, .91));
+}
+
+/* 亮景下的文字对比度补足 */
+.overlay.screen-mode #subtitle {
+  color: rgba(242, 233, 216, .68);
+  text-shadow: 0 0 calc(var(--s) * 12px) rgba(0, 0, 0, .95), 0 1px 0 rgba(0, 0, 0, .8);
+}
+.overlay.screen-mode #title {
+  text-shadow:
+    0 0 calc(var(--s) * 22px) rgba(0, 0, 0, .85),
+    0 0 calc(var(--s) * 6px) rgba(0, 0, 0, .7),
+    0 1px 0 rgba(0, 0, 0, .8);
+}
+.overlay.screen-mode .set-foot-btn,
+.overlay.screen-mode .back-ghost {
+  background: rgba(8, 5, 15, .62);
+  border-color: rgba(242, 233, 216, .18);
+}
+
+
+/* ---------- 页脚提示 / 当前难度行：压在亮景上仍要看得清 ---------- */
+/* 说明行与操作提示最后再抬一档：场景底层可能正好是水面、瀑布这类亮面，
+   单靠投影不够，字色本身也要有底气。选择器多带 .panel，避免被前文覆盖。 */
+.overlay.screen-mode .panel #subtitle {
+  color: rgba(255, 240, 224, .86);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, .95),
+    0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .70);
+}
+.overlay.screen-mode .panel .hint {
+  color: rgba(242, 233, 216, .74);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, .95),
+    0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .90);
+}
+.overlay.screen-mode .panel .back-ghost,
+.overlay.screen-mode .panel .set-foot-btn {
+  color: rgba(242, 233, 216, .92);
+  background: rgba(6, 3, 12, .68);
+  border-color: rgba(242, 233, 216, .22);
+}
+
+/* ============================================================
+   结局演出（ending.js）
+   背景 / 立绘 / 粒子由 canvas 绘制；这里负责字幕、结局卡与装饰。
+   ============================================================ */
+#ending {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  /* 背景与立绘由 canvas 绘制，这里必须透明，否则会盖住结局画面 */
+  background: transparent;
+  pointer-events: auto;
+  cursor: pointer;
+  --ed-glow: 255, 112, 130;
+}
+
+/* 电影黑边 */
+.ed-letterbox {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: calc(var(--s) * 54px);
+  z-index: 6;
+  background: #030208;
+  pointer-events: none;
+}
+.ed-letterbox.top { top: 0; }
+.ed-letterbox.bottom { bottom: 0; }
+.ed-letterbox.top::after,
+.ed-letterbox.bottom::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(242, 210, 75, .16);
+  box-shadow: 0 0 calc(var(--s) * 10px) rgba(242, 210, 75, .18);
+}
+.ed-letterbox.top::after { bottom: 0; }
+.ed-letterbox.bottom::after { top: 0; }
+
+/* 顶部品牌 / 章号 */
+.ed-brand {
+  position: absolute;
+  left: calc(var(--s) * 38px);
+  top: calc(var(--s) * 17px);
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--s) * 9px);
+  font-size: calc(var(--s) * 10px);
+  letter-spacing: .26em;
+  color: rgba(242, 233, 216, .52);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.ed-brand-mark {
+  font-size: calc(var(--s) * 15px);
+  line-height: 1;
+  color: rgba(242, 210, 75, .92);
+  text-shadow: 0 0 calc(var(--s) * 12px) rgba(242, 210, 75, .55);
+}
+.ed-brand i {
+  font-style: normal;
+  letter-spacing: .14em;
+  color: rgba(242, 233, 216, .26);
+  margin-left: calc(var(--s) * 4px);
+}
+.ed-chapter {
+  position: absolute;
+  right: calc(var(--s) * 38px);
+  top: calc(var(--s) * 17px);
+  z-index: 7;
+  font-size: calc(var(--s) * 10px);
+  letter-spacing: .34em;
+  color: rgba(242, 210, 75, .58);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* SKIP / 继续提示 */
+.ed-skip {
+  position: absolute;
+  right: calc(var(--s) * 30px);
+  bottom: calc(var(--s) * 15px);
+  z-index: 9;
+  margin: 0;
+  padding: calc(var(--s) * 6px) calc(var(--s) * 15px);
+  font-family: var(--serif);
+  font-size: calc(var(--s) * 10px);
+  letter-spacing: .26em;
+  color: rgba(242, 233, 216, .55);
+  background: rgba(6, 4, 12, .5);
+  border: 1px solid rgba(242, 210, 75, .22);
+  border-radius: calc(var(--s) * 2px);
+  cursor: pointer;
+  transition: color .2s, border-color .2s, background .2s;
+  backdrop-filter: blur(calc(var(--s) * 4px));
+}
+.ed-skip:hover {
+  color: var(--gold);
+  border-color: rgba(242, 210, 75, .6);
+  background: rgba(20, 12, 6, .66);
+}
+.ed-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--s) * 23px);
+  transform: translateX(-50%);
+  z-index: 9;
+  font-size: calc(var(--s) * 10px);
+  letter-spacing: .3em;
+  color: rgba(242, 233, 216, .46);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .5s ease;
+  white-space: nowrap;
+  animation: edPromptPulse 2.2s ease-in-out infinite;
+}
+.ed-prompt.show { opacity: 1; }
+@keyframes edPromptPulse {
+  0%, 100% { text-shadow: 0 0 calc(var(--s) * 4px) rgba(0, 0, 0, .9); }
+  50%      { text-shadow: 0 0 calc(var(--s) * 12px) rgba(242, 210, 75, .35); }
+}
+
+/* 字幕 */
+.ed-lines {
+  position: absolute;
+  left: calc(var(--s) * 96px);
+  bottom: calc(var(--s) * 106px);
+  width: calc(100% - var(--s) * 192px);
+  z-index: 5;
+  pointer-events: none;
+  transition: opacity .3s ease, transform .3s ease;
+}
+#edLines.hidden {
+  display: block !important;
+  opacity: 0;
+  transform: translateY(calc(var(--s) * 8px));
+}
+.ed-lines::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--s) * -26px);
+  top: calc(var(--s) * 3px);
+  bottom: calc(var(--s) * 8px);
+  width: 1px;
+  background: linear-gradient(180deg, rgba(242, 210, 75, .55), rgba(242, 210, 75, .05));
+  box-shadow: 0 0 calc(var(--s) * 8px) rgba(242, 210, 75, .22);
+}
+.ed-speaker {
+  min-height: calc(var(--s) * 20px);
+  margin-bottom: calc(var(--s) * 9px);
+  font-size: calc(var(--s) * 14px);
+  letter-spacing: .3em;
+  color: rgba(242, 210, 75, .94);
+  text-shadow: 0 0 calc(var(--s) * 16px) rgba(242, 210, 75, .35), 0 1px 2px rgba(0, 0, 0, .9);
+}
+.ed-text {
+  max-width: calc(var(--s) * 1000px);
+  min-height: calc(var(--s) * 86px);
+  font-size: calc(var(--s) * 25px);
+  line-height: 1.76;
+  letter-spacing: .055em;
+  color: rgba(247, 239, 225, .95);
+  white-space: pre-wrap;
+  text-shadow:
+    0 1px calc(var(--s) * 3px) rgba(0, 0, 0, .95),
+    0 0 calc(var(--s) * 26px) rgba(0, 0, 0, .8);
+}
+.ed-lines.narrator .ed-speaker { display: none; }
+.ed-lines.narrator .ed-text {
+  font-size: calc(var(--s) * 23px);
+  color: rgba(242, 233, 216, .88);
+}
+.ed-lines.line-in .ed-text {
+  animation: edLineIn .5s cubic-bezier(.2, .8, .2, 1) both;
+}
+.ed-lines.line-in .ed-speaker {
+  animation: edLineIn .4s ease both;
+}
+@keyframes edLineIn {
+  from { opacity: 0; transform: translateY(calc(var(--s) * 8px)); filter: blur(calc(var(--s) * 3px)); }
+  to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+/* 结局卡 */
+.ed-card {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--s) * 60px) calc(var(--s) * 40px);
+  text-align: center;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .9s ease;
+}
+.ed-card.show { opacity: 1; visibility: visible; }
+.ed-card-glow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 52% 44% at 50% 44%, rgba(var(--ed-glow), .16), transparent 68%),
+    radial-gradient(ellipse 80% 60% at 50% 100%, rgba(var(--ed-glow), .07), transparent 70%);
+  pointer-events: none;
+}
+.ed-card-head {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--s) * 16px);
+  margin-bottom: calc(var(--s) * 16px);
+}
+.ed-card-rule {
+  width: calc(var(--s) * 70px);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(242, 210, 75, .55), transparent);
+}
+.ed-card-heading {
+  font-size: calc(var(--s) * 11px);
+  letter-spacing: .44em;
+  text-indent: .44em;
+  color: rgba(242, 210, 75, .8);
+  white-space: nowrap;
+}
+.ed-card-no {
+  font-family: var(--serif);
+  font-size: calc(var(--s) * 116px);
+  line-height: .82;
+  letter-spacing: .03em;
+  color: transparent;
+  background: linear-gradient(180deg, rgba(255, 246, 218, .98), rgba(242, 210, 75, .64) 58%, rgba(154, 104, 40, .48));
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 0 calc(var(--s) * 26px) rgba(242, 210, 75, .3));
+}
+#ending.is-w .ed-card-no {
+  font-size: calc(var(--s) * 98px);
+  letter-spacing: .02em;
+}
+.ed-card-title {
+  margin-top: calc(var(--s) * 18px);
+  font-size: calc(var(--s) * 56px);
+  font-weight: 400;
+  line-height: 1.18;
+  letter-spacing: .2em;
+  text-indent: .2em;
+  color: rgba(251, 244, 230, .98);
+  text-shadow:
+    0 0 calc(var(--s) * 30px) rgba(var(--ed-glow), .28),
+    0 2px calc(var(--s) * 6px) rgba(0, 0, 0, .75);
+}
+.ed-card-title-cn {
+  margin-top: calc(var(--s) * 8px);
+  font-size: calc(var(--s) * 15px);
+  letter-spacing: .56em;
+  text-indent: .56em;
+  color: rgba(242, 210, 75, .82);
+}
+.ed-card-en {
+  margin-top: calc(var(--s) * 14px);
+  font-size: calc(var(--s) * 10px);
+  letter-spacing: .36em;
+  text-indent: .36em;
+  color: rgba(242, 233, 216, .4);
+}
+.ed-card-meta {
+  margin-top: calc(var(--s) * 34px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--s) * 11px);
+}
+.ed-card-char {
+  font-size: calc(var(--s) * 11px);
+  letter-spacing: .3em;
+  color: rgba(242, 233, 216, .52);
+}
+.ed-card-quote {
+  max-width: calc(var(--s) * 720px);
+  font-size: calc(var(--s) * 16px);
+  line-height: 1.7;
+  letter-spacing: .08em;
+  color: rgba(247, 239, 225, .84);
+  text-shadow: 0 1px calc(var(--s) * 3px) rgba(0, 0, 0, .8);
+}
+.ed-card.show .ed-card-head { animation: edCardIn .8s cubic-bezier(.2, .8, .2, 1) both; }
+.ed-card.show .ed-card-no { animation: edCardNoIn 1s cubic-bezier(.16, .84, .24, 1) both .08s; }
+.ed-card.show .ed-card-title { animation: edCardIn .9s cubic-bezier(.2, .8, .2, 1) both .26s; }
+.ed-card.show .ed-card-title-cn,
+.ed-card.show .ed-card-en { animation: edCardIn .9s ease both .42s; }
+.ed-card.show .ed-card-meta { animation: edCardIn 1s ease both .58s; }
+@keyframes edCardIn {
+  from { opacity: 0; transform: translateY(calc(var(--s) * 14px)); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes edCardNoIn {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--s) * 18px)) scale(.94);
+    filter: blur(calc(var(--s) * 8px)) drop-shadow(0 0 calc(var(--s) * 26px) rgba(242, 210, 75, .3));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0) drop-shadow(0 0 calc(var(--s) * 26px) rgba(242, 210, 75, .3));
+  }
+}
+
+/* ---------- 宽版面板（设置 / 操作说明 / 按键设置）：同一套底线 ---------- */
+/* wide 模式不带场景底图，但页脚提示仍压在画面上，沿用同一档字色与投影。 */
+.overlay.wide-mode #subtitle {
+  color: rgba(255, 240, 224, .86);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, .95),
+    0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .70);
+}
+/* 非场景面板（暂停 / 结算 / 游戏结束）：说明行与页脚提示同样抬一档 */
+#subtitle {
+  opacity: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .90), 0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .55);
+}
+.hint {
+  color: rgba(242, 233, 216, .66);
+  opacity: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .90);
+}
+.overlay.wide-mode .hint,
+.overlay.screen-mode .panel .hint {
+  /* 底色 .hint 自带 opacity: .85，会再把字压暗一层，这里还原成不透明；
+     小字号压在亮景（水面 / 瀑布 / 灯笼）上时，一圈实心描边比单向投影更稳 */
+  opacity: 1;
+  color: rgba(242, 233, 216, .84);
+  text-shadow:
+    -1px 0 0 rgba(0, 0, 0, .85), 1px 0 0 rgba(0, 0, 0, .85),
+    0 -1px 0 rgba(0, 0, 0, .85), 0 1px 0 rgba(0, 0, 0, .85),
+    0 0 calc(var(--s) * 6px) rgba(0, 0, 0, .95),
+    0 0 calc(var(--s) * 16px) rgba(0, 0, 0, .75);
+}
+
+/* 标题区光晕：作为场景层的一部分画，跟着视口走，不会被 logo-block 的盒子裁出硬边 */
+.ov-bg-vignette::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 46% 15% at 50% 17%,
+    rgba(5, 3, 10, .62) 0%,
+    rgba(5, 3, 10, .38) 42%,
+    rgba(5, 3, 10, .12) 70%,
+    rgba(5, 3, 10, 0) 88%);
+}
+
+/* ============================================================
+   暂停 / 确认 / 告别等非屏幕式面板：跟选择页统一成「暗玻璃 + 描金」
+   ============================================================ */
+.overlay:not(.title-mode):not(.screen-mode) .panel {
+  border-radius: calc(var(--s) * 10px);
+  border: 1px solid rgba(242, 210, 75, .18);
+  background:
+    radial-gradient(ellipse 90% 70% at 50% 0%, rgba(104, 42, 116, .22), transparent 66%),
+    linear-gradient(170deg, rgba(28, 16, 40, .86), rgba(8, 5, 15, .92));
+  backdrop-filter: blur(18px) saturate(1.06);
+  box-shadow:
+    0 calc(var(--s) * 24px) calc(var(--s) * 70px) rgba(0, 0, 0, .55),
+    inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.overlay:not(.title-mode):not(.screen-mode) .btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--s) * 12px);
+  border-color: rgba(242, 233, 216, .18);
+  border-radius: calc(var(--s) * 5px);
+}
+/* 旧面板里 label / en / k 是行内并列，会连成「退出到桌面QUIT」；这里排成左标签 + 右英文 + 右端键位 */
+.overlay:not(.title-mode):not(.screen-mode) .btn .label { flex: 0 1 auto; }
+.overlay:not(.title-mode):not(.screen-mode) .btn .en {
+  font-family: "Optima", "Palatino Linotype", "Times New Roman", serif;
+  font-size: calc(var(--s) * 10px);
+  letter-spacing: calc(var(--s) * 2.2px);
+  color: #ffd39a;
+  opacity: .44;
+  text-transform: uppercase;
+}
+.overlay:not(.title-mode):not(.screen-mode) .btn .k {
+  position: absolute;
+  right: calc(var(--s) * 16px);
+  float: none;
+  font-size: calc(var(--s) * 11px);
+}
+.overlay:not(.title-mode):not(.screen-mode) .btn:hover,
+.overlay:not(.title-mode):not(.screen-mode) .btn.sel {
+  background: linear-gradient(90deg, rgba(242, 210, 75, .16), rgba(242, 210, 75, .04));
+  border-color: rgba(242, 210, 75, .44);
+  box-shadow:
+    inset calc(var(--s) * 2px) 0 0 rgba(242, 210, 75, .92),
+    0 calc(var(--s) * 8px) calc(var(--s) * 20px) rgba(0, 0, 0, .35),
+    0 0 calc(var(--s) * 18px) rgba(242, 210, 75, .10);
+}
+
+/* 页脚提示：亮景下加一层几乎看不出来的软光斑垫底 */
+.overlay.screen-mode .hint {
+  color: rgba(242, 233, 216, .58);
+  text-shadow: 0 0 calc(var(--s) * 10px) rgba(0, 0, 0, 1), 0 1px 2px rgba(0, 0, 0, .9);
+  padding: calc(var(--s) * 4px) calc(var(--s) * 18px);
+  background: radial-gradient(ellipse 46% 130% at 50% 50%,
+    rgba(4, 2, 9, .60) 0%,
+    rgba(4, 2, 9, .34) 52%,
+    rgba(4, 2, 9, 0) 100%);
+}
+.overlay.screen-mode .diff-detail {
+  background: rgba(7, 4, 13, .66);
+  backdrop-filter: blur(10px) saturate(1.04);
+}
+.overlay.screen-mode .diff-detail:hover { background: rgba(7, 4, 13, .70); }

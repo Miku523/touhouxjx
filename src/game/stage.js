@@ -723,9 +723,13 @@ export class Stage {
     const tx = p.x + p.w / 2;
     let target = tx;
     // Boss 战时相机偏向 Boss，但必须保证玩家留在画面里（死后重生到远处也不会双双出画）
+    // 上限给到 Boss 一侧：Boss 会左右巡游，镜头要跟到能让整个立绘入画的位置，
+    // 否则宽幅动作立绘会被右边缘切掉半个身子。
     if (this.boss && this.boss.state !== 'dead') {
       const mid = (tx + this.boss.x) / 2;
-      target = Math.max(tx - 1080, Math.min(tx - 200, mid));
+      // 上限 260：镜头最多把玩家放到屏幕左侧 260px，剩下的空间留给 Boss。
+      // 距离 420px 时镜头正好取中点 → 玩家在 430px、Boss 在 850px，双方完整入画。
+      target = Math.max(tx - 1080, Math.min(tx + 380, mid));
     }
     this.camera.update(dt, target, p.y + p.h / 2);
   }

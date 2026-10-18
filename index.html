@@ -62,6 +62,9 @@
       <!-- ===== 关卡横幅 ===== -->
       <div id="banner" class="banner"></div>
 
+      <!-- ===== 关卡提示（进关后淡出） ===== -->
+      <div id="tip" class="stage-tip"></div>
+
       <!-- ===== 剧情对白 ===== -->
       <div id="dialogue" class="hidden">
         <div class="dlg-portrait left"><canvas id="portraitL" width="400" height="560"></canvas></div>
@@ -88,6 +91,43 @@
         <div class="title-deco" aria-hidden="true">
           <span class="title-ver">Chronicle of Gensokyo · ver 1.0</span>
         </div>
+      </div>
+
+      <!-- ===== 结局演出 ===== -->
+      <div id="ending" class="hidden" aria-live="polite">
+        <div class="ed-letterbox top"></div>
+        <div class="ed-letterbox bottom"></div>
+        <div class="ed-brand">
+          <span class="ed-brand-mark">H</span>
+          <span>东方新纪行</span>
+          <i>Chronicle of Gensokyo</i>
+        </div>
+        <div id="edChapter" class="ed-chapter"></div>
+        <button id="edSkip" class="ed-skip" type="button" title="跳到结局卡">SKIP ▸</button>
+
+        <div id="edLines" class="ed-lines line-in">
+          <div id="edSpeaker" class="ed-speaker"></div>
+          <div id="edText" class="ed-text"></div>
+        </div>
+
+        <div id="edCard" class="ed-card" role="group" aria-label="结局">
+          <div class="ed-card-glow"></div>
+          <div class="ed-card-head">
+            <span class="ed-card-rule"></span>
+            <span id="edCardKind" class="ed-card-heading"></span>
+            <span class="ed-card-rule"></span>
+          </div>
+          <div id="edCardNo" class="ed-card-no">01</div>
+          <div id="edCardTitle" class="ed-card-title"></div>
+          <div id="edCardTitleCn" class="ed-card-title-cn"></div>
+          <div id="edCardEn" class="ed-card-en"></div>
+          <div class="ed-card-meta">
+            <span id="edCardChar" class="ed-card-char"></span>
+            <span id="edCardQuote" class="ed-card-quote"></span>
+          </div>
+        </div>
+
+        <div id="edPrompt" class="ed-prompt"></div>
       </div>
 
       <!-- ===== 触摸控制 ===== -->
