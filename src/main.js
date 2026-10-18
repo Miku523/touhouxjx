@@ -536,7 +536,7 @@ class Game {
       { ...row('help-act', '射击', cap('shoot')), groupTitle: '战斗' },
       row('help-act', '向上射击', cap('up') + '<span class="help-tip">按住打空中</span>'),
       row('help-act', '冲刺', cap('dash') + '<span class="help-tip">无敌</span>'),
-      row('help-act', '符卡', cap('cast') + '<span class="help-tip">耗 50</span>'),
+      row('help-act', '符卡', cap('cast') + '<span class="help-tip">耗 50 · 火力等级下降</span>'),
       { ...row('help-sys', '暂停菜单', cap('pause')), groupTitle: '系统' },
       row('help-sys', '界面', '<span class="help-tip">↑↓ 选择 · ENTER 确认</span>'),
       row('help-sys', '静音', cap('mute')),
