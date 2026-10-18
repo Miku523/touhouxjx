@@ -37,3 +37,5 @@ _power_verify.json
 # 本地密钥文件
 .ark_key
 *.ark_key
+
+_power_live.json
