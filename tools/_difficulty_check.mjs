@@ -147,7 +147,12 @@ async function bossInfo(diffKey, index) {
       difficulty: b.difficulty,
       hpScale: b.diff.hpScale,
       names: b.phases.map(p => p.name),
-    } : { phaseTitle: g.titleEl.textContent, stage: null };
+    } : {
+      phaseTitle: g.titleEl.textContent,
+      stage: null,
+      state: g.state,
+      ending: g.ending && g.ending.active ? (g.ending.spec || {}).kindLabel : null,
+    };
   })()`);
 }
 results.easy4 = await bossInfo('E', 3);
@@ -172,6 +177,8 @@ await evaluate(`(() => {
 })()`);
 results.easyClear = await evaluate(`(() => ({
   title: window.__game.titleEl.textContent,
+  state: window.__game.state,
+  ending: window.__game.ending && window.__game.ending.active ? (window.__game.ending.spec || {}).kindLabel : null,
   unlockedExtra: window.__game.unlockedExtra,
   saved: localStorage.getItem('hks.progress.v1'),
 }))()`);
@@ -289,7 +296,8 @@ assert(results.easyStage1.stageDifficulty === 'E', 'E 局关卡难度应为 E');
 assert(results.easyStage1.enemyDifficulty === 'easy', 'E 道中敌人应为 easy');
 assert(results.easy4.phases === 4, `E 4面符卡应为4，实际 ${results.easy4.phases}`);
 assert(results.easy5.phases === 5, `E 5面符卡应为5，实际 ${results.easy5.phases}`);
-assert(results.easy6.phaseTitle === 'EASY CLEAR', 'E 打完第5面应进入 EASY CLEAR');
+assert(results.easy6.stage === null && results.easy6.ending === 'EASY CLEAR ENDING',
+  `E 打完第5面应直接进 EASY CLEAR 结局，实际 ${JSON.stringify(results.easy6)}`);
 assert(results.normal4.phases === 4, 'N 4面应为4张');
 assert(results.normal5.phases === 5, 'N 5面应为5张');
 assert(results.normal6.phases === 7, `N 6面应为7张，实际 ${results.normal6.phases}`);

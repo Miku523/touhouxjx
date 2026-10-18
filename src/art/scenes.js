@@ -459,7 +459,12 @@ const _spriteCache = new Map();
  */
 function sprite(key, w, h, paint) {
   let cv = _spriteCache.get(key);
-  if (cv) return cv;
+  if (cv) {
+    // 命中后移到队尾：LRU 只淘汰真正冷的贴图，不做整表 clear()
+    _spriteCache.delete(key);
+    _spriteCache.set(key, cv);
+    return cv;
+  }
   cv = makeCanvas(w, h);
   if (!cv) return null;
   const g = cv.getContext('2d');
@@ -467,8 +472,17 @@ function sprite(key, w, h, paint) {
   g.save();
   paint(g, cv.width, cv.height);
   g.restore();
-  if (_spriteCache.size > 200) _spriteCache.clear();
+  // 旧实现「超过 200 就 clear()」，一旦键数逼近上限会每帧把整套云/雾/树贴图重烘一遍；
+  // 这里改为只淘汰最旧的若干张，保证常用贴图常驻。
   _spriteCache.set(key, cv);
+  if (_spriteCache.size > 200) {
+    const it = _spriteCache.keys();
+    for (let i = 0; i < 24; i++) {
+      const n = it.next();
+      if (n.done) break;
+      _spriteCache.delete(n.value);
+    }
+  }
   return cv;
 }
 
@@ -1724,46 +1738,64 @@ function drawReeds(ctx, x, baseY, h, color, headColor, t, phase) {
   const sway2 = Math.sin(t * 0.7 + phase * 0.6) * h * 0.03;
   ctx.save();
   ctx.lineCap = 'round';
-  // 叶片
-  for (let i = 0; i < 9; i++) {
-    const u = hash1(i * 37 + phase * 13 + 3);
-    const bx = x + (u - 0.5) * h * 0.34;
-    const bh = h * (0.45 + hash1(i * 17 + 5) * 0.55);
-    const lean = (hash1(i * 29 + 7) - 0.5) * h * 0.2 + sway * (0.4 + u);
-    ctx.strokeStyle = i % 3 === 0 ? dark : color;
-    ctx.lineWidth = Math.max(0.8, h * 0.014);
+  // 叶片几何逐叶算，但按「亮色 / 暗色 / 叶缘」合并成 3 条路径批量描边：
+  // 湖面芦苇层每帧要画 32 簇，旧实现每簇 ~18 次 stroke（每帧 600+ 次），这里压到 5 次。
+  const lwBlade = Math.max(0.8, h * 0.014);
+  const lwEdge = Math.max(0.5, h * 0.006);
+  const bxOf = (i) => x + (hash1(i * 37 + phase * 13 + 3) - 0.5) * h * 0.34;
+  const bhOf = (i) => h * (0.45 + hash1(i * 17 + 5) * 0.55);
+  const leanOf = (i) => (hash1(i * 29 + 7) - 0.5) * h * 0.2 + sway * (0.4 + hash1(i * 37 + phase * 13 + 3));
+
+  for (const pass of [0, 1]) {
     ctx.beginPath();
-    ctx.moveTo(bx, baseY);
-    ctx.quadraticCurveTo(bx + lean * 0.35, baseY - bh * 0.55, bx + lean, baseY - bh);
-    ctx.stroke();
-    // 叶缘亮线（细叶才有"草"的质感）
-    if (i % 2 === 0) {
-      ctx.strokeStyle = rgba(mix(color, '#ffffff', 0.25), 0.16);
-      ctx.lineWidth = Math.max(0.5, h * 0.006);
-      ctx.beginPath();
-      ctx.moveTo(bx + 0.5, baseY - bh * 0.1);
-      ctx.quadraticCurveTo(bx + lean * 0.4 + 0.5, baseY - bh * 0.55, bx + lean, baseY - bh);
+    let any = false;
+    for (let i = 0; i < 9; i++) {
+      if ((i % 3 === 0) !== (pass === 1)) continue;
+      const bx = bxOf(i), bh = bhOf(i), lean = leanOf(i);
+      ctx.moveTo(bx, baseY);
+      ctx.quadraticCurveTo(bx + lean * 0.35, baseY - bh * 0.55, bx + lean, baseY - bh);
+      any = true;
+    }
+    if (any) {
+      ctx.strokeStyle = pass === 1 ? dark : color;
+      ctx.lineWidth = lwBlade;
       ctx.stroke();
     }
   }
-  // 穗头
+  // 叶缘亮线（细叶才有"草"的质感）
+  ctx.beginPath();
+  for (let i = 0; i < 9; i += 2) {
+    const bx = bxOf(i), bh = bhOf(i), lean = leanOf(i);
+    ctx.moveTo(bx + 0.5, baseY - bh * 0.1);
+    ctx.quadraticCurveTo(bx + lean * 0.4 + 0.5, baseY - bh * 0.55, bx + lean, baseY - bh);
+  }
+  ctx.strokeStyle = rgba(mix(color, '#ffffff', 0.25), 0.16);
+  ctx.lineWidth = lwEdge;
+  ctx.stroke();
+
+  // 穗头：4 根杆一次 stroke，4 颗穗粒一次 fill
+  const plumX = [], plumY = [];
+  ctx.beginPath();
   for (let i = 0; i < 4; i++) {
     const u = hash1(i * 53 + phase * 7 + 11);
     const bx = x + (u - 0.5) * h * 0.3;
     const bh = h * (0.82 + hash1(i * 11 + 2) * 0.18);
     const tx = bx + sway;
     const ty = baseY - bh;
-    ctx.strokeStyle = dark;
-    ctx.lineWidth = Math.max(0.8, h * 0.012);
-    ctx.beginPath();
+    plumX.push(tx); plumY.push(ty);
     ctx.moveTo(bx, baseY);
     ctx.quadraticCurveTo(bx + sway * 0.4, baseY - bh * 0.6, tx, ty);
-    ctx.stroke();
-    ctx.fillStyle = rgba(headColor, 0.75);
-    ctx.beginPath();
-    ctx.ellipse(tx + sway2 * 0.2, ty, Math.max(1.2, h * 0.018), Math.max(3, h * 0.055), sway * 0.02, 0, TAU);
-    ctx.fill();
   }
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = Math.max(0.8, h * 0.012);
+  ctx.stroke();
+
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    ctx.ellipse(plumX[i] + sway2 * 0.2, plumY[i], Math.max(1.2, h * 0.018), Math.max(3, h * 0.055), sway * 0.02, 0, TAU);
+  }
+  ctx.fillStyle = rgba(headColor, 0.75);
+  ctx.fill();
   ctx.restore();
 }
 
@@ -3914,13 +3946,20 @@ const TILE_PAD_S = 2;     // 左右出血，避免相邻瓦片出现接缝
 const TILE_PAD_T = 16;    // 顶部留白，给草叶伸出瓦片
 const TILE_PAD_B = 2;
 const _tileCache = new Map();
+// 单主题可出现的键上界 ≈ 土/草/砖各 3 变体 × 16 开口 × 2 明暗 + 冰/浮台/尖刺 ≈ 370。
+// 旧上限 240 一旦超出就整表 clear()，下一帧会把屏幕内所有瓦片重新烘焙一遍（卡顿主因之一）。
+const TILE_CACHE_MAX = 700;
 
 /** 取（或烘焙）一张瓦片纹理。mask: 1上 2右 4下 8左 开口 */
 function tileSprite(key, th, type, variant, mask, lit) {
   const ck = 'tile:' + key + ':' + type + ':' + variant + ':' + mask + ':' + lit;
   let sp = _tileCache.get(ck);
-  if (sp) return sp;
-  if (_tileCache.size > 240) _tileCache.clear();
+  if (sp) {
+    // 命中后移到队尾，让 LRU 淘汰真正冷的瓦片
+    _tileCache.delete(ck);
+    _tileCache.set(ck, sp);
+    return sp;
+  }
   const LW = T + TILE_PAD_S * 2;
   const LH = T + TILE_PAD_T + TILE_PAD_B;
   sp = makeCanvas(LW * TILE_SS, LH * TILE_SS);
@@ -3940,6 +3979,14 @@ function tileSprite(key, th, type, variant, mask, lit) {
     default: break;
   }
   _tileCache.set(ck, sp);
+  if (_tileCache.size > TILE_CACHE_MAX) {
+    const it = _tileCache.keys();
+    for (let i = 0; i < 48; i++) {
+      const n = it.next();
+      if (n.done) break;
+      _tileCache.delete(n.value);
+    }
+  }
   return sp;
 }
 

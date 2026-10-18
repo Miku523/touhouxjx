@@ -913,6 +913,13 @@ export class EnemyManager {
       }
     }
     this.bulletCooldownMul = this.difficulty === 'easy' ? 1.5 : this.difficulty === 'hard' ? 0.7 : 1;
+
+    // 难度细节：优先用难度表给的精确倍率（能区分 H / L），否则退回三档 enemyDifficulty
+    const d = opts.diff || null;
+    this.fireScale = Number(d?.enemyFireScale) || this.bulletCooldownMul;
+    this.bulletCooldownMul = this.fireScale;
+    this.bulletSpeed = Math.min(Number(d?.bulletSpeedCap) || 520, 150 * (Number(d?.enemyBulletScale) || 1));
+    this.bulletShots = Math.max(1, Number(d?.flyerShots) || 1);
   }
 
   update(dt, player, bullets, fx, opts = {}) {
@@ -968,12 +975,23 @@ export class EnemyManager {
           e.shootCd = 2.4 + Math.random() * 1.8;
           const ox = e.x + e.w / 2;
           const oy = e.y + e.h * 0.6;
-          bullets.aimed(ox, oy, px, py, 150, {
-            r: 6,
-            color: e.colors.glow,
-            type: 0,
-            life: 5,
-          });
+          if (this.bulletShots > 1) {
+            // 高难度：一束小瞄准扇（弹速同样受难度倍率与上限约束）
+            const a = Math.atan2(py - oy, px - ox);
+            bullets.fan(ox, oy, this.bulletShots, 0.22, a, this.bulletSpeed, {
+              r: 5,
+              color: e.colors.glow,
+              type: 0,
+              life: 5,
+            });
+          } else {
+            bullets.aimed(ox, oy, px, py, this.bulletSpeed, {
+              r: 6,
+              color: e.colors.glow,
+              type: 0,
+              life: 5,
+            });
+          }
         }
       }
 

@@ -117,7 +117,9 @@ export class StgPlayer {
     const ax = input.axisX;
     const ay = input.down('down') ? 1 : 0;
     const up = input.down('up') ? 1 : 0;
-    const ayAll = up - ay;
+    // 屏幕坐标 y 向下为正：按住「下」应该往下走，所以是 ay - up。
+    // （原来写成 up - ay，导致弹幕关上下完全反了：按 ↑ 一路沉底，按 ↓ 顶到天花板。）
+    const ayAll = ay - up;
 
     // 按住 Shift 加速移动：移速 ×1.5
     this.boost = input.down('fast');
@@ -327,28 +329,44 @@ class StgEnemy {
     this.phase = Math.random() * 6.28;
   }
 
-  update(dt, bullets, px, py) {
+  update(dt, bullets, px, py, mods = null) {
     this.t += dt;
     this.hitFlash = Math.max(0, this.hitFlash - dt);
     this.x += this.vx * dt;
     this.y = this.baseY + Math.sin(this.t * 2.2 + this.phase) * 22;
 
+    const speedMul = mods ? mods.speed : 1;
+    const fireMul = mods ? mods.fire : 1;
+    const cap = mods ? mods.cap : 520;
+    const shotSpeed = (base) => Math.min(cap, base * speedMul);
+
     if (this.k.aim) {
       this.fireT -= dt;
       if (this.fireT <= 0) {
-        this.fireT = this.k.rate;
+        this.fireT = this.k.rate * fireMul;
+        const n = mods ? mods.scout : 1;
+        const sp = shotSpeed(230);
         const a = Math.atan2(py - this.y, px - this.x);
-        bullets.spawn({
-          x: this.x, y: this.y,
-          vx: Math.cos(a) * 230, vy: Math.sin(a) * 230,
-          color: this.k.color, r: 6, life: 5,
-        });
+        if (n > 1) {
+          // 高难度：单发瞄准变成一小束瞄准扇，方向仍然指向玩家，缝还在
+          bullets.fan(this.x, this.y, n, 0.18, a, sp, {
+            color: this.k.color, r: 6, life: 5,
+          });
+        } else {
+          bullets.spawn({
+            x: this.x, y: this.y,
+            vx: Math.cos(a) * sp,
+            vy: Math.sin(a) * sp,
+            color: this.k.color, r: 6, life: 5,
+          });
+        }
       }
     } else {
       this.fireT -= dt;
       if (this.fireT <= 0) {
-        this.fireT = this.k.rate;
-        bullets.fan(this.x, this.y, 3, 0.4, Math.PI * 0.86, 190, {
+        this.fireT = this.k.rate * fireMul;
+        const n = mods ? mods.gunner : 3;
+        bullets.fan(this.x, this.y, n, 0.4, Math.PI * 0.86, shotSpeed(190), {
           color: this.k.color, r: 6, life: 5,
         });
       }
@@ -454,9 +472,11 @@ class StgEnemy {
 export class StgStage {
   /**
    * @param {import('./level.js').Level} level
+   * @param {object} [diff] 难度配置（DIFFICULTIES 里的一项）；不传则按 N 处理
    */
-  constructor(level) {
+  constructor(level, diff = null) {
     this.level = level;
+    this.diff = diff || null;
     this.scroll = 0;
     this.speed = 165;
     this.t = 0;
@@ -465,7 +485,18 @@ export class StgStage {
     this.waveIdx = 0;
     this.finished = false;
     this.reachedBoss = false;
-    this.enemyBulletScale = 1;
+
+    // 道中敌机的难度倍率：弹速 / 开火间隔 / 每次齐射发数
+    this.enemyBulletScale = Number(diff?.enemyBulletScale) || 1;
+    this.enemyFireScale = Number(diff?.enemyFireScale) || 1;
+    this.enemySpeedCap = Number(diff?.bulletSpeedCap) || 520;
+    this.enemyMods = {
+      speed: this.enemyBulletScale,
+      fire: this.enemyFireScale,
+      cap: this.enemySpeedCap,
+      scout: Math.max(1, Number(diff?.stgScoutShots) || 1),
+      gunner: Math.max(1, Number(diff?.stgGunnerShots) || 3),
+    };
 
     // 按关卡主色给三类敌机分配配色：主色给最常见的 scout，点缀色分给另外两类
     const tint = (level.def && level.def.fairyTint) || null;
@@ -537,7 +568,7 @@ export class StgStage {
     const py = player.worldY;
     for (const e of this.enemies) {
       if (!e.alive) continue;
-      e.update(dt, bullets, px, py);
+      e.update(dt, bullets, px, py, this.enemyMods);
       if (e.x < this.scroll - 200) e.alive = false;
 
       // 玩家子弹命中

@@ -331,18 +331,19 @@ export class Stage {
     // 玩家
     if (this.mode === 'stg') {
       this.player = new StgPlayer({ char: this.char, lives: opts.lives || 3, power: opts.power || 0 });
-      this.stg = new StgStage(this.level);
+      this.stg = new StgStage(this.level, this.diff);
       this.camera.x = 0;
       this.camera.y = 0;
       this.camera.follow = false;
     } else {
       this.player = new Player(this.level, { char: this.char, lives: opts.lives || 3, power: opts.power || 0 });
       this._safeSpot = { x: this.player.x, y: this.player.y };
-      this.enemies = new EnemyManager(this.level, { difficulty: this.diff.enemyDifficulty });
+      this.enemies = new EnemyManager(this.level, { difficulty: this.diff.enemyDifficulty, diff: this.diff });
       this.camera.snapTo(this.player.x + this.player.w / 2);
     }
 
     this.castFx = 0;
+    this.deathT = 0; // 死亡→复活倒计时（用逻辑帧计时，暂停/切后台时冻结）
   }
 
   _buildPickups() {
@@ -372,6 +373,15 @@ export class Stage {
 
   update(dt, input) {
     if (this.state === 'clear') return;
+    // 死亡→复活改用逻辑时钟：旧的 setTimeout 会把「复活」插在两次逻辑帧之间，
+    // 暂停或切后台时还会与真实时间脱节，导致复活瞬间相机/弹幕清空不同步。
+    if (this.state === 'dead' && this.deathT > 0) {
+      this.deathT -= dt;
+      if (this.deathT <= 0) {
+        this._respawn();
+        return;
+      }
+    }
     this.t += dt;
     if (this.state === 'play') this.time += dt;
     this.camera.beginStep();
@@ -451,6 +461,22 @@ export class Stage {
   _updatePlatform(dt, input) {
     const p = this.player;
     p.update(dt, input);
+
+    // 手感：Boss 战里原地站定 0.3 秒后自动把朝向转向 Boss。
+    // 平台关子弹沿 facing 射出，玩家站定不动时 facing 会停在最后一次走位的方向，
+    // 一旦 Boss 挪到另一侧，就会出现「对着空气一直开枪」的挫败感（自动化测试里曾出现 340 秒 0 命中）。
+    const faceBoss = this.boss;
+    if (faceBoss && faceBoss.state !== 'dead' && p.alive) {
+      const moving = input.down('left') || input.down('right');
+      this._faceIdleT = moving ? 0 : (this._faceIdleT || 0) + dt;
+      if (!moving && this._faceIdleT > 0.3) {
+        const dxToBoss = faceBoss.x - (p.x + p.w / 2);
+        if (Math.abs(dxToBoss) > 24) p.facing = dxToBoss > 0 ? 1 : -1;
+      }
+    } else {
+      this._faceIdleT = 0;
+    }
+
     if (this.state === 'play') {
       this.enemies?.update(dt, p, this.bullets, this.fx, {
         onKill: () => this._addPower(POWER.kill),
@@ -519,19 +545,44 @@ export class Stage {
     const level = p.fireLevel || powerLevel(p.power);
     if (this.mode === 'stg') {
       p.shootCd = 0.075;
-      this.shots.fire(p.worldX + 14 * p.facing, p.worldY - 4, p.facing, this.char, level);
-    } else {
-      // 按住 ↑ 时朝上方的目标射击（有 Boss 时自动瞄准 Boss 的高度，避免贴脸也打不中）
+      // STG 关的 Boss 悬在画面中上部，玩家通常贴下边躲弹：纯平射会从 Boss 脚下掠过，
+      // 手感上等于「打不到」。这里给一个朝 Boss 躯干的轻微自动俯仰（限幅 ±0.42rad），
+      // 站位高低都能命中，同时保留走位与躲弹的操作量。
+      const gunY = p.worldY - 4;
       let aim = 0;
+      const b = this.boss;
+      if (b && b.state !== 'dead') {
+        const dx = b.x - p.worldX;
+        if (dx * p.facing > 0) {
+          const dy = (b.y - b.h * 0.55) - gunY;
+          const dist = Math.max(160, Math.abs(dx));
+          aim = Math.max(-0.42, Math.min(0.42, Math.atan2(dy, dist)));
+        }
+      }
+      this.shots.fire(p.worldX + 14 * p.facing, gunY, p.facing, this.char, level, aim, 0.1);
+    } else {
+      // 按住 ↑ 时朝上方的目标射击（有 Boss 时自动瞄准 Boss 的高度，避免贴脸也打不中）；
+      // 按住 ↓ 时朝下方射击：Boss 在下层平台/地面时也能反打，
+      // 否则站上高台就完全打不到脚下的 Boss（单向平台只挡人不挡子弹，可以安全俯射）
+      let aim = 0;
+      const b = this.boss;
+      const bossLive = b && b.state !== 'dead';
+      const gunY = p.y + p.h * 0.34;
       if (input && input.down('up')) {
-        const b = this.boss;
-        const gunY = p.y + p.h * 0.34;
-        if (b && b.state !== 'dead' && b.y - 50 < gunY) {
+        if (bossLive && b.y - 50 < gunY) {
           const dx = Math.max(60, Math.abs(b.x - (p.x + p.w / 2)));
           const dy = (b.y - 50) - gunY;
           aim = Math.max(-1.35, Math.min(-0.2, Math.atan2(dy, dx)));
         } else {
           aim = -0.9;
+        }
+      } else if (input && input.down('down')) {
+        if (bossLive && b.y - 50 > gunY + 30) {
+          const dx = Math.max(60, Math.abs(b.x - (p.x + p.w / 2)));
+          const dy = (b.y - 50) - gunY;
+          aim = Math.max(0.25, Math.min(1.35, Math.atan2(dy, dx)));
+        } else {
+          aim = 0.9;
         }
       }
       p.shootCd = 0.085;
@@ -645,7 +696,7 @@ export class Stage {
       case 'die':
         this.camera.shake(20, 0.5);
         this.state = 'dead';
-        setTimeout(() => this._respawn(), 900);
+        this.deathT = 0.9;
         this.onEvent('death', ev);
         break;
       case 'cast':
@@ -658,6 +709,7 @@ export class Stage {
 
   _respawn() {
     if (this.state !== 'dead') return;
+    this.deathT = 0;
     const p = this.player;
     const ok = p.respawn();
     if (!ok) {
@@ -1102,6 +1154,44 @@ export class Stage {
     ctx.restore();
   }
 
+  /**
+   * 地面雾/环境光/去饱和这三层渐变的坐标固定在画布空间（与相机无关），
+   * 旧实现每帧新建 3 个 CanvasGradient。按 主题+ctx 缓存一次即可。
+   */
+  _overlayGrads(ctx, theme) {
+    const c = this._gradCache;
+    if (c && c.ctx === ctx && c.theme === theme) return c;
+    const H = VIEW_H;
+    const gnd = ctx.createLinearGradient(0, H - 190, 0, H);
+    gnd.addColorStop(0, 'rgba(6, 6, 14, 0)');
+    gnd.addColorStop(0.55, 'rgba(6, 6, 14, 0.16)');
+    gnd.addColorStop(1, 'rgba(6, 6, 14, 0.46)');
+
+    const GLOW = {
+      shrine: '#ff7a3c', forest: '#3ce0b0', lake: '#9fd8ff', mountain: '#ffb066',
+      nether: '#ff5ea8', moon: '#8fb4ff', mansion: '#ff3050',
+    };
+    const DG = {
+      shrine: '#7a4a38', forest: '#2c4c3c', lake: '#5c7f9c', mountain: '#6b5a52',
+      nether: '#5a2038', moon: '#4a5c86', mansion: '#5a2430',
+    };
+    const glow = GLOW[theme];
+    let amb = null, sat = null;
+    if (glow) {
+      amb = ctx.createLinearGradient(0, H - 210, 0, H);
+      amb.addColorStop(0, 'rgba(0,0,0,0)');
+      amb.addColorStop(1, glow);
+      if (DG[theme]) {
+        sat = ctx.createLinearGradient(0, H - 150, 0, H);
+        sat.addColorStop(0, 'rgba(138,138,138,0)');
+        sat.addColorStop(0.42, 'rgba(138,138,138,0.30)');
+        sat.addColorStop(1, 'rgba(138,138,138,0.76)');
+      }
+    }
+    this._gradCache = { ctx, theme, gnd, amb, sat };
+    return this._gradCache;
+  }
+
   draw(ctx, alpha) {
     const theme = this.level.theme;
     const cam = this.camera.viewAt(alpha);
@@ -1131,48 +1221,27 @@ export class Stage {
     // 地面雾：把厚涂背景和程序化地形接在一起，避免出现一条硬边
     if (this.mode === 'platform') {
       const H = VIEW_H;
-      const gnd = ctx.createLinearGradient(0, H - 190, 0, H);
-      gnd.addColorStop(0, 'rgba(6, 6, 14, 0)');
-      gnd.addColorStop(0.55, 'rgba(6, 6, 14, 0.16)');
-      gnd.addColorStop(1, 'rgba(6, 6, 14, 0.46)');
-      ctx.fillStyle = gnd;
+      const gr = this._overlayGrads(ctx, theme);
+      ctx.fillStyle = gr.gnd;
       ctx.fillRect(cam.x, H - 190, VIEW_W, 190);
 
       // 环境光染色：让程序化地形接到厚涂背景的光色里
-      const GLOW = {
-        shrine: '#ff7a3c', forest: '#3ce0b0', lake: '#9fd8ff', mountain: '#ffb066',
-        nether: '#ff5ea8', moon: '#8fb4ff', mansion: '#ff3050',
-      };
-      const glow = GLOW[theme];
-      if (glow) {
-        const amb = ctx.createLinearGradient(0, H - 210, 0, H);
-        amb.addColorStop(0, 'rgba(0,0,0,0)');
-        amb.addColorStop(1, glow);
+      if (gr.amb) {
         ctx.save();
         ctx.globalCompositeOperation = 'overlay';
         ctx.globalAlpha = 0.26;
-        ctx.fillStyle = amb;
+        ctx.fillStyle = gr.amb;
         ctx.fillRect(cam.x, H - 210, VIEW_W, 210);
         ctx.restore();
-
-        // 去饱和 + 统一色相：程序化草地的荧光绿和厚涂背景不是一个世界
-        const DG = {
-          shrine: '#7a4a38', forest: '#2c4c3c', lake: '#5c7f9c', mountain: '#6b5a52',
-          nether: '#5a2038', moon: '#4a5c86', mansion: '#5a2430',
-        };
-        const dg = DG[theme];
-        if (dg) {
-          ctx.save();
-          const sat = ctx.createLinearGradient(0, H - 150, 0, H);
-          sat.addColorStop(0, 'rgba(138,138,138,0)');
-          sat.addColorStop(0.42, 'rgba(138,138,138,0.30)');
-          sat.addColorStop(1, 'rgba(138,138,138,0.76)');
-          ctx.globalCompositeOperation = 'saturation';
-          ctx.globalAlpha = 1;
-          ctx.fillStyle = sat;
-          ctx.fillRect(cam.x, H - 150, VIEW_W, 150);
-          ctx.restore();
-        }
+      }
+      // 去饱和 + 统一色相：程序化草地的荧光绿和厚涂背景不是一个世界
+      if (gr.sat) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'saturation';
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = gr.sat;
+        ctx.fillRect(cam.x, H - 150, VIEW_W, 150);
+        ctx.restore();
       }
     }
 

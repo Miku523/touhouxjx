@@ -2162,7 +2162,6 @@ body {
 .overlay.screen-mode .diff-detail:hover { background: rgba(8, 5, 15, .50); }
 
 
-
 /* ============================================================
    可读性加固：场景提亮之后，靠「软光斑」而不是「方卡」压住内容区
    ============================================================ */
@@ -2212,125 +2211,6 @@ body {
 }
 
 
-/* ============================================================
-   可读性：文字对比度加固
-   ------------------------------------------------------------
-   720p 投影 + 满月 / 樱花 / 夕照等亮场景下，次级信息容易糊进底图。
-   原则：
-     1) 次级文字抬到 .72 以上，关键数字接近实色；
-     2) 一律补深色投影，把字从亮底上「拔」出来；
-     3) 只改颜色与阴影，不动字号、不改版式，避免重排。
-   ============================================================ */
-
-/* ---------- 战斗 HUD ---------- */
-.pl {
-  opacity: 1;
-  text-shadow: 0 1px calc(var(--s) * 4px) rgba(0, 0, 0, .7);
-}
-.pdim {
-  color: rgba(242, 233, 216, .76);
-  text-shadow:
-    0 0 calc(var(--s) * 6px) rgba(0, 0, 0, .85),
-    0 1px 1px rgba(0, 0, 0, .7);
-}
-.pdim b { color: rgba(242, 233, 216, .95); }
-.plv { text-shadow: 0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .75), 0 1px 1px rgba(0, 0, 0, .6); }
-.plv b { opacity: .88; }
-.sn {
-  opacity: 1;
-  text-shadow: 0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .8), 0 1px 1px rgba(0, 0, 0, .6);
-}
-.tm {
-  color: rgba(242, 233, 216, .95);
-  text-shadow: 0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .8), 0 1px 1px rgba(0, 0, 0, .6);
-}
-.hud-settings { color: rgba(242, 233, 216, .92); }
-.hud-settings::before { opacity: .95; }
-
-/* ---------- Boss 名条：压在满月上时最容易糊 ---------- */
-/* 底衬放大一圈再用渐隐收边，避免在亮景上切出一条黑方块 */
-#bossBar { background: none; }
-#bossBar::before {
-  content: "";
-  position: absolute;
-  inset: calc(var(--s) * -44px) calc(var(--s) * -104px);
-  z-index: -1;
-  pointer-events: none;
-  background: radial-gradient(ellipse 50% 50% at 50% 50%,
-    rgba(4, 2, 9, .86) 0%,
-    rgba(4, 2, 9, .72) 32%,
-    rgba(4, 2, 9, .46) 58%,
-    rgba(4, 2, 9, .18) 82%,
-    rgba(4, 2, 9, 0) 100%);
-}
-.boss-head {
-  color: #ffdaea;
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, .95),
-    0 0 calc(var(--s) * 6px) rgba(0, 0, 0, .90),
-    0 0 calc(var(--s) * 16px) rgba(0, 0, 0, .70),
-    0 0 calc(var(--s) * 22px) rgba(255, 94, 168, .30);
-}
-#bossPhase {
-  color: #ffe4a0;
-  opacity: 1;
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, .95),
-    0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .85);
-}
-
-/* ---------- 选择界面：标题说明、卡面注脚、页脚提示 ---------- */
-.overlay.screen-mode #subtitle {
-  color: rgba(255, 240, 224, .84);
-  text-shadow:
-    0 1px calc(var(--s) * 4px) rgba(0, 0, 0, .85),
-    0 0 calc(var(--s) * 12px) rgba(0, 0, 0, .55);
-}
-.dc-meta { color: rgba(242, 233, 216, .80); }
-.dc-key {
-  color: rgba(242, 233, 216, .92);
-  border-color: rgba(242, 233, 216, .28);
-  background: rgba(0, 0, 0, .42);
-}
-.dd-m,
-.dd-blurb { color: rgba(242, 233, 216, .80); }
-.cc-note { color: rgba(242, 233, 216, .86); }
-.cc-key {
-  color: rgba(242, 233, 216, .96);
-  border-color: rgba(242, 233, 216, .34);
-  background: rgba(0, 0, 0, .50);
-}
-.help-tip { color: rgba(242, 233, 216, .68); }
-.overlay.screen-mode .back-ghost {
-  color: rgba(242, 233, 216, .82);
-  border-color: rgba(242, 233, 216, .18);
-  background: rgba(6, 3, 12, .58);
-}
-.overlay.screen-mode .set-row .k {
-  color: rgba(242, 210, 75, .86);
-  border-color: rgba(242, 210, 75, .32);
-  background: rgba(0, 0, 0, .34);
-}
-.overlay.screen-mode .btn .k { color: rgba(242, 210, 75, .86); }
-.seg b { color: rgba(242, 233, 216, .74); }
-.ov-bg-caption { color: rgba(242, 210, 75, .64); }
-.ov-bg-caption em { color: rgba(242, 233, 216, .40); }
-
-/* ---------- 标题页 ---------- */
-.title-mode .btn { color: rgba(255, 242, 226, .86); }
-.title-mode .btn .en { opacity: .72; }
-.title-mode .hint { color: rgba(255, 232, 208, .72); }
-.title-mode .title-ver { color: rgba(255, 228, 196, .58); }
-.title-mode .btn.locked .label { color: rgba(216, 208, 196, .62); }
-.title-mode .btn.locked .en { color: rgba(255, 211, 154, .34); }
-
-/* ---------- 对话：翻页提示闪到最暗时也别消失 ---------- */
-.dlg-next { color: rgba(242, 233, 216, .72); }
-@keyframes dlgBlink {
-  0%, 100% { opacity: .42; }
-  50%      { opacity: .95; }
-}
-
 /* 主角卡再压一档：立绘要浮在明确的黑底上，而不是透出日落 */
 .overlay.screen-mode .cc-card {
   background:
@@ -2360,28 +2240,6 @@ body {
   border-color: rgba(242, 233, 216, .18);
 }
 
-
-/* ---------- 页脚提示 / 当前难度行：压在亮景上仍要看得清 ---------- */
-/* 说明行与操作提示最后再抬一档：场景底层可能正好是水面、瀑布这类亮面，
-   单靠投影不够，字色本身也要有底气。选择器多带 .panel，避免被前文覆盖。 */
-.overlay.screen-mode .panel #subtitle {
-  color: rgba(255, 240, 224, .86);
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, .95),
-    0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .70);
-}
-.overlay.screen-mode .panel .hint {
-  color: rgba(242, 233, 216, .74);
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, .95),
-    0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .90);
-}
-.overlay.screen-mode .panel .back-ghost,
-.overlay.screen-mode .panel .set-foot-btn {
-  color: rgba(242, 233, 216, .92);
-  background: rgba(6, 3, 12, .68);
-  border-color: rgba(242, 233, 216, .22);
-}
 
 /* ============================================================
    结局演出（ending.js）
@@ -2697,37 +2555,6 @@ body {
   }
 }
 
-/* ---------- 宽版面板（设置 / 操作说明 / 按键设置）：同一套底线 ---------- */
-/* wide 模式不带场景底图，但页脚提示仍压在画面上，沿用同一档字色与投影。 */
-.overlay.wide-mode #subtitle {
-  color: rgba(255, 240, 224, .86);
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, .95),
-    0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .70);
-}
-/* 非场景面板（暂停 / 结算 / 游戏结束）：说明行与页脚提示同样抬一档 */
-#subtitle {
-  opacity: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, .90), 0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .55);
-}
-.hint {
-  color: rgba(242, 233, 216, .66);
-  opacity: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, .90);
-}
-.overlay.wide-mode .hint,
-.overlay.screen-mode .panel .hint {
-  /* 底色 .hint 自带 opacity: .85，会再把字压暗一层，这里还原成不透明；
-     小字号压在亮景（水面 / 瀑布 / 灯笼）上时，一圈实心描边比单向投影更稳 */
-  opacity: 1;
-  color: rgba(242, 233, 216, .84);
-  text-shadow:
-    -1px 0 0 rgba(0, 0, 0, .85), 1px 0 0 rgba(0, 0, 0, .85),
-    0 -1px 0 rgba(0, 0, 0, .85), 0 1px 0 rgba(0, 0, 0, .85),
-    0 0 calc(var(--s) * 6px) rgba(0, 0, 0, .95),
-    0 0 calc(var(--s) * 16px) rgba(0, 0, 0, .75);
-}
-
 /* 标题区光晕：作为场景层的一部分画，跟着视口走，不会被 logo-block 的盒子裁出硬边 */
 .ov-bg-vignette::after {
   content: "";
@@ -2805,3 +2632,161 @@ body {
   backdrop-filter: blur(10px) saturate(1.04);
 }
 .overlay.screen-mode .diff-detail:hover { background: rgba(7, 4, 13, .70); }
+
+/* ============================================================
+   文字对比度加固（合并版）
+   ------------------------------------------------------------
+   亮景（满月 / 樱花 / 夕照 / 水面 / 瀑布）下，次级信息统一处理：
+     1) 字色抬到 .72 以上，关键数字接近实色；
+     2) 一律补深色投影，把字从亮底上「拔」出来；
+     3) 只改颜色与阴影，不动字号、不改版式，避免重排。
+   原先分散在 HUD / BOSS 血条 / 选择页 / 面板四处的补丁合并到这里。
+   ============================================================ */
+
+/* ---------- 战斗 HUD ---------- */
+.pl {
+  opacity: 1;
+  text-shadow: 0 1px calc(var(--s) * 4px) rgba(0, 0, 0, .7);
+}
+.pdim {
+  color: rgba(242, 233, 216, .76);
+  text-shadow:
+    0 0 calc(var(--s) * 6px) rgba(0, 0, 0, .85),
+    0 1px 1px rgba(0, 0, 0, .7);
+}
+.pdim b { color: rgba(242, 233, 216, .95); }
+.plv { text-shadow: 0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .75), 0 1px 1px rgba(0, 0, 0, .6); }
+.plv b { opacity: .88; }
+.sn {
+  opacity: 1;
+  text-shadow: 0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .8), 0 1px 1px rgba(0, 0, 0, .6);
+}
+.tm {
+  color: rgba(242, 233, 216, .95);
+  text-shadow: 0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .8), 0 1px 1px rgba(0, 0, 0, .6);
+}
+.hud-settings { color: rgba(242, 233, 216, .92); }
+.hud-settings::before { opacity: .95; }
+
+/* ---------- BOSS 血条 ---------- */
+/* 底衬放大一圈再用渐隐收边：渐隐必须在盒子边界前落到 0，
+   否则满月这种高亮背景上会切出一条可见的黑方块。 */
+#bossBar { background: none; }
+#bossBar::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--s) * -44px) calc(var(--s) * -104px);
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(ellipse 50% 50% at 50% 50%,
+    rgba(4, 2, 9, .86) 0%,
+    rgba(4, 2, 9, .72) 32%,
+    rgba(4, 2, 9, .46) 58%,
+    rgba(4, 2, 9, .18) 82%,
+    rgba(4, 2, 9, 0) 100%);
+}
+.boss-head {
+  color: #ffdaea;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, .95),
+    0 0 calc(var(--s) * 6px) rgba(0, 0, 0, .90),
+    0 0 calc(var(--s) * 16px) rgba(0, 0, 0, .70),
+    0 0 calc(var(--s) * 22px) rgba(255, 94, 168, .30);
+}
+#bossPhase {
+  color: #ffe4a0;
+  opacity: 1;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, .95),
+    0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .85);
+}
+
+/* ---------- 选择页：标题说明 / 卡面注脚 / 键位角标 ---------- */
+.overlay.screen-mode .panel #subtitle {
+  color: rgba(255, 240, 224, .86);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, .95),
+    0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .70);
+}
+.dc-meta { color: rgba(242, 233, 216, .80); }
+.dc-key {
+  color: rgba(242, 233, 216, .92);
+  border-color: rgba(242, 233, 216, .28);
+  background: rgba(0, 0, 0, .42);
+}
+.dd-m,
+.dd-blurb { color: rgba(242, 233, 216, .80); }
+.cc-note { color: rgba(242, 233, 216, .86); }
+.cc-key {
+  color: rgba(242, 233, 216, .96);
+  border-color: rgba(242, 233, 216, .34);
+  background: rgba(0, 0, 0, .50);
+}
+.help-tip { color: rgba(242, 233, 216, .68); }
+.overlay.screen-mode .back-ghost {
+  color: rgba(242, 233, 216, .82);
+  border-color: rgba(242, 233, 216, .18);
+}
+.overlay.screen-mode .set-row .k {
+  color: rgba(242, 210, 75, .86);
+  border-color: rgba(242, 210, 75, .32);
+  background: rgba(0, 0, 0, .34);
+}
+.overlay.screen-mode .btn .k { color: rgba(242, 210, 75, .86); }
+.seg b { color: rgba(242, 233, 216, .74); }
+.ov-bg-caption { color: rgba(242, 210, 75, .64); }
+.ov-bg-caption em { color: rgba(242, 233, 216, .40); }
+
+/* ---------- 标题页 ---------- */
+.title-mode .btn { color: rgba(255, 242, 226, .86); }
+.title-mode .btn .en { opacity: .72; }
+.title-mode .hint { color: rgba(255, 232, 208, .72); }
+.title-mode .title-ver { color: rgba(255, 228, 196, .58); }
+.title-mode .btn.locked .label { color: rgba(216, 208, 196, .62); }
+.title-mode .btn.locked .en { color: rgba(255, 211, 154, .34); }
+
+/* ---------- 对话：翻页提示闪到最暗时也别消失 ---------- */
+.dlg-next { color: rgba(242, 233, 216, .72); }
+@keyframes dlgBlink {
+  0%, 100% { opacity: .42; }
+  50%      { opacity: .95; }
+}
+
+/* ---------- 非场景面板（暂停 / 结算 / 游戏结束） ---------- */
+#subtitle {
+  opacity: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .90), 0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .55);
+}
+.hint {
+  color: rgba(242, 233, 216, .66);
+  opacity: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .90);
+}
+
+/* ---------- 页脚提示：wide / screen 两套面板共用的描边版 ---------- */
+.overlay.wide-mode #subtitle {
+  color: rgba(255, 240, 224, .86);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, .95),
+    0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .70);
+}
+.overlay.wide-mode .hint,
+.overlay.screen-mode .panel .hint {
+  /* 底色 .hint 自带 opacity: .85，会再把字压暗一层，这里还原成不透明；
+     小字号压在亮景（水面 / 瀑布 / 灯笼）上时，一圈实心描边比单向投影更稳 */
+  opacity: 1;
+  color: rgba(242, 233, 216, .84);
+  text-shadow:
+    -1px 0 0 rgba(0, 0, 0, .85), 1px 0 0 rgba(0, 0, 0, .85),
+    0 -1px 0 rgba(0, 0, 0, .85), 0 1px 0 rgba(0, 0, 0, .85),
+    0 0 calc(var(--s) * 6px) rgba(0, 0, 0, .95),
+    0 0 calc(var(--s) * 16px) rgba(0, 0, 0, .75);
+}
+
+/* 页脚底部按钮与提示同一档：面板内的那两处（返回 / 设置页脚）压得更实 */
+.overlay.screen-mode .panel .back-ghost,
+.overlay.screen-mode .panel .set-foot-btn {
+  color: rgba(242, 233, 216, .92);
+  background: rgba(6, 3, 12, .68);
+  border-color: rgba(242, 233, 216, .22);
+}

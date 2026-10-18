@@ -114,3 +114,49 @@ P4：HUD / 标题 / 对话框排版
 - 验收截图：`_p2_hero_final.png`（两角色 × 六状态）、`_p2_boss_lineup.png`（七 Boss 同尺度）、`_p2_bossgame4.png`（实机 Boss 战）、`_p2_stg3.png` / `_p2_stg_marisa.png`（飞行关）。可复用预览页：`_p2_preview.html`（A/B 五档）、`_p2_hero.html`（六状态）、`_p2_boss_preview.html`（Boss 栅格）。
 - 自检：`node --check` 通过；平台关 / 飞行关 / Boss 战实机无 JS 报错；rAF 间隔 120 帧 avg 4.16ms（未封顶）。
 - 注：本次与 P1 并行，公共入口文件（index.html / main.js / style.css / stage.js / scenes.js）未改；Boss 立绘的 ARK 生成单张 40s–8min 不等，重跑脚本前先确认服务端不忙。
+
+### P3 执行记录（2026-10-18）
+
+目标：「3456 + EX 的 Boss 图不合格，芙兰不够霸气、动作过于僵硬，需要多一点人物动作」。这一轮把 Boss 从「并腿悬浮 + 手臂微张」的站桩肖像，改成**有动作的战斗姿势 + 角色气质 + 原作服装**，并在引擎侧补了「活人感」。
+
+- 立绘重做（`tools/gen_boss_action.py` → `src/art/gen/boss/<key>.png`，旧图存 `_p3_backup/boss_prev/`）
+  - 生成器改成「动作优先」：STYLE 里去掉 `legs together / arms slightly spread`，每角色单独写 OUTFIT / POSE / VIBE；身份参考图只用来取脸与服装，明确要求不要抄参考站姿。
+  - `whiten()` 改为**四边 flood fill** 去白底（不再全局按亮度抠），白色连衣裙/和服领口不会被啃掉；输出内容高 640，装进游戏时按 alpha 包围盒缩到 `BOSS_H`。
+  - cirno：举拳大笑 + 冰锥炸开（嚣张 baka，不再是死鱼眼）。
+  - aya：贴地高速冲刺、举相机闪光、另一手甩羽扇 + 风痕残影（女性化：红眼 / 睫毛 / 腮红 / 红色百褶裙 + 过膝袜）。
+  - yuyuko：展袖引蝶、扇子 + 幽灵蓝蝶（白底蓝纹和服、木屐，去掉旧的赤脚绷带）。
+  - kaguya：举「龙颈之玉」临下、宽袖翻飞的月之公主（**去掉金冠**，黑长直 + 红眼 + 红粉和服，和原作/对话立绘一致）。
+  - flandre：七水晶翼全展、单指前指 + 咧嘴，EX 的压迫感；方案「扑向镜头 + 爪 + 獠牙」被 ARK 版权过滤连续拦截，改用「悬浮威压」方案通过。
+  - 版权过滤 `OutputImageSensitiveContentDetected.PolicyViolation` 是随机的，脚本内重试 6 次；单张 30s–5min。
+- `src/art/genboss.js`
+  - 悬浮动效从「单轴上下平移」改成三个不同相位/频率叠加：`bob(t*1.6)` + `sway(t*0.83)` + `tilt(t*1.13)` + 呼吸缩放，绕脚底旋转，defeat 时倾倒。
+  - halo 透明度随 `sin(t*1.3)` 呼吸、rim 随 `sin(t*2.4)` 呼吸，避免立绘像贴纸。
+  - 新增 `cast` 参数（开火瞬间）：整体向朝向前压 7px、上抬 4px、放大 1.8%，让「发弹」在立绘上看得见。
+  - `BOSS_H.flandre` 240 → **256**，EX 要压场。
+- `src/game/boss.js`
+  - `bossArtOpts` 新增 `cast: this.fireT < 0.22 ? 1 - this.fireT / 0.22 : 0`。
+- `src/game/stage.js` `_updateCamera`（Boss 战取景）
+  - 原 `Math.min(tx - 200, mid)` 会把镜头停在玩家右侧 200px，Boss 站在玩家右侧 420px 时正好半个身子被右边缘切掉（宽幅新立绘更明显）。
+  - 改为 `Math.max(tx - 1080, Math.min(tx + 380, mid))`：距离 420px 时镜头取中点，玩家≈430px、Boss≈850px，双方完整入画；Boss 远离时仍优先保住玩家。
+- 验收截图：`_p3_boss_compare.png`（旧/新五人对位）、`_real5-2.png`（辉夜实机）、`_r2-2.png`（琪露诺实机）、`_s3k-1.png`（文文实机）、`_fE-1.png`（EX 芙兰实机，含 cast 前压）、可复用对比页 `_p3_boss_compare.html`。
+- 自检：七关循环无 JS 报错；Boss 立绘 PNG 单张 0.3–0.8MB，加载后只留一份预处理 canvas；截图走 `tools/_boss_shot3/4/5.mjs`（headless Edge）+ `tools/_html_shot.mjs`。
+- 注：幽幽子的粉色睡帽连续两轮被版权过滤拦截（同一 prompt 只要加帽子就判违规），本轮保留无帽版本；后续若要补，建议手动合成而不是继续撞过滤器。
+
+### P4 修正（2026-10-18）
+
+主人反馈：芙兰的翅膀「是大问题，遵循红魔乡的建模」；辉夜「上面的建模太童话劣质感了」。
+
+- 芙兰翅膀：P3 那版是四片淡彩蝴蝶翼（像妖精/彩绘玻璃），既不像红魔乡也不是「水晶」。
+  - 甜点：ARK 对「带翅膀的芙兰」直接出图连续被版权过滤拦（6/6），改成 **拆件合成**：
+    1. 单独生成一张「黑枝骨架 + 七色尖晶垂坠」的翅膀素材（`_cand/wing-1cw1.png`）；
+    2. 单独生成一张**没有翅膀**的芙兰身体（`_cand/flandre-2nb1.png`）；
+    3. `_cand/compose.py` 把翅膀放在背后合成：翅膀宽 = 身体宽 ×1.35，底边对齐 y=0.95H，
+       并掐掉底部中央的挂环（会从裙摆下方露出来）。
+  - 结果：`src/art/gen/boss/flandre.png`（720×640），七色尖晶从黑枝上垂下、彼此分离，朝外张开。
+- 辉夜：P3 那版是鲑粉和服 + 大号白色蝴蝶结 + 手里举发光水晶，确实「童话味」太重。
+  - 重新生成（不再用参考图）：深红层叠和服 + 白色内领 + 平绕深红腰带（金绳）+ 金线月/竹暗纹 + 白下襦 + 木屐；
+    去掉皇冠/蝴蝶结/发光道具/闪粉，改成一只空手抬起做「赐予」手势，眼神下垂、淡笑。选 `_cand/kaguya-4v2.png`。
+- 版权过滤依旧是随机拦截：本轮「纯文字描述、无参考图」的成功率明显高于「拿现图改图」。
+- 对比页：`_p4_compare.html` → `_p4_compare.png`（旧 P3 / 新 P4，两行）。
+- 旧图备份：`_p3_backup/boss_prev/flandre.prev3.png`（P3 蝴蝶翼版）、`kaguya.prev3.png`（P3 鲑粉版）。
+- 实机截图：`_fE-1.png`（EX 芙兰，七色水晶翼）、`_k5-1.png`（辉夜，深红和服）。

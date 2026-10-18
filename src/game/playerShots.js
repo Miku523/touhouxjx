@@ -290,16 +290,17 @@ export class PlayerShots {
    * @param {'reimu'|'marisa'} char
    * @param {number} powerLevel 1-4
    * @param {number} [aim=0] 仰角（弧度，负数向上）
+   * @param {number} [spread] 扇形半宽（默认按是否仰射自动取 0.55 / 0.09）
    */
-  fire(x, y, dir, char, powerLevel = 1, aim = 0) {
+  fire(x, y, dir, char, powerLevel = 1, aim = 0, spread) {
     const lv = Math.min(4, Math.max(1, powerLevel | 0));
     // 弹数成长：1 / 2 / 3 / 5 发，配合 3 点单发伤害，DPS 约 35 → 176
     const shots = [1, 2, 3, 5][lv - 1];
     // 向上射击时用大扇形覆盖不同的高度/距离，平射用很小的散布
-    const spread = aim ? 0.55 : 0.09;
+    const fan = spread === undefined ? (aim ? 0.55 : 0.09) : spread;
     for (let i = 0; i < shots; i++) {
       const t = shots === 1 ? 0 : (i / (shots - 1)) - 0.5;
-      const ang = aim + t * spread;
+      const ang = aim + t * fan;
       const b = this._take();
       b.active = true;
       b.x = x;

@@ -137,7 +137,7 @@ for (let i = 0; i < 3; i++) {
     return JSON.stringify({
       state: b.state, phase: b.phase, phaseName: b.phaseName, pat: b.patternIdx,
       volleys: b.volleys, bullets: s.bullets.activeCount,
-      bx: Math.round(b.x), by: Math.round(b.y), hp: Math.round(b.hp), al: b.alpha, st: b.state, camx: Math.round(s.camera.x), sx: Math.round(b.x - s.camera.x), sy: Math.round(b.y - s.camera.y),
+      bx: Math.round(b.x), by: Math.round(b.y), hp: Math.round(b.hp), al: b.alpha, st: b.state, camx: Math.round(s.camera.x), camy: Math.round(s.camera.y || 0), sx: Math.round(b.x - s.camera.x), sy: Math.round(b.y - s.camera.y),
     });
   })()`);
   stepped += frames;

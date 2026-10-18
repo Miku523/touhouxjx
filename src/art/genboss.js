@@ -148,6 +148,8 @@ export function drawGenBoss(ctx, o) {
   const sway = Math.sin(t * 0.83 + 1.1) * 3;
   const tilt = Math.sin(t * 1.13 + 0.6) * 0.021;
   const breathe = 1 + Math.sin(t * 1.9) * 0.012;
+  // 发弹瞬间：整体向朝向前压 + 轻微放大，读完即衰减（由 boss.js 的 fireT 驱动）
+  const cast = Math.max(0, Math.min(1, o.cast || 0));
 
   let dropY = 0;
   let fade = 1;
@@ -166,9 +168,9 @@ export function drawGenBoss(ctx, o) {
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   // 绕脚底倾斜：离地面越远摆幅越大，像被气流托着晃
-  ctx.translate(sway, bob + dropY);
-  ctx.rotate(tilt * (1 - defeated * 0.6) - defeated * 0.05);
-  ctx.scale(breathe, breathe);
+  ctx.translate(sway + cast * 7, bob + dropY - cast * 4);
+  ctx.rotate(tilt * (1 - defeated * 0.6) - defeated * 0.05 + cast * 0.012);
+  ctx.scale(breathe + cast * 0.018, breathe + cast * 0.018);
 
   // 以包围盒左下为基准：dx/dy 让内容脚底中心落在原点
   const dx = -(art.bbox.x + art.bbox.w / 2) * s;

@@ -75,7 +75,8 @@ function nextBattleSeed() {
 
 function firePattern(p, boss, api, fireT) {
   const b = api.bullets;
-  if (!b || b.activeCount > 1180) return;
+  // 同屏弹数预算：满了就整招停火，等旧弹飞走（最硬的「有缝」护栏）
+  if (!b || b.activeCount >= boss.bulletBudget) return;
 
   const px = api.px;
   const py = api.py;
@@ -86,17 +87,24 @@ function firePattern(p, boss, api, fireT) {
   const life = p.life || 7;
   const type = p.type !== undefined ? p.type : 0;
 
-  // 速度：招式变体倍率 + 每发小抖动
-  const varySpeed = (base, k = 1) => Math.max(20, (base || 120) * pat.speedScale * k * boss.rnd(0.9, 1.08));
+  // 速度：招式变体倍率 + 每发小抖动，再夹到难度给出的单发速度上限
+  const varySpeed = (base, k = 1) =>
+    Math.min(boss.speedCap, Math.max(20, (base || 120) * pat.speedScale * k * boss.rnd(0.9, 1.08)));
   // 瞄准抖动：wild 越高越飘，但上限 0.2 rad（约 11°），不会变成无解散射
   const aimJitter = clamp(0.04 + wild * 0.09, 0.04, 0.2);
   const aim = () => Math.atan2(py - boss.y, px - boss.x) + boss.rnd(-aimJitter, aimJitter);
-  // 弹数：招式变体 + 每发抖动
+  // 弹数：招式变体 + 每发抖动 + 屏幕密度自适应（越满越薄）
   const count = (base, lo = 1, hi = 64) =>
-    clamp(Math.round((base || 1) * pat.nScale * boss.rnd(0.94, 1.06)), lo, hi);
+    clamp(Math.round((base || 1) * pat.nScale * boss.pressure * boss.rnd(0.94, 1.06)), lo, hi);
+  // 环状弹幕的缝隙保障：同样半径下相邻两发的弧长不小于 ringGapPx，
+  // 否则一圈会缩成没有缝的墙（人形判定半径 7，两发半径 6 需要约 26px 间距）
+  const ringN = (base, lo = 1, hi = 64) => {
+    const n = count(base, lo, hi);
+    return clamp(n, lo, Math.min(hi, boss.ringLimit));
+  };
 
   if (p.typeName === 'ring') {
-    const n = count(p.n || 12, 1, 56);
+    const n = ringN(p.n || 12, 1, 56);
     const rings = clamp(Math.round((p.rings || 1) * pat.ringScale), 1, 4);
     const spin = (p.spinAngle || 0) * pat.dir;
     for (let k = 0; k < rings; k++) {
@@ -241,7 +249,7 @@ function firePattern(p, boss, api, fireT) {
   if (p.typeName === 'bloom') {
     // 冰花绽放：多圈不同弹型错位展开，一圈大一码、一圈小一码
     const rings = clamp(Math.round(p.rings || 3), 1, 4);
-    const n = count(p.n || 10, 4, 40);
+    const n = ringN(p.n || 10, 4, 40);
     const spin = (p.spinAngle || 0.12) * pat.dir;
     const t0 = pat.angle + fireT * spin;
     for (let k = 0; k < rings; k++) {
@@ -691,6 +699,17 @@ export class Boss {
     this._seed = this.seed || 1;
     this.wild = 0.6;
 
+    /* ---------- 难度护栏（E/N/H/L 各一档，见 difficulty.js） ---------- */
+    // 同屏弹数预算：超过就停火让路
+    this.bulletBudget = Number(this.diff.bulletBudget) || 1180;
+    // 单发弹速硬上限：再快也不会到躲不开的程度
+    this.speedCap = Number(this.diff.bulletSpeedCap) || 520;
+    // 环状弹幕最小间距折算出的单圈上限（按 240px 半径算弧长，保证留有判定缝）
+    this.ringGapPx = Math.max(26, Number(this.diff.ringGapPx) || 30);
+    this.ringLimit = clamp(Math.floor((TAU * 240) / this.ringGapPx), 6, 56);
+    // 屏幕密度自适应：1 = 全量开火，越低新招弹数越薄
+    this.pressure = 1;
+
     this.t = 0;
     this.state = 'intro'; // intro | battle | defeat | dead
     this.introT = 0;
@@ -887,22 +906,29 @@ export class Boss {
 
     this._wildLeft = this.rndInt(2, 3);
     this._wildT = 0;
-    this._wildCd = this.rnd(8, 15);
+    // 变招频率也跟难度走：E 更久才来一次，L 来得更勤
+    this._wildCd = this.rnd(8, 15) * clamp(this.diff.fireIntervalScale, 0.7, 1.6);
     fx?.flash(this.x, this.y - 80, this.def.accent, 24);
     fx?.shockwave(this.x, this.y - 70, this.def.accent, 16, 700, 0.4);
   }
 
-  /** 一波计划外弹幕：环 / 扇 / 散射三选一，参数当场随机 */
+  /** 一波计划外弹幕：环 / 扇 / 散射三选一，参数当场随机（跟着难度与密度自适应缩放） */
   _wildVolley(player, bullets) {
-    if (!bullets || bullets.activeCount > 1180) return;
-    const px = player.x + (player.w || 0) / 2;
-    const py = player.y + (player.h || 0) / 2;
+    // 变招是「额外」弹幕：屏幕比较满时直接放弃，优先保证已有弹幕的缝隙
+    if (!bullets || bullets.activeCount >= this.bulletBudget * 0.8) return;
+    const pc = this._playerCenter(player);
+    const px = pc.x;
+    const py = pc.y;
     const aim = Math.atan2(py - this.y, px - this.x);
     const color = this.chance(0.5) ? this.def.accent : '#ffffff';
     const kind = this.rndInt(0, 2);
+    // 弹数与弹速：难度倍率 × 密度自适应，速度同样夹到上限
+    const cnt = this.diff.bulletCountScale * this.pressure;
+    const sp = (v) => Math.min(this.speedCap, Math.max(20, v * this.diff.bulletSpeedScale));
 
     if (kind === 0) {
-      bullets.ring(this.x, this.y, this.rndInt(8, 16), this.rnd(85, 175), {
+      const n = clamp(Math.round(this.rndInt(8, 16) * cnt), 4, this.ringLimit);
+      bullets.ring(this.x, this.y, n, sp(this.rnd(85, 175)), {
         color,
         r: this.rndInt(4, 8),
         type: 0,
@@ -914,7 +940,8 @@ export class Boss {
     }
 
     if (kind === 1) {
-      bullets.fan(this.x, this.y, this.rndInt(3, 7), this.rnd(0.45, 1.15), aim + this.rnd(-0.14, 0.14), this.rnd(150, 275), {
+      const n = clamp(Math.round(this.rndInt(3, 7) * cnt), 2, 14);
+      bullets.fan(this.x, this.y, n, this.rnd(0.45, 1.15), aim + this.rnd(-0.14, 0.14), sp(this.rnd(150, 275)), {
         color,
         r: this.rndInt(4, 7),
         type: this.chance(0.35) ? 3 : 0,
@@ -923,14 +950,14 @@ export class Boss {
       return;
     }
 
-    const n = this.rndInt(6, 12);
+    const n = clamp(Math.round(this.rndInt(6, 12) * cnt), 3, 16);
     for (let i = 0; i < n; i++) {
       const a = this.rnd(0, TAU);
-      const sp = this.rnd(70, 200);
+      const speed = sp(this.rnd(70, 200));
       bullets.spawn({
         x: this.x, y: this.y,
-        vx: Math.cos(a) * sp,
-        vy: Math.sin(a) * sp,
+        vx: Math.cos(a) * speed,
+        vy: Math.sin(a) * speed,
         color,
         r: this.rndInt(4, 7),
         type: 0,
@@ -1045,6 +1072,11 @@ export class Boss {
     // 随机幅度：符卡越靠后、本张血越少，弹幕越乱
     this.wild = clamp(0.55 + this.spellIdx * 0.12 + (1 - this.hpRatio) * 0.3, 0.55, 1.4);
 
+    // 密度自适应：屏幕占用超过预算 60% 之后，新开的一招按比例收窄弹数（最低 0.45×）。
+    // 这一层让「大量增加弹幕」的 L 也不会摊成没缝的墙——越满弹幕越薄，缝隙自动回流。
+    const loadRatio = (bullets?.activeCount || 0) / this.bulletBudget;
+    this.pressure = loadRatio <= 0.6 ? 1 : clamp(1 - (loadRatio - 0.6) * 1.4, 0.45, 1);
+
     // 随机移动（替代原来的正弦漂浮）
     this._updateMovement(dt, fx);
 
@@ -1056,10 +1088,11 @@ export class Boss {
 
     if (this.fireT >= this._nextRate) {
       this.fireT = Math.max(0, this.fireT - this._nextRate);
+      const pc = this._playerCenter(player);
       firePattern(pat, this, {
         bullets,
-        px: player.x + player.w / 2,
-        py: player.y + player.h / 2,
+        px: pc.x,
+        py: pc.y,
         t: this.t,
       }, this.patternT);
       this.volleys++;
@@ -1082,14 +1115,32 @@ export class Boss {
   }
 
   _overlapPlayer(p) {
+    // 用玩家中心 + 半尺寸判定，平台 / STG 两种玩家对象都能正确计算
+    const c = this._playerCenter(p);
     const hw = this.w * 0.42;
     const hh = this.h * 0.72;
+    const pw = (p.w || 20) / 2;
+    const ph = (p.h || 20) / 2;
     return (
-      this.x - hw < p.x + p.w &&
-      this.x + hw > p.x &&
-      this.y - hh < p.y + p.h &&
-      this.y > p.y
+      this.x - hw < c.x + pw &&
+      this.x + hw > c.x - pw &&
+      this.y - hh < c.y + ph &&
+      this.y > c.y - ph
     );
+  }
+
+  /**
+   * 玩家中心点。
+   * 平台关的 Player 有 x/y 包围盒；STG 关的 StgPlayer 只有 worldX / worldY（判定圆心），
+   * 早先直接读 player.x 会得到 undefined → 瞄准弹算出 NaN 方向，整招凭空消失。
+   */
+  _playerCenter(player) {
+    if (!player) return { x: this.x, y: this.baseY + 300 };
+    const hasBox = typeof player.x === 'number';
+    return {
+      x: hasBox ? player.x + (player.w || 0) / 2 : (player.worldX ?? this.x),
+      y: hasBox ? player.y + (player.h || 0) / 2 : (player.worldY ?? this.baseY + 300),
+    };
   }
 
   /** 玩家子弹命中检测 */
@@ -1147,6 +1198,8 @@ export class Boss {
       flash: this.hitFlash > 0 ? Math.min(1, this.hitFlash * 6) : 0,
       alpha: this.alpha,
       scale: 1,
+      // 开火瞬间向前顶一下：让「发弹」这个动作在立绘上看得见，而不是站桩放弹幕
+      cast: this.fireT < 0.22 ? 1 - this.fireT / 0.22 : 0,
     };
     if (!drawGenBoss(ctx, bossArtOpts)) drawBoss(ctx, bossArtOpts);
 

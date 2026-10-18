@@ -45,12 +45,14 @@ let seedReset = null;
 /**
  * 难度卡的视觉素材：四档各一个主题色（tone 实色 / glow 供 rgba 用）
  * meters 是「弹幕强度」四格条的相对强度（0–1，手调，比从倍率换算更好看）。
+ * 四格顺序与 _difficultyDetailHTML 的 names 一致：密度 / 速度 / 敌弹频率 / 符卡强度。
+ * 对应 difficulty.js 里的实际梯度：E 0.64×/0.84×，N 0.96×/1.00×，H 1.16×/1.10×，L 1.45×/1.22×。
  */
 const DIFF_CARDS = {
-  E: { tone: '#8fd8ff', glow: '143, 216, 255', stars: '★☆☆☆☆', meters: [0.18, 0.18, 0.12, 0.14] },
-  N: { tone: '#ffa6d0', glow: '255, 156, 203', stars: '★★☆☆☆', meters: [0.52, 0.52, 0.50, 0.52] },
-  H: { tone: '#ffbf6b', glow: '255, 178, 96', stars: '★★★☆☆', meters: [0.78, 0.74, 0.80, 0.78] },
-  L: { tone: '#c79bff', glow: '186, 130, 255', stars: '★★★★☆', meters: [1.00, 0.96, 1.00, 1.00] },
+  E: { tone: '#8fd8ff', glow: '143, 216, 255', stars: '★☆☆☆☆', meters: [0.10, 0.15, 0.10, 0.12] },
+  N: { tone: '#ffa6d0', glow: '255, 156, 203', stars: '★★☆☆☆', meters: [0.48, 0.45, 0.42, 0.44] },
+  H: { tone: '#ffbf6b', glow: '255, 178, 96', stars: '★★★☆☆', meters: [0.72, 0.70, 0.70, 0.72] },
+  L: { tone: '#c79bff', glow: '186, 130, 255', stars: '★★★★☆', meters: [1.00, 0.95, 0.98, 1.00] },
 };
 
 /**
@@ -644,6 +646,7 @@ class Game {
       row('help-move', '加速移动', cap('fast') + '<span class="help-tip">按住</span>'),
       { ...row('help-act', '射击', cap('shoot')), groupTitle: '战斗', glyph: '戰' },
       row('help-act', '向上射击', cap('up') + '<span class="help-tip">按住打空中</span>'),
+      row('help-act', '向下射击', cap('down') + '<span class="help-tip">按住打脚下</span>'),
       row('help-act', '冲刺', cap('dash') + '<span class="help-tip">无敌</span>'),
       row('help-act', '符卡', cap('cast') + '<span class="help-tip">耗 50 · 火力等级下降</span>'),
       { ...row('help-sys', '暂停菜单', cap('pause')), groupTitle: '系统', glyph: '系' },
@@ -727,15 +730,15 @@ class Game {
     this._createStage(def, 0, true);
   }
 
-  startStage(index) {
+  startStage(index, opts) {
     const list = this._mainStages();
     if (!list.length) { this.showTitle(); return; }
     const def = list[index];
     if (!def) { this._onAllCleared(); return; }
-    this._createStage(def, index, false);
+    this._createStage(def, index, false, opts);
   }
 
-  _createStage(def, index, isExtra) {
+  _createStage(def, index, isExtra, opts = {}) {
     this._hidePanel();
     this.state = 'play';
     this.levelIndex = index;
@@ -757,15 +760,32 @@ class Game {
       this.stage.player.power = isExtra ? 128 : this.carryPower;
     }
 
+    // 重挑战回 Boss：把玩家放回 Boss 前的检查点，Boss 直接登场，
+    // 不用把整段跑图再走一遍（战前对白也跳过，因为已经看过）。
+    let resumedBoss = false;
+    if (!isExtra && opts.resumeBoss) {
+      const p = this.stage.player;
+      if (p && typeof p.reset === 'function') {
+        const cp = opts.checkpoint || p.checkpoint;
+        if (cp && Number.isFinite(cp.x) && Number.isFinite(cp.y)) p.reset(cp.x, cp.y);
+        p.setCheckpoint?.(p.x, p.y);
+        p.vx = 0; p.vy = 0;
+        p.invuln = Math.max(p.invuln || 0, 1.5);  // 出场给一小段无敌，别一复活就挨弹
+        this.stage.beginBoss();
+        this.stage.camera?.snapTo?.(p.x + p.w / 2);
+        resumedBoss = true;
+      }
+    }
+
     this.hud.reset();
     this.hud.setMaxLives(this.lives, this.char);
     this.hud.setStageName(isExtra ? 'EXTRA' : `STAGE ${index + 1}`, def.title || '');
     this.hud.banner(isExtra ? 'EXTRA STAGE' : `STAGE ${index + 1}`, def.title || '', 2.6);
     this.audio.play?.('menu');
 
-    // 关卡开场对话（Extra 的开场已经在外面播过了）
-    const script = isExtra ? [] : (STORY.stages[STAGE_KEY(index)]?.intro || []);
-    const showTip = () => this.hud.tip(def.hint || '', 5.5);
+    // 关卡开场对话（Extra 的开场已经在外面播过了；重挑战本关时也跳过，直接继续）
+    const script = (isExtra || opts.skipIntro) ? [] : (STORY.stages[STAGE_KEY(index)]?.intro || []);
+    const showTip = () => { if (!resumedBoss) this.hud.tip(def.hint || '', 5.5); };
     if (script.length) {
       this.state = 'dialogue';
       this._playDialogue(script, () => { this.state = 'play'; showTip(); });
@@ -908,17 +928,34 @@ class Game {
     this.state = 'gameover';
     this.hudEl?.classList.add('hidden');
     this.audio.play?.('die');
+    // 已经打到 Boss 的话，重挑战回 Boss 场地而不是从头跑一遍
+    const atBoss = this._canResumeBoss();
     this._setPanel('游戏结束', `残机用尽 · ${this.inExtra ? 'EXTRA STAGE' : 'STAGE ' + (this.levelIndex + 1)}`, [
-      { label: '重新挑战本关', key: 'ENTER', cls: 'primary', onPick: () => this._retryStage() },
+      { label: atBoss ? '再战 Boss' : '重新挑战本关', key: 'ENTER', cls: 'primary', onPick: () => this._retryStage() },
       { label: '返回标题', key: 'ESC', onPick: () => this.showTitle() },
-    ], this.inExtra ? 'EXTRA 关失败不会触发结局\n整理好状态，再挑战一次' : '');
+    ], this.inExtra ? 'EXTRA 关失败不会触发结局\n整理好状态，再挑战一次' : (atBoss ? '从 Boss 场地重新开始\n前面的进度不会丢失' : ''));
+  }
+
+  /** 当前这关是否已经打到 Boss（重挑战可以直接回 Boss 场地） */
+  _canResumeBoss() {
+    const s = this.stage;
+    return !!(s && s.bossStarted && s.mode === 'platform' && s.player && !this.inExtra);
   }
 
   _retryStage() {
     this._hidePanel();
     this.lives = Math.max(1, this.lives);
     if (this.inExtra) this._startExtraStage();
-    else this.startStage(this.levelIndex);
+    // 重挑战是「续命重来」，不是重开一局：跳过已看过的开场对白，直接回到操作
+    else if (this._canResumeBoss()) {
+      const s = this.stage;
+      // 记下 Boss 前的检查点，重建关卡后把玩家放回去再开 Boss
+      this.startStage(this.levelIndex, {
+        skipIntro: true,
+        resumeBoss: true,
+        checkpoint: s.player.checkpoint || s._safeSpot || null,
+      });
+    } else this.startStage(this.levelIndex, { skipIntro: true });
   }
 
   /** 用主循环时钟安排一次性回调，避免 setTimeout 与暂停状态脱节 */

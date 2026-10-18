@@ -38,18 +38,27 @@ const BOSS = [
   ['kaguya', '蓬莱山辉夜', '月之公主 · 举玉临下'],
   ['flandre', '芙兰朵露', 'EX 威压 · 指认 + 展翼'],
 ];
-function fill(id, file, isNew) {
+// 旧图：P3 之前的原始立绘（aya 的旧图在 _p2_backup，其余在 *.prev2.png）
+const OLD = {
+  cirno: '_p3_backup/boss_prev/cirno.prev2.png',
+  aya: '_p2_backup/boss_prev/aya.prev.png',
+  yuyuko: '_p3_backup/boss_prev/yuyuko.prev2.png',
+  kaguya: '_p3_backup/boss_prev/kaguya.prev2.png',
+  flandre: '_p3_backup/boss_prev/flandre.prev2.png',
+};
+function fill(id, isNew) {
   const row = document.getElementById(id);
   for (const [key, name, note] of BOSS) {
     const d = document.createElement('div');
+    const src = isNew ? 'src/art/gen/boss/' + key + '.png' : OLD[key];
     d.innerHTML = '<div class="cell"><span class="nm">' + name + '</span>' +
-      '<img src="src/art/gen/boss/' + key + file + '"></div>' +
+      '<img src="' + src + '"></div>' +
       (isNew ? '<div class="note">' + note + '</div>' : '');
     row.appendChild(d);
   }
 }
-fill('old', '.prev2.png', false);
-fill('new', '.png', true);
+fill('old', false);
+fill('new', true);
 </script>
 </body>
 </html>

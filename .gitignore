@@ -3,6 +3,8 @@ _*.png
 _*.jpg
 _*.jpeg
 _tmp_*
+_*.json
+_*.log
 
 # 无头浏览器 profile
 _edgeprof/
@@ -45,3 +47,17 @@ _power_live.json
 _ice_tex_names.txt
 _fairy_src/
 _fairy_src
+
+# 生成脚本用的切割源图
+boss_src/
+
+# 改版过程中的源文件备份
+*.bak_*
+
+# 新的开发预览页（未入库）
+_p3_ingame.html
+_p4_compare.html
+
+# 截图/备份产物
+_p3_backup/
+._shots_danmaku/
