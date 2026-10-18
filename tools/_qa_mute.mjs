@@ -178,12 +178,19 @@ try {
     for (let i = 0; i < window.__buf.length; i++) s += window.__buf[i] * window.__buf[i];
     return Math.sqrt(s / window.__buf.length);
   })()`);
+  // 单帧取样会正好落进音符之间的空隙（同一轮里既能读到 0.11 也能读到 0.00000），
+  // 所以一次「有声」判定取 300ms 内的峰值，而不是单帧。
+  const peakRms = async (reads = 6, gap = 50) => {
+    let mx = 0;
+    for (let i = 0; i < reads; i++) { mx = Math.max(mx, Number(await rms())); await sleep(gap); }
+    return mx;
+  };
   const spam = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'KeyZ', 'KeyX', 'KeyK',
     'KeyC', 'ShiftLeft', 'Digit1', 'Slash', 'Tab', 'Backspace', 'ArrowRight', 'ArrowLeft'];
   let minRms = 1, muteHits = 0;
   for (const k of spam) {
     await tap(k);
-    const r = await rms();
+    const r = await peakRms();
     const s2 = await st();
     if (s2.muted) muteHits++;
     if (s2.state === 'play') minRms = Math.min(minRms, r);
