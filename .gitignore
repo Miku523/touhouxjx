@@ -29,3 +29,7 @@ Thumbs.db
 
 # 改版前备份
 .bak_*
+
+# 校验/调试输出
+_diffcheck.*
+_power_verify.json
