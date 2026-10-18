@@ -108,9 +108,26 @@ CHAR = {
                  'crazed delighted expression, shattered glass shards and crimson sparks exploding around her'),
         'vibe': 'the demon sister, childish and utterly terrifying, about to break everything',
     },
+    'remilia': {
+        'ref': 'remilia',
+        'size': '1536x1024',
+        'outfit': ('pale lavender-blue hair in a soft chin-length bob with two long strands framing '
+                   'her face, crimson red eyes with thin vertical slit pupils, a red ribbon bow tied '
+                   'on the left side of her head, a pink pinafore dress with white puffy short sleeves '
+                   'and white frilled collar, a white frilled apron front, a red ribbon at the breast, '
+                   'a short puffy skirt with white frilled hem, white socks and red shoes, '
+                   'large bat wings with purple-blue leathery membrane and visible finger bones'),
+        'pose': ('floating high in the air, bat wings spread wide behind her, one arm raised elegantly '
+                 'overhead summoning a cluster of long glowing crimson blood spears that fan out '
+                 'diagonally, the other hand lowered with fingers gently curled, '
+                 'head tilted slightly down at the viewer with a composed arrogant little smile and '
+                 'one small fang, hair, ribbons and skirt lifted by the updraft, '
+                 'crimson mist and drifting scarlet bat silhouettes around her'),
+        'vibe': 'the eternal scarlet child, proud vampire aristocrat, elegant, imperious and a little spoiled',
+    },
 }
 
-ORDER = ['cirno', 'aya', 'yuyuko', 'kaguya', 'flandre']
+ORDER = ['cirno', 'aya', 'yuyuko', 'kaguya', 'flandre', 'remilia']
 
 
 def api_key() -> str:
@@ -203,7 +220,9 @@ def one(key: str, idx: int, tag: str = ''):
         v = os.environ.get(env)
         if v:
             cfg[field] = v
-    ref_path = os.environ.get('REF_PATH') or str(ROOT / 'src' / 'art' / 'gen' / (cfg['ref'] + '.png'))
+    # ref = 对话立绘的文件名；'none' 表示没有漫画像（例如新加的次要角色），只靠文字描述
+    ref_path = os.environ.get('REF_PATH') or ('none' if cfg['ref'] == 'none' else
+                                             str(ROOT / 'src' / 'art' / 'gen' / (cfg['ref'] + '.png')))
     ref = Path(ref_path) if ref_path != 'none' else None
     if ref is not None and not ref.exists():
         raise SystemExit('missing portrait ref ' + str(ref))

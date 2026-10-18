@@ -43,21 +43,23 @@ KEYS = {
 }
 SCALE = {'major': [0, 2, 4, 5, 7, 9, 11], 'minor': [0, 2, 3, 5, 7, 8, 10]}
 
-# game: (start_bar, 备注)；start_bar 为 0 起
+# game: (start_bar, 备注, 小节数)；start_bar 为 0 起
+# 顺序：TH16 / TH12 与 TH18 / TH06 换位后的编排；TH03 作为 2 小节客串插在终曲前。
 SCORE = [
-    (6,  1, 'A Dream that is More Scarlet than Red'),
-    (7,  2, 'Ghostly Dream ~ Snow or Cherry Petal'),
-    (8,  2, 'Eternal Night Vignette ~ Eastern Night'),
-    (9,  2, 'Flower Viewing Mound ~ Higan Retour'),
-    (10, 6, 'Sealed Gods'),
-    (11, 1, 'Awakening of the Earth Spirits'),
-    (12, 3, 'A Shadow in the Blue Sky'),
-    (13, 21, 'Spirit of Avarice'),
-    (14, 1, 'Mysterious Purification Rod'),
-    (15, 8, 'The Space Shrine Maiden Appears'),
-    (16, 0, 'The Sky Where Cherry Blossoms Flutter Down'),
-    (17, 1, 'Entrusting this World to Idols ~ Idolatrize World（代替缺失的标题曲）'),
-    (18, 0, 'A Rainbow Spanning Gensokyo'),
+    (16, 17, 'The Sky Where Cherry Blossoms Flutter Down', 4),
+    (7, 19, 'Ghostly Dream ~ Snow or Cherry Petal', 4),
+    (8, 6, 'Eternal Night Vignette ~ Eastern Night', 4),
+    (9, 13, 'Flower Viewing Mound ~ Higan Retour', 4),
+    (10, 16, 'Sealed Gods', 4),
+    (11, 24, 'Awakening of the Earth Spirits', 4),
+    (6, 12, 'A Dream that is More Scarlet than Red', 4),
+    (13, 32, 'Spirit of Avarice', 4),
+    (14, 93, 'Mysterious Purification Rod', 4),
+    (15, 71, 'The Space Shrine Maiden Appears', 4),
+    (12, 5, 'A Shadow in the Blue Sky', 4),
+    (17, 0, 'Entrusting this World to Idols ~ Idolatrize World（代替缺失的标题曲）', 4),
+    (3, 8, 'A Dream Transcending Space-Time（梦时空客串 2 小节）', 2),
+    (18, 21, 'A Rainbow Spanning Gensokyo', 4),
 ]
 
 # 手工覆盖（跑 --dry 看过自动结果后填）：game -> (transpose, key)
@@ -97,9 +99,9 @@ def choose(notes, prev_key=None):
         shifted = [[n[0], n[1] + t, n[2]] for n in notes]
         med = np.median([n[1] for n in shifted]) if shifted else 60
         oct_shift = 0
-        while med + oct_shift * 12 < 69:
+        while med + oct_shift * 12 < 74:
             oct_shift += 1
-        while med + oct_shift * 12 > 83:
+        while med + oct_shift * 12 > 80:
             oct_shift -= 1
         for key in KEYS:
             f = fit_score([[n[0], n[1] + oct_shift * 12, n[2]] for n in shifted], key)
@@ -112,6 +114,41 @@ def choose(notes, prev_key=None):
                 best = (score, t, key, oct_shift, f, med + oct_shift * 12)
     return best
 
+
+def clean_phrase(notes, key):
+    """让主旋律更清晰：合并同音反复、去掉经过性 16 分、半音外音归位、尾音拉长。"""
+    pcs = set(scale_pcs(key))
+    merged = []
+    for b, m, d in sorted(notes):
+        if merged and m == merged[-1][1] and b - (merged[-1][0] + merged[-1][2]) <= 0.26:
+            merged[-1][2] = round(max(merged[-1][2], b + d - merged[-1][0]), 3)
+        else:
+            merged.append([b, m, d])
+    out = []
+    for i, (b, m, d) in enumerate(merged):
+        if d <= 0.26 and 0 < i < len(merged) - 1:
+            pv, nx = merged[i - 1][1], merged[i + 1][1]
+            if abs(m - pv) <= 2 and abs(nx - m) <= 2:
+                continue
+        out.append([b, m, d])
+    for n in out:
+        if n[1] % 12 in pcs or n[2] > 0.5:
+            continue
+        for off in (1, -1, 2, -2):
+            if (n[1] + off) % 12 in pcs:
+                n[1] += off
+                break
+    if out:
+        med = float(np.median([n[1] for n in out]))
+        for n in out:
+            while n[1] - med > 9:
+                n[1] -= 12
+            while med - n[1] > 9:
+                n[1] += 12
+        out[-1][2] = max(out[-1][2], 1.0)
+    for n in out:
+        n[2] = round(min(4.0, max(0.25, n[2])), 3)
+    return out
 
 def chord_for_bar(bar_notes, key, prev_root):
     best = None
@@ -143,11 +180,12 @@ def build():
     themes = json.load(open(THEMES, encoding='utf-8'))
     sections = []
     prev_key = 'Dm'
-    for game, start, note in SCORE:
+    cursor = INTRO_BARS
+    for game, start, note, bars in SCORE:
         th = themes[str(game)]
         b0 = start * BAR_BEATS
-        b1 = b0 + SEC_BARS * BAR_BEATS
-        raw = [n for n in th['notes'] if b0 <= n[0] < b1]
+        b1 = b0 + bars * BAR_BEATS
+        raw = [n for n in th['notes'] if b0 <= n[0] < b1 and n[1] >= 24]
         if not raw:
             print('!! TH%d 在 %d 小节没有音符' % (game, start + 1))
             continue
@@ -156,9 +194,9 @@ def build():
             shifted = [[n[0], n[1] + t, n[2]] for n in raw]
             med = np.median([n[1] for n in shifted])
             oct_shift = 0
-            while med + oct_shift * 12 < 69:
+            while med + oct_shift * 12 < 74:
                 oct_shift += 1
-            while med + oct_shift * 12 > 83:
+            while med + oct_shift * 12 > 80:
                 oct_shift -= 1
             f = fit_score([[n[0], n[1] + oct_shift * 12, n[2]] for n in shifted], key)
             pick = (0, t, key, oct_shift, f, med + oct_shift * 12)
@@ -168,25 +206,37 @@ def build():
         notes = [[n[0] - b0, n[1] + t + oct_shift * 12,
                   min(4.0, max(0.25, n[2]))] for n in raw]
         notes.sort()
+        notes = clean_phrase(notes, key)
+        if notes:
+            m2 = float(np.median([n[1] for n in notes]))
+            sh = 0
+            while m2 + sh * 12 < 74:
+                sh += 1
+            while m2 + sh * 12 > 81:
+                sh -= 1
+            if sh:
+                notes = [[n[0], n[1] + sh * 12, n[2]] for n in notes]
         # 每小节和弦
         chords = []
         prev_root = None
-        for bar in range(SEC_BARS):
+        for bar in range(bars):
             bn = [n for n in notes if bar * 4 <= n[0] < (bar + 1) * 4]
             r = chord_for_bar(bn, key, prev_root) if bn else (prev_root if prev_root is not None else KEYS[key][0])
             chords.append(r)
             prev_root = r
         sections.append(dict(game=game, name=note, key=key, t=t, oct=oct_shift,
-                             fit=f, med=med, notes=notes, chords=chords,
-                             start_bar=INTRO_BARS + len(sections) * SEC_BARS))
+                             fit=f, med=med, notes=notes, chords=chords, bars=bars,
+                             start_bar=cursor))
+        cursor += bars
         prev_key = key
     return sections
 
 
 def emit(sections):
-    total_bars = INTRO_BARS + len(sections) * SEC_BARS + OUTRO_BARS
+    sec_bars = sum(s['bars'] for s in sections)
+    total_bars = INTRO_BARS + sec_bars + OUTRO_BARS
     duration = round(total_bars * BAR_BEATS * SEC_PER_BEAT, 6)
-    lead, bass, arp, drums = [], [], [], []
+    lead, lead2, bass, arp, drums, link = [], [], [], [], [], []
 
     def add(track, beat, midi, dur_beats, vel):
         track.append([round(beat * SEC_PER_BEAT, 6), int(midi),
@@ -219,8 +269,10 @@ def emit(sections):
         base = sbar * 4
         lvl = si // 4 + 1   # 1..4
         for n in sec['notes']:
-            add(lead, base + n[0], n[1], n[2], 92)
-        for bar in range(SEC_BARS):
+            add(lead, base + n[0], n[1], n[2], 100)
+            if si >= 8 and sec['game'] != 3:
+                add(lead2, base + n[0], n[1] + 12, n[2], 74)
+        for bar in range(sec['bars']):
             root = sec['chords'][bar]
             fifth = (root + 7) % 12
             third = (root + (3 if KEYS[sec['key']][1] == 'minor' else 4)) % 12
@@ -234,8 +286,11 @@ def emit(sections):
             add(bass, bbeat + 2, root_midi(root), 1.5, 90)
             add(bass, bbeat + 3.5, root_midi(fifth), 0.5, 84)
             seq = [root, fifth, (root + 12) % 12, third]
-            for i in range(8):
-                add(arp, bbeat + i * 0.5, seq[i % 4] + 60, 0.45, 60 + lvl * 4)
+            busy = len([n for n in sec['notes'] if bar * 4 <= n[0] < (bar + 1) * 4])
+            div = 4 if busy >= 6 else 8
+            for i in range(div):
+                add(arp, bbeat + i * (4.0 / div), seq[i % 4] + 60,
+                    3.6 / div, 58 + lvl * 4)
             # 鼓
             add(drums, bbeat, 0, 0.25, 100)
             add(drums, bbeat + 2, 0, 0.25, 100)
@@ -258,8 +313,55 @@ def emit(sections):
                 add(drums, base + 15 + i * 0.25, 1, 0.2, 70 + i * 8)
             add(drums, base + 3.5, 3, 0.5, 80)
 
+    # ---------- 段间连接：上行音阶 / 琶音，把两段焊起来 ----------
+    def run_into(end_beat, prev_pitch, target, key, next_root=None, mode='scale'):
+        """在 end_beat 前 1.5 拍铺一条上行（音阶或下一段和弦琶音），末音落在下一段首音上。"""
+        while target - prev_pitch > 10:
+            target -= 12
+        while prev_pitch - target > 10:
+            target += 12
+        pcs = scale_pcs(key)
+        pool = set(pcs)
+        floor = target - 13
+        if mode == 'arp' and next_root in pcs:
+            i = pcs.index(next_root)
+            pool = {pcs[i], pcs[(i + 2) % 7], pcs[(i + 4) % 7]}
+            floor = target - 13
+        seq = []
+        m = target
+        while m > floor and len(seq) < 6:
+            m -= 1
+            if m % 12 in pool:
+                seq.append(m)
+        seq.reverse()
+        seq.append(target)
+        step = 1.5 / len(seq)
+        for i, mm in enumerate(seq):
+            add(link, end_beat - 1.5 + i * step, mm, step - 0.02, 58 + i * 4)
+
+    # 引子 → 第一段
+    if sections:
+        run_into(INTRO_BARS * 4, 74,
+                 sections[0]['notes'][0][1] if sections[0]['notes'] else 74,
+                 sections[0]['key'], sections[0]['chords'][0], 'scale')
+    # 各段之间：音阶与琶音交替，避免每次都是同一条音阶
+    for si, sec in enumerate(sections[:-1]):
+        end = sec['start_bar'] * 4 + sec['bars'] * 4
+        prev = sec['notes'][-1][1] if sec['notes'] else 74
+        nxt = sections[si + 1]
+        tgt = nxt['notes'][0][1] if nxt['notes'] else prev
+        run_into(end, prev, tgt, nxt['key'], nxt['chords'][0],
+                 'arp' if si % 2 else 'scale')
+        add(bass, end - 0.25, root_midi(nxt['chords'][0]), 0.45, 78)
+    # 最后一段 → 尾声
+    if sections:
+        sec = sections[-1]
+        end = sec['start_bar'] * 4 + sec['bars'] * 4
+        prev = sec['notes'][-1][1] if sec['notes'] else 74
+        run_into(end, prev, 78, 'Dm', 2, 'arp')
+
     # ---------- 尾声：回到 Dm，引用 TH18 轮廓 ----------
-    obar = INTRO_BARS + len(sections) * SEC_BARS
+    obar = INTRO_BARS + sec_bars
     obase = obar * 4
     outro_lead = [
         (0, 78, 2), (0.5, 76, 2), (1, 74, 2), (1.5, 72, 2),
@@ -290,14 +392,16 @@ def emit(sections):
     add(drums, obase, 4, 2.0, 100)
     add(drums, obase + 12, 4, 2.0, 100)
 
-    for tr in (lead, bass, arp):
+    for tr in (lead, lead2, bass, arp, link):
         tr.sort()
     drums.sort()
     song = dict(title='東方新紀行 ～ Chronicle of Gensokyo (13th Anniversary Medley)',
                 duration=duration, bpm=BPM,
-                tracks=[dict(wave='square', gain=0.135, notes=lead),
+                tracks=[dict(wave='square', gain=0.155, notes=lead),
+                        dict(wave='square', gain=0.05, notes=lead2),
                         dict(wave='triangle', gain=0.125, notes=bass),
-                        dict(wave='square', gain=0.05, notes=arp)],
+                        dict(wave='square', gain=0.04, notes=arp),
+                        dict(wave='triangle', gain=0.075, notes=link)],
                 drums=drums)
     return song, total_bars
 
@@ -310,9 +414,11 @@ def write_js(song):
         return ('%.6f' % x).rstrip('0').rstrip('.')
 
     js = ['/**',
-          ' * 标题曲：東方新紀行 ～ Chronicle of Gensokyo（13 作 medley）。',
+          ' * 标题曲：東方新紀行 ～ Chronicle of Gensokyo（14 作 medley）。',
           ' * 由 tools/build_medley.py 生成，勿手改。',
-          ' * 素材：TH06–TH18 各作标题曲（TH17 用《Idolatrize World》代）；',
+          ' * 顺序：TH16 → TH07 → TH08 → TH09 → TH10 → TH11 → TH06 → TH13 → TH14', 
+          ' *       → TH15 → TH12 → TH17 → TH03（2 小节客串）→ TH18；',
+          ' * 素材取自各作标题曲（TH17 标题曲 MIDI 缺失，用《Idolatrize World》代）；',
           ' * 统一 150 BPM，旋律移调到 D 自然小调 / F 大调关系圈，伴奏/鼓由脚本重写。',
           ' */',
           '',
@@ -327,7 +433,7 @@ def write_js(song):
         js.append('    ] },')
     js.append('  ],')
     js.append('  drums: [')
-    js.append(arr(song['drums']))
+    js.append(',\n'.join('  [%s,%d,%d]' % (fmt(t), k, v) for t, k, _d, v in song['drums']))
     js.append('  ],')
     js.append('};')
     open(OUT_JS, 'w', encoding='utf-8').write('\n'.join(js) + '\n')
@@ -362,10 +468,13 @@ def synth(song):
             env = np.where(tt < atk, tt / max(atk, 1e-6) * 0.999 + 0.001, env)
             env = np.where(tt >= hold, np.exp(-(tt - hold) / max(0.02, (d - hold) / 4.6)), env)
             env[0] = 0.0
-            buf[i0:i0 + ln] += w * env * peak
+            ln = min(ln, len(buf) - i0)
+        if ln <= 0:
+            continue
+        buf[i0:i0 + ln] += w[:ln] * env[:ln] * peak
     # 鼓
     rng = np.random.default_rng(7)
-    for t, kind, v in song['drums']:
+    for t, kind, _dur, v in song['drums']:
         i0 = int(t * sr)
         if i0 >= n:
             continue

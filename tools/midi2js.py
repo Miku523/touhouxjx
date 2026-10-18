@@ -33,20 +33,47 @@ BUILD_DIR = os.path.join(ROOT, 'tools', 'build')
 
 # 每首曲子的来源与展示信息
 SONGS = [
+    # stage1 原用 ZUN 版：全长只有 55.8s，且主旋律通道 ch2 从 28s 才进入，
+    # 循环窗口锚在 lead 首音上 → 成品只剩 28s。改用 sagittarius 版：
+    # 106.4s 钢琴改编，主旋律按段落轮换在 ch0(A) / ch2(B) / ch3(C) 三条轨上，
+    # 合并后正好覆盖 A-B-C-A'-B'-C' 六段（三个段落各走两遍），有完整起承转合。
     dict(key='stage1', title='妖魔夜行',
-         file=r'6 - The Embodiment of Scarlet Devil\3. Apparitions Stalk the Night (ZUN).mid'),
+         file=r'6 - The Embodiment of Scarlet Devil\3. Apparitions Stalk the Night (sagittarius shikoku).mid',
+         arrange=dict(lead_chs=[0, 2, 3], bass_ch=7, harm_chs=[1, 6, 8],
+                      window=(0.45, 106.43))),
     dict(key='stage2', title='蠢々秋月 ～ Mooned Insect',
          file=r'8 - Imperishable Night\3. Wriggling Autumn Moon ~ Mooned Insect (Unknown).mid'),
+    # stage3 活泼化：整体 +2 半音（方波主音中位 D6=86，+2 后 104，仍在 120 以内），
+    # 叠加高八度三角波 sparkle 提亮，放宽鼓组抽稀阈值把原 MIDI 的 16 分擦片留下来。
+    # 主旋律分段：ch7 只演 5.6-31.6s 的 16 分琶音引子，主歌（34-91.6s）由 ch3 的
+    # 钢琴右手完整承担；自动补缝会错选 ch6 铺底弦乐（28s 里只有 34 个长音），所以显式指定。
     dict(key='stage3', title='おてんば恋娘',
-         file=r'6 - The Embodiment of Scarlet Devil\5. Tomboyish Girl in Love (ZUN).mid'),
+         file=r'6 - The Embodiment of Scarlet Devil\5. Tomboyish Girl in Love (ZUN).mid',
+         arrange=dict(
+             lead_plan=[(0.0, 33.21, [7]), (33.21, 9999.0, [3])],
+             bass_ch=1,
+             harm_chs=[2, 6],
+             transpose=2,
+             layers=[dict(name='sparkle', wave='triangle', gain=0.045, source='lead',
+                          semi=12, hi=108, dur_scale=0.85, vel_scale=0.85, weight=0.3)],
+             drum_limits={0: 3, 1: 3, 2: 3, 3: 2, 4: 2})),
     dict(key='stage4', title='風神少女',
          file=r'9 - Phantasmagoria of Flower View\11. Wind God Girl (Kanade_KND34).mid'),
     dict(key='stage5', title='幽雅に咲かせ、墨染の桜 ～ Border of Life',
          file=r'7 - Perfect Cherry Blossom\13. Bloom Nobly, Ink-black Cherry Blossom ~ Border of Life (ZUN).mid'),
     dict(key='stage6', title='竹取飛翔 ～ Lunatic Princess',
          file=r'8 - Imperishable Night\15. Flight in the Bamboo Cutter ~ Lunatic Princess (ZUN).mid'),
+    # extra 霸气化：贝斯低八度锯齿 sub-bass 压低频；主旋律低八度锯齿层增加攻击性；
+    # 放宽鼓组抽稀 + 在四分/八分擦片之间补 8/16 分，密度更凶；主旋律仍由方波领奏以保值辨识度。
     dict(key='extra', title='U.N.オーエンは彼女なのか？',
-         file=r'6 - The Embodiment of Scarlet Devil\15. U.N. Owen was her (ZUN).mid'),
+         file=r'6 - The Embodiment of Scarlet Devil\15. U.N. Owen was her (ZUN).mid',
+         arrange=dict(
+             layers=[dict(name='sub', wave='sawtooth', gain=0.10, source='bass',
+                          semi=-12, dur_scale=1.0, vel_scale=1.0, weight=0.55),
+                     dict(name='bite', wave='sawtooth', gain=0.055, source='lead',
+                          semi=-12, dur_scale=0.98, vel_scale=0.9, weight=0.3)],
+             drum_limits={0: 3, 1: 3, 2: 3, 3: 3, 4: 2},
+             drum_layers=[dict(kind=2, vel=54, min_gap=0.15, max_gap=0.45)])),
 ]
 
 # 鼓音高 -> 游戏鼓 kind（0=底鼓 1=军鼓 2=闭镲 3=开镲 4=吊镲）
@@ -710,19 +737,28 @@ def map_drums(notes):
     return out
 
 
-def thin_drums(drums, max_per_sec=20):
-    """保底鼓/军鼓/吊镲，闭镲太密就抽稀。"""
+def thin_drums(drums, max_per_sec=20, limits=None):
+    """保底鼓/军鼓/吊镲，闭镲太密就抽稀。
+
+    limits=None 时沿用原规则：250ms 桶内不区分音色，底鼓/军鼓合计 ≤4、其余 ≤2。
+    给 limits（{kind: 每桶上限}）时按「桶 × 鼓 kind」分别计数——编排层用它
+    尽量保留原 MIDI 的 16 分擦片，让密集的改编鼓面不被误砍。
+    """
     prio = {0: 5, 1: 4, 4: 3, 3: 2, 2: 1}
     drums = sorted(drums, key=lambda d: (-prio[d[1]], d[0]))
     used = {}
     out = []
     for d in drums:
         slot = int(d[0] * 4)     # 250ms 桶
-        n = used.get(slot, 0)
-        limit = 4 if d[1] in (0, 1) else 2
+        key = (slot, d[1]) if limits is not None else slot
+        n = used.get(key, 0)
+        if limits is not None:
+            limit = limits.get(d[1], 2)
+        else:
+            limit = 4 if d[1] in (0, 1) else 2
         if n >= limit:
             continue
-        used[slot] = n + 1
+        used[key] = n + 1
         out.append(d)
     out.sort()
     return out
@@ -768,6 +804,74 @@ def bpm_of(segs):
     return int(round(60e6 / segs[0][2]))
 
 
+# ---------------------------------------------------------------------------
+# 编排层（可选，见 SONGS 条目的 arrange 字段）
+# ---------------------------------------------------------------------------
+
+def fit_transpose_semi(notes, semi, lo=12, hi=120):
+    """把整体移调量微调成整八度，保证所有音仍落在 [lo, hi]（宁可整曲降八度，不丢音）。"""
+    if not notes or not semi:
+        return int(semi)
+    mn = min(n['m'] for n in notes)
+    mx = max(n['m'] for n in notes)
+    s = int(semi)
+    for _ in range(12):
+        if mx + s <= hi and mn + s >= lo:
+            break
+        if mx + s > hi:
+            s -= 12
+        elif mn + s < lo:
+            s += 12
+    return s
+
+
+def transpose_notes(notes, semi):
+    if not semi:
+        return notes
+    out = []
+    for n in notes:
+        m = n['m'] + semi
+        if 12 <= m <= 120:
+            n2 = dict(n)
+            n2['m'] = m
+            out.append(n2)
+    return out
+
+
+def layer_notes(src_notes, semi=0, lo=12, hi=120, dur_scale=1.0, vel_scale=1.0):
+    """把已有声部复制成一层织体（移调 / 改时值力度），越界的音直接跳过。"""
+    out = []
+    for n in src_notes:
+        m = n['m'] + int(semi)
+        if not (lo <= m <= hi):
+            continue
+        out.append(dict(t=n['t'],
+                        d=round(max(0.03, n['d'] * dur_scale), 3),
+                        m=m,
+                        v=max(1, min(127, int(round(n['v'] * vel_scale))))))
+    out.sort(key=lambda n: (n['t'], n['m']))
+    return out
+
+
+def densify_drums(drums, kind=2, vel=60, min_gap=0.12, max_gap=0.45, fill=0.5):
+    """在某种鼓的相邻两击中间补一击。
+
+    因为用的是原 MIDI 鼓点自身的时间，补出来的打击自动跟随速度变化/渐慢，
+    不需要额外维护 BPM 网格。
+    """
+    ts = sorted(d[0] for d in drums if d[1] == kind)
+    add = []
+    for a, b in zip(ts, ts[1:]):
+        gap = b - a
+        if min_gap <= gap <= max_gap:
+            add.append((round(a + gap * fill, 3), int(kind), int(vel)))
+    if not add:
+        return drums
+    drums = list(drums) + add
+    drums.sort()
+    return drums
+
+
 def build_song(song, chans, segs, limit=SOLO_LIMIT, verbose=False):
     # 全曲末端（用于选声部与窗口规划）
     raw_end = 0.0
@@ -777,37 +881,132 @@ def build_song(song, chans, segs, limit=SOLO_LIMIT, verbose=False):
     if raw_end <= 0:
         raise SystemExit('空 MIDI: %s' % song['key'])
 
+    arr = song.get('arrange') or {}
     lead_s, bass_s, harm_s, reasons = pick_voices(chans, raw_end, song['key'])
     lead_ch, bass_ch = lead_s['ch'], bass_s['ch']
+    lead_src = chans[lead_ch]['notes']
+    bass_src = chans[bass_ch]['notes']
     harm_chs = [s['ch'] for s in harm_s]
+    pool = lead_s.get('_pool', [])
 
-    st = chan_stats(chans[lead_ch]['notes'])
-    st_bass = chan_stats(chans[bass_ch]['notes'])
+    # --- 人工编排（可选）：覆盖自动选声部 ---
+    if arr:
+        used_chs = set()
+        if arr.get('lead_plan'):
+            # 分段指定主旋律通道：[(起, 止, [通道...]), ...]（覆盖整首或若干段）
+            plan = [(float(a), float(b), [int(c) for c in chs])
+                    for (a, b, chs) in arr['lead_plan']]
+            lead_src = []
+            for a, b, chs in plan:
+                for ch in chs:
+                    lead_src.extend(n for n in chans.get(ch, {}).get('notes', [])
+                                    if a <= n['t'] < b)
+                    used_chs.add(ch)
+            lead_src.sort(key=lambda n: (n['t'], n['m']))
+            lead_ch = plan[0][2][0]
+            pool = [dict(ch=ch, prog=main_prog(c['progs']), notes=c['notes'],
+                         med=chan_stats(c['notes'])['med'])
+                    for ch, c in sorted(chans.items())
+                    if ch != 9 and ch not in used_chs and c['notes']]
+            reasons = ['  编排 override：主旋律分段 = %s（共 %d 音）'
+                       % (' / '.join('%.1f-%.1fs:ch%s' % (a, b, '+ch'.join(map(str, chs)))
+                                     for a, b, chs in plan), len(lead_src))]
+        elif arr.get('lead_chs'):
+            lead_chs = [int(c) for c in arr['lead_chs']]
+            lead_src = []
+            for ch in lead_chs:
+                lead_src.extend(chans.get(ch, {}).get('notes', []))
+            lead_ch = lead_chs[0]
+            used_chs = set(lead_chs)
+            pool = [dict(ch=ch, prog=main_prog(c['progs']), notes=c['notes'],
+                         med=chan_stats(c['notes'])['med'])
+                    for ch, c in sorted(chans.items())
+                    if ch != 9 and ch not in used_chs and c['notes']]
+            reasons = ['  编排 override：主旋律 = ch%s 合并（自动候选为 ch%d），共 %d 音'
+                       % ('+ch'.join(str(c) for c in lead_chs), lead_s['ch'], len(lead_src))]
+        if arr.get('bass_ch') is not None:
+            bass_ch = int(arr['bass_ch'])
+            bass_src = chans.get(bass_ch, {}).get('notes', [])
+            reasons.append('  编排 override：贝斯 = ch%d（自动候选为 ch%d）'
+                           % (bass_ch, bass_s['ch']))
+        if arr.get('harm_chs') is not None:
+            harm_chs = [int(c) for c in arr['harm_chs']]
+            reasons.append('  编排 override：和声 = ch%s'
+                           % '+ch'.join(str(c) for c in harm_chs))
+
+    st = chan_stats(lead_src)
+    st_bass = chan_stats(bass_src)
 
     def clip_range(notes):
         return [n for n in notes if 12 <= n['m'] <= 120]
 
-    # --- 循环窗口：从主旋律第一个音开始（跳过前奏），长度 <= CROP_MAX ---
-    lead_raw = clip_range(mono_ize(chans[lead_ch]['notes'], keep='high'))
-    t0 = max(0.0, lead_raw[0]['t'] - 0.25)
-    win = min(CROP_MAX, raw_end - t0)
-    t1 = t0 + win
+    # --- 循环窗口：显式 window 优先，否则从主旋律第一个音开始（跳过前奏） ---
+    lead_raw = clip_range(mono_ize(lead_src, keep='high'))
+    if arr.get('window'):
+        t0 = float(arr['window'][0])
+        t1 = min(float(arr['window'][1]), raw_end)
+        if t1 - t0 > CROP_MAX:
+            t1 = t0 + CROP_MAX
+        reasons.append('  编排 window=(%.2f, %.2f)s，长 %.1fs' % (t0, t1, t1 - t0))
+    else:
+        t0 = max(0.0, lead_raw[0]['t'] - 0.25)
+        win = min(CROP_MAX, raw_end - t0)
+        t1 = t0 + win
 
     # 主旋律空窗用其它旋律通道补缝
-    lead_raw, fills = stitch_lead(lead_raw, lead_s.get('_pool', []))
+    lead_raw, fills = stitch_lead(lead_raw, pool)
     for f in fills:
         reasons.append('  补缝 %.1f-%.1fs 用 ch%d(prog=%d) 的 %d 音' % (f[0], f[1], f[2], f[3], f[4]))
 
     lead = clip_range(to_monophonic(mono_ize(lead_raw, keep='high')))
-    bass = clip_range(mono_ize(chans[bass_ch]['notes'], keep='low'))
+    bass = clip_range(mono_ize(bass_src, keep='low'))
 
     harm = []
     for ch in harm_chs:
-        harm.extend(clip_range(chans[ch]['notes']))
+        harm.extend(clip_range(chans.get(ch, {}).get('notes', [])))
     harm = cap_poly(harm, 2)
 
+    # --- 编排：整体移调 ---
+    if arr.get('transpose'):
+        semi = fit_transpose_semi(lead + bass + harm, int(arr['transpose']))
+        lead = transpose_notes(lead, semi)
+        bass = transpose_notes(bass, semi)
+        harm = transpose_notes(harm, semi)
+        ms = [n['m'] for n in lead + bass + harm]
+        if ms:
+            reasons.append('  编排 transpose=%+d 半音（应用后音域 %d..%d）'
+                           % (semi, min(ms), max(ms)))
+
+    # --- 编排：叠加织体层（底层复制 + 移调，不额外引入依赖数据） ---
+    layers = []
+    srcs = dict(lead=lead, bass=bass, harm=harm)
+    for spec in (arr.get('layers') or []):
+        src_name = spec.get('source', 'lead')
+        lnotes = layer_notes(srcs.get(src_name, lead),
+                             semi=int(spec.get('semi', 0)),
+                             lo=int(spec.get('lo', 12)), hi=int(spec.get('hi', 120)),
+                             dur_scale=float(spec.get('dur_scale', 1.0)),
+                             vel_scale=float(spec.get('vel_scale', 1.0)))
+        if not lnotes:
+            continue
+        layers.append(dict(wave=spec['wave'], gain=float(spec['gain']), notes=lnotes,
+                           _name=spec.get('name', 'layer'),
+                           _w=float(spec.get('weight', 0.3))))
+        reasons.append('  编排层 %-7s %-8s 增益%.2f 移调%+d %d 音（复制自 %s）'
+                       % (spec.get('name', 'layer'), spec['wave'], float(spec['gain']),
+                          int(spec.get('semi', 0)), len(lnotes), src_name))
+
     drums = map_drums(chans.get(9, {}).get('notes', []))
-    drums = thin_drums(drums)
+    drums = thin_drums(drums, limits=arr.get('drum_limits'))
+    for spec in (arr.get('drum_layers') or []):
+        before = len(drums)
+        drums = densify_drums(drums, kind=int(spec.get('kind', 2)),
+                              vel=int(spec.get('vel', 60)),
+                              min_gap=float(spec.get('min_gap', 0.12)),
+                              max_gap=float(spec.get('max_gap', 0.45)),
+                              fill=float(spec.get('fill', 0.5)))
+        reasons.append('  编排鼓 kind%d 补击 %d → %d' % (int(spec.get('kind', 2)),
+                                                        before, len(drums)))
 
     # --- 裁剪到 [t0, t1) 并平移到 0 ---
     def crop(notes):
@@ -824,6 +1023,8 @@ def build_song(song, chans, segs, limit=SOLO_LIMIT, verbose=False):
     lead = crop(lead)
     bass = crop(bass)
     harm = crop(harm)
+    for L in layers:
+        L['notes'] = dedupe(crop(L['notes']))
     drums = [(round(d[0] - t0, 3), d[1], d[2]) for d in drums if t0 <= d[0] < t1]
 
     # 去重（同时间同音高）
@@ -833,11 +1034,17 @@ def build_song(song, chans, segs, limit=SOLO_LIMIT, verbose=False):
 
     # --- 掐头：把全曲所有事件（含鼓）整体前移，使第一个事件 t=0 ---
     # 原 MIDI 开头常有 0.8-2.8s 静音，进关时 BGM 会晚响 2-3 秒。
-    events = [n['t'] for n in lead + bass + harm] + [d[0] for d in drums]
+    events = [n['t'] for n in lead + bass + harm]
+    for L in layers:
+        events += [n['t'] for n in L['notes']]
+    events += [d[0] for d in drums]
     pre_first = round(min(events), 3) if events else 0.0
     if pre_first > 0:
         for n in lead + bass + harm:
             n['t'] = round(n['t'] - pre_first, 3)
+        for L in layers:
+            for n in L['notes']:
+                n['t'] = round(n['t'] - pre_first, 3)
         drums = [(round(d[0] - pre_first, 3), d[1], d[2]) for d in drums]
     reasons.append('  掐头：首个事件原在 %.3fs，整体前移 %.3fs（现在 t=0 起）'
                    % (pre_first, pre_first))
@@ -846,6 +1053,9 @@ def build_song(song, chans, segs, limit=SOLO_LIMIT, verbose=False):
     end = 0.0
     for n in lead + bass + harm:
         end = max(end, n['t'] + n['d'])
+    for L in layers:
+        for n in L['notes']:
+            end = max(end, n['t'] + n['d'])
     if drums:
         end = max(end, drums[-1][0])
     duration = round(max(DUR_MIN, min(CROP_MAX, end + 0.3)), 3)
@@ -864,6 +1074,7 @@ def build_song(song, chans, segs, limit=SOLO_LIMIT, verbose=False):
               dict(wave='triangle', gain=0.15, notes=bass, _name='bass', _w=0.8)]
     if harm:
         tracks.append(dict(wave='square', gain=0.05, notes=harm, _name='harmony', _w=0.35))
+    tracks.extend(layers)
 
     data = dict(key=song['key'], title=song['title'], duration=duration,
                 bpm=bpm_of(segs), tracks=tracks, drums=drums)
@@ -939,7 +1150,11 @@ def render_header(results):
  * - 和声：其余通道合并抽稀，同一时刻最多 2 个音；方波，增益压低。
  * - 时间：用 set_tempo 建立的 tempo map 逐段换算成秒（保留原曲的渐慢），
  *   量化到 1ms，不做固定 BPM 重采样。
- * - 每首 ≤4 条轨；同一时刻最多 4 个旋律声部发声；循环片段 ≤%d 秒。
+ * - 每首 ≤4 条轨（有编排层时额外增加 1-2 条副本轨）；同一时刻最多 4 个旋律
+ *   声部发声（编排层是主声部的同度/八度复制，不算独立声部）；循环片段 ≤%d 秒。
+ * - SONGS 条目可带 arrange 做人工编排：显式选声部 / 显式循环窗口、整体移调
+ *   （越界时整曲降八度，不丢音）、叠加织体层（八度 sparkle、sub-bass、加厚锯齿）、
+ *   放宽鼓组抽稀、在鼓点之间补 8/16 分。未写 arrange 的曲子仍走自动流程。
  * - 掐头：所有事件（含鼓）整体前移，使第一个事件 t=0，避免进关 BGM 延迟。
  *
  * 各曲通道选择依据：

@@ -25,6 +25,8 @@ spec.loader.exec_module(M)
 M.tick_to_sec = lambda segs, division, tick: tick / float(division or 480)
 
 TITLES = {
+    3: (r'3 - Phantasmagoria of Dim. Dream\1. A Dream Transcending Space-Time (Blargzargo).mid',
+        'A Dream Transcending Space-Time'),
     6: (r'6 - The Embodiment of Scarlet Devil\1. A Dream that is more Scarlet than Red (ZUN).mid',
         'A Dream that is more Scarlet than Red'),
     7: (r'7 - Perfect Cherry Blossom\1. Ghostly Dream ~ Snow or Cherry Petal (ZUN).mid',
