@@ -1,50 +1,31 @@
 /**
- * PIXEL DASH —— 程序化 8-bit 音频引擎（契约 B）
+ * 东方新纪行 —— 程序化 8-bit 音频引擎（多曲目版）
  *
  * 实现要点：
  * 1. constructor 只做字段初始化，绝不创建 AudioContext（浏览器需要用户手势）；
  *    unlock() 时才创建/恢复 AudioContext，可重复调用，幂等。
- * 2. 全部音效用 WebAudio 振荡器 + 增益包络实时合成，无任何外部音频文件。
- * 3. 包络：attack 2~5ms 线性/指数起音 + 指数衰减到 0.0001，避免爆音。
- * 4. stomp / hurt / die / land 叠加白噪声 buffer（低通或带通滤波）做打击感。
- * 5. BGM：递归 setTimeout 前瞻调度（lookahead），方波旋律 + 三角波低音 +
- *    极轻噪声踩镲，BPM 140，Am–F–C–G 走 8 小节循环。
- * 6. setMusic(false) 立即清定时器并 stop 掉所有已排期的音乐发声节点，
- *    重复 setMusic(true) 有 _musicOn 守卫，不会叠音。
- * 7. 所有对外方法在 unlock() 之前调用都是安全 no-op，任何情况不抛错。
- * 8. 音量克制：单次音效峰值 ≤ 0.25，BGM 峰值 ≤ 0.06。
- * 9. 文件自包含，不 import 其他模块；除 window.AudioContext 外不访问 DOM。
- * 10. 总线：master ← sfxGain（音效）/ musicGain（BGM）。音量 0~1 与开关
- *     分别作用于两条总线，静音（muted）作用于 master，互不干扰。
+ * 2. 全部音效与 BGM 都用 WebAudio 振荡器 + 增益包络实时合成，无任何外部音频文件。
+ * 3. BGM 曲库来自 ./songs/index.js（每关 BOSS 的原作主题曲 + 标题/失败/结局原创曲），
+ *    每首曲子是「按秒排好的音符事件表」，前瞻调度、无缝循环。
+ * 4. 曲目切换：playMusic(name) 立即换曲（先掐掉旧曲已排期的节点，不会叠音）；
+ *    setMusic(false) 清定时器并停掉所有音乐节点；setMusic(true) 恢复当前曲目。
+ * 5. 所有对外方法在 unlock() 之前调用都是安全 no-op，任何情况不抛错。
+ * 6. 音量克制：单次音效峰值 ≤ 0.25，BGM 单声部峰值 ≤ 0.16。
+ * 7. 总线：master ← sfxGain（音效）/ musicGain（BGM）。音量 0~1 与开关
+ *    分别作用于两条总线，静音（muted）作用于 master，互不干扰。
  */
+
+import { SONGS } from './songs/index.js';
 
 /** MIDI 音高 → 频率（Hz） */
 function midiToFreq(m) {
   return 440 * Math.pow(2, (m - 69) / 12);
 }
 
-/** BPM 140 的十六分音符时长（秒） */
-const STEP_DUR = 60 / 140 / 4;
-
-/** 和弦低音根音（MIDI）：A2、F2、C3、G2 —— 对应 Am、F、C、G */
-const BASS_ROOTS = [45, 41, 48, 43];
-/** 低音每拍的音程走向：根音、五度、根音、高八度 */
-const BASS_PATTERN = [0, 7, 0, 12];
-
-/**
- * 旋律（每和弦 16 个八分音符位置，0 表示休止）
- * Am / F / C / G 各一句，每句循环 1 小节，每和弦占 2 小节。
- */
-const MELODY = [
-  // Am: A4 E5 C5 E5 A4 C5 B4 E4
-  [69, 0, 76, 0, 72, 0, 76, 0, 69, 0, 72, 0, 71, 0, 64, 0],
-  // F: F4 C5 A4 C5 F4 A4 G4 C4
-  [65, 0, 72, 0, 69, 0, 72, 0, 65, 0, 69, 0, 67, 0, 60, 0],
-  // C: E4 G4 C5 G4 E4 G4 A4 B4
-  [64, 0, 67, 0, 72, 0, 67, 0, 64, 0, 67, 0, 69, 0, 71, 0],
-  // G: D4 G4 B4 G4 D4 G4 F4 D4
-  [62, 0, 67, 0, 71, 0, 67, 0, 62, 0, 67, 0, 65, 0, 62, 0],
-];
+/** 曲库里 wave 字段的索引表（调度时用整数，避免每帧查字符串） */
+const WAVES = ['square', 'triangle', 'sawtooth', 'sine'];
+/** 事件表里 kind = 4 表示打击乐 */
+const DRUM_KIND = 4;
 
 export class AudioEngine {
   constructor() {
@@ -61,10 +42,18 @@ export class AudioEngine {
     this._musicOn = false;
     this._musicRequested = false; // unlock 之前 setMusic(true) 的意图，unlock 后补启动
     this._musicTimer = null;
-    this._musicStep = 0;
-    this._musicNextTime = 0;
+
+    // ---- BGM 曲目状态 ----
+    this._songName = 'title';  // 当前曲目 key
+    this._song = null;         // 曲目原始数据
+    this._events = null;       // 展平并按时间排序的事件表
+    this._eventCache = new Map(); // key → events，切歌不用重排
+    this._songStart = 0;       // 本轮循环的绝对起始时间（ctx 时间）
+    this._songIdx = 0;         // 事件指针
+    this._songLoop = 0;        // 已循环轮数
+
     this._sfxVoices = new Set();   // 一次性音效节点，仅用于回收引用
-    this._musicVoices = new Set(); // BGM 节点，setMusic(false) 时强制 stop
+    this._musicVoices = new Set(); // BGM 节点，切歌/关闭时强制 stop
   }
 
   /* ------------------------------------------------------------------ */
@@ -125,6 +114,25 @@ export class AudioEngine {
     } catch (e) {
       // 单个音效失败不影响整体
     }
+  }
+
+  /**
+   * 切换 BGM 曲目。name 必须是曲库 key（title / stage1..stage6 / extra / gameover / ending）。
+   * 音乐开关关闭时只记住曲目，等 setMusic(true) 再播。
+   * @param {string} name
+   */
+  playMusic(name) {
+    if (!name || typeof name !== 'string') return;
+    if (this._songName === name && this._musicOn) return;
+    this._songName = name;
+    // 正在播就立刻换：先掐掉旧曲排期的节点，避免两首叠在一起
+    if (this._musicOn) this._stopMusic();
+    if (this._musicRequested && this.ctx) this._startMusic();
+  }
+
+  /** 供外部查询当前曲目 key */
+  get currentSong() {
+    return this._songName;
   }
 
   /** 开/关 BGM。true 可重复调用而不会叠音。 */
@@ -248,6 +256,23 @@ export class AudioEngine {
       case 'stomp':
         this._noise(0.12, g(0.16), 'lowpass', 1800, 280, t0);
         this._tone('square', 200, 80, 0.12, g(0.18), t0);
+        break;
+
+      // 子弹命中：极短高频「叮」，一发一声，压得低免得连射刺耳
+      case 'shotHit':
+        this._tone('triangle', 1500, 1000, 0.04, g(0.07), t0);
+        break;
+
+      // 杂兵击杀：短促爆裂 pop，噪声 + 方波下坠
+      case 'enemyKill':
+        this._noise(0.08, g(0.1), 'lowpass', 2000, 300, t0);
+        this._tone('square', 300, 120, 0.08, g(0.12), t0);
+        break;
+
+      // Boss 命中：更低沉厚实，命中大目标要有分量但不盖过 BGM
+      case 'bossHit':
+        this._tone('triangle', 160, 70, 0.09, g(0.16), t0);
+        this._noise(0.06, g(0.08), 'lowpass', 900, 200, t0);
         break;
 
       // 死亡：长下滑，带一点悲壮尾音
@@ -416,9 +441,17 @@ export class AudioEngine {
 
   _startMusic() {
     if (!this.ctx || this._musicOn) return; // 幂等守卫：绝不叠音
+    const name = this._songName || 'title';
+    const song = SONGS[name];
+    if (!song || !song.duration) return; // 没有曲目数据就保持安静
+    this._song = song;
+    this._events = this._getEvents(name, song);
+    if (!this._events || !this._events.length) return;
+
+    this._songStart = this.ctx.currentTime + 0.06;
+    this._songIdx = 0;
+    this._songLoop = 0;
     this._musicOn = true;
-    this._musicStep = 0;
-    this._musicNextTime = this.ctx.currentTime + 0.08;
     this._musicTick();
   }
 
@@ -439,53 +472,120 @@ export class AudioEngine {
     this._musicVoices.clear();
   }
 
-  /** 前瞻调度：每 30ms 检查一次，提前 0.12s 排好音符 */
+  /** 把曲目数据展平成按时间排序的事件表，并缓存（切回来不用重排） */
+  _getEvents(name, song) {
+    const cached = this._eventCache.get(name);
+    if (cached) return cached;
+
+    const events = [];
+    for (const tr of song.tracks || []) {
+      const waveIdx = Math.max(0, WAVES.indexOf(tr.wave));
+      const gain = Number(tr.gain) || 0.1;
+      for (const n of tr.notes || []) {
+        // [t, kind, gain, midi, dur, vel]
+        events.push([n[0], waveIdx, gain, n[1], n[2], n[3] || 100]);
+      }
+    }
+    for (const d of song.drums || []) {
+      events.push([d[0], DRUM_KIND, 0.12, d[1], 0, d[2] || 100]);
+    }
+    events.sort((a, b) => a[0] - b[0]);
+    this._eventCache.set(name, events);
+    return events;
+  }
+
+  /** 前瞻调度：每 25ms 检查一次，提前 0.18s 排好音符 */
   _musicTick() {
     this._musicTimer = null;
-    if (!this._musicOn || !this.ctx) return;
+    if (!this._musicOn || !this.ctx || !this._events || !this._song) return;
     try {
-      const horizon = this.ctx.currentTime + 0.12;
-      while (this._musicNextTime < horizon) {
-        this._scheduleStep(this._musicStep, this._musicNextTime);
-        this._musicStep = (this._musicStep + 1) % 128; // 8 小节 × 16 步
-        this._musicNextTime += STEP_DUR;
+      const t0 = this.ctx.currentTime;
+      const horizon = t0 + 0.18;
+      const evs = this._events;
+      const dur = this._song.duration;
+      // guard 防止曲目损坏时死循环
+      for (let guard = 0; guard < 512; guard++) {
+        const e = evs[this._songIdx];
+        const when = this._songStart + this._songLoop * dur + e[0];
+        if (when > horizon) break;
+        if (when >= t0 - 0.02) this._scheduleEvent(e, when);
+        this._songIdx++;
+        if (this._songIdx >= evs.length) {
+          this._songIdx = 0;
+          this._songLoop++;
+        }
       }
     } catch (e) {
       // 调度异常不中断游戏
     }
     if (this._musicOn) {
-      this._musicTimer = setTimeout(() => this._musicTick(), 30);
+      this._musicTimer = setTimeout(() => this._musicTick(), 25);
+    }
+  }
+
+  /** 排一个曲库事件：旋律或打击乐 */
+  _scheduleEvent(e, when) {
+    if (e[1] === DRUM_KIND) {
+      this._scheduleDrum(e[3], e[5], e[2], when);
+    } else {
+      this._musicNote(e[1], e[3], e[4], e[2], e[5], when);
     }
   }
 
   /**
-   * 排一个十六分音符位置上的所有声部。
-   * @param {number} step 0~127
-   * @param {number} when 绝对开始时间
+   * 曲库旋律：带保持段的包络，比音效更绵长，像老主机的发声单元。
    */
-  _scheduleStep(step, when) {
-    const bar = Math.floor(step / 16) % 8;   // 8 小节循环
-    const chord = Math.floor(bar / 2) % 4;   // 每和弦占 2 小节
+  _musicNote(waveIdx, midi, dur, gain, vel, when) {
+    const ctx = this.ctx;
+    const dest = this._musicGain;
+    if (!ctx || !dest) return;
+    const d = Math.max(0.03, Math.min(dur, 4));
+    const peak = Math.max(0.0004, Math.min(0.2, gain * (0.4 + 0.6 * vel / 127)));
+    const f = midiToFreq(midi);
 
-    // 方波旋律：每 2 步一个八分音符
-    if (step % 2 === 0) {
-      const idx = Math.floor(step / 2) % 16;
-      const note = MELODY[chord][idx];
-      if (note > 0) {
-        this._tone('square', midiToFreq(note), midiToFreq(note), STEP_DUR * 1.6, 0.05, when, true);
-      }
-    }
+    const osc = ctx.createOscillator();
+    osc.type = WAVES[waveIdx] || 'square';
+    osc.frequency.setValueAtTime(f, when);
 
-    // 三角波低音：每拍（4 步）一个音
-    if (step % 4 === 0) {
-      const bi = Math.floor(step / 4) % 4;
-      const f = midiToFreq(BASS_ROOTS[chord] + BASS_PATTERN[bi]);
-      this._tone('triangle', f, f, STEP_DUR * 3.2, 0.055, when, true);
-    }
+    const g = ctx.createGain();
+    const attack = Math.min(0.012, d * 0.3);
+    const hold = Math.max(attack, d * 0.66);
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(peak, when + attack);
+    g.gain.setValueAtTime(peak, when + hold);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + d);
 
-    // 极轻的噪声踩镲：反拍
-    if (step % 4 === 2) {
-      this._noise(0.03, 0.016, 'highpass', 6000, 6000, when, 0.7, true);
+    osc.connect(g);
+    g.connect(dest);
+    osc.start(when);
+    osc.stop(when + d + 0.02);
+    this._track(osc, true);
+  }
+
+  /**
+   * 曲库鼓：0=底鼓 1=军鼓 2=闭镲 3=开镲 4=吊镲
+   */
+  _scheduleDrum(kind, vel, gain, when) {
+    const v = (gain || 0.12) * (0.45 + 0.55 * (vel || 100) / 127);
+    switch (kind) {
+      case 0: // 底鼓：三角波快速下坠
+        this._tone('triangle', 150, 46, 0.11, Math.min(0.2, v * 1.6), when, true);
+        break;
+      case 1: // 军鼓：带通噪声 + 一点方波
+        this._noise(0.11, Math.min(0.14, v), 'bandpass', 1900, 1300, when, 0.8, true);
+        this._tone('square', 220, 150, 0.05, Math.min(0.06, v * 0.45), when, true);
+        break;
+      case 2: // 闭镲
+        this._noise(0.028, Math.min(0.07, v * 0.6), 'highpass', 7800, 7800, when, 0.7, true);
+        break;
+      case 3: // 开镲
+        this._noise(0.13, Math.min(0.06, v * 0.5), 'highpass', 6800, 6500, when, 0.7, true);
+        break;
+      case 4: // 吊镲
+        this._noise(0.45, Math.min(0.055, v * 0.4), 'highpass', 5200, 3600, when, 0.6, true);
+        break;
+      default:
+        break;
     }
   }
 }

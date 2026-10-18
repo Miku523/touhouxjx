@@ -2790,3 +2790,101 @@ body {
   background: rgba(6, 3, 12, .68);
   border-color: rgba(242, 233, 216, .22);
 }
+
+/* ============================================================
+   首屏启动幕
+   标题插画 + 立绘 decode 完成前盖住整屏；揭幕时菜单与人物同一帧出现，
+   避免弱网下「先看到菜单面板，过一会儿才看到人物」。
+   ============================================================ */
+#boot {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--s) * 20px);
+  pointer-events: auto;
+  background:
+    radial-gradient(ellipse 58% 48% at 50% 42%, rgba(58, 34, 96, .55) 0%, rgba(14, 8, 26, .94) 52%, #05030a 100%),
+    #05030a;
+  transition: opacity .55s ease, visibility .55s ease;
+}
+#boot::before {
+  content: "";
+  position: absolute;
+  top: 16%;
+  left: 50%;
+  width: calc(var(--s) * 210px);
+  height: calc(var(--s) * 210px);
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 236, 206, .10) 0%, rgba(255, 180, 200, .05) 42%, rgba(255, 160, 190, 0) 70%);
+  animation: bootMoon 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+#boot.done {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.boot-mark {
+  position: relative;
+  font-size: calc(var(--s) * 46px);
+  font-weight: 600;
+  letter-spacing: calc(var(--s) * 9px);
+  padding-left: calc(var(--s) * 9px); /* 抵掉最后一个字的字距，保持视觉居中 */
+  color: #fff6e6;
+  text-shadow:
+    0 0 calc(var(--s) * 2px) rgba(255, 246, 236, .5),
+    0 0 calc(var(--s) * 24px) rgba(232, 54, 79, .65),
+    0 0 calc(var(--s) * 56px) rgba(255, 94, 168, .38);
+}
+
+.boot-sub {
+  position: relative;
+  font-size: calc(var(--s) * 13px);
+  letter-spacing: calc(var(--s) * 4px);
+  color: #ffd8a6;
+  opacity: .88;
+}
+
+.boot-line {
+  position: relative;
+  width: calc(var(--s) * 230px);
+  height: calc(var(--s) * 2px);
+  overflow: hidden;
+  background: rgba(255, 220, 160, .12);
+}
+.boot-line::after {
+  content: "";
+  display: block;
+  width: 38%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, #f2d24b, #ff9ecb, transparent);
+  animation: bootSweep 1.15s ease-in-out infinite;
+}
+
+.boot-tip {
+  position: relative;
+  font-size: calc(var(--s) * 12px);
+  letter-spacing: .26em;
+  color: #a89e8e;
+  opacity: .85;
+}
+
+@keyframes bootSweep {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(300%); }
+}
+@keyframes bootMoon {
+  0%, 100% { opacity: .55; transform: translateX(-50%) scale(.96); }
+  50% { opacity: 1; transform: translateX(-50%) scale(1.04); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #boot::before,
+  .boot-line::after { animation: none; }
+}

@@ -435,11 +435,16 @@ export class Stage {
     this.shots.update(dt, { w: this.level.w, h: this.level.h });
     if (this.mode === 'platform' && this.enemies) {
       this.enemies.damageWithShots(this.shots, this.fx, {
-        onKill: () => this._addPower(POWER.kill),
+        onHit: () => this.onEvent('shotHit'),
+        onKill: () => {
+          this._addPower(POWER.kill);
+          this.onEvent('enemyKill');
+        },
       });
     }
     if (this.boss) {
-      this.boss.damageWithShots(this.shots, this.fx);
+      // 第三参是命中回调：Boss 中弹的专属音效
+      this.boss.damageWithShots(this.shots, this.fx, () => this.onEvent('bossHit'));
     }
 
     // Boss
@@ -456,7 +461,10 @@ export class Stage {
       }
       // 冲刺撞 Boss
       if (this.mode === 'platform' && p.dashing) {
-        if (this.boss.hitByDash(p, this.fx)) this.camera.shake(8, 0.2);
+        if (this.boss.hitByDash(p, this.fx)) {
+          this.camera.shake(8, 0.2);
+          this.onEvent('bossHit');
+        }
       }
     }
 
@@ -490,7 +498,12 @@ export class Stage {
 
     if (this.state === 'play') {
       this.enemies?.update(dt, p, this.bullets, this.fx, {
-        onKill: () => this._addPower(POWER.kill),
+        // 踩怪 / 冲刺撞怪：触发踩踏音效；怪被打死则再报击杀事件
+        onStomp: () => this.onEvent('stomp'),
+        onKill: () => {
+          this._addPower(POWER.kill);
+          this.onEvent('enemyKill');
+        },
       });
     }
     this._updatePickups(dt, p);
@@ -534,7 +547,12 @@ export class Stage {
           this.onEvent('bossTrigger');
         }
       },
-      onKill: () => this._addPower(POWER.killStg),
+      // 子弹命中 STG 妖精 / 击杀上报
+      onHit: () => this.onEvent('shotHit'),
+      onKill: () => {
+        this._addPower(POWER.killStg);
+        this.onEvent('enemyKill');
+      },
     });
     p.update(dt, input, this.stg.scroll);
 
@@ -623,7 +641,13 @@ export class Stage {
     // 对 Boss / 敌人造成伤害
     if (this.boss) this.boss.damage(90 + 80 * lv);
     if (this.mode === 'platform' && this.enemies) {
-      this.enemies.damageArea(hp.x, hp.y, 900, 99, this.fx, { onKill: () => this._addPower(POWER.kill) });
+      this.enemies.damageArea(hp.x, hp.y, 900, 99, this.fx, {
+        onKill: () => {
+          this._addPower(POWER.kill);
+          // 符卡清屏也会报击杀，但 onHit 不接（99 伤害会瞬间刷屏）
+          this.onEvent('enemyKill');
+        },
+      });
     }
     p.invuln = Math.max(p.invuln || 0, 2.0);
     this.castFx = 0.9;

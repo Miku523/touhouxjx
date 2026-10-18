@@ -136,7 +136,18 @@ class Game {
       window.__titleArt = [this._titleBgImg, ...Object.values(this._titleCharImgs)];
     }
 
-    window.addEventListener('keydown', (e) => this._onMenuKey(e));
+    // 首屏启动幕：标题背景 + 立绘 decode 完之前盖住整屏，
+    // 揭幕时 canvas 插画与 DOM 菜单同一帧出现，不会「先看到界面、后看到人物」。
+    this._bootEl = document.getElementById('boot');
+    this._bootDone = false;
+    this._waitTitleArt();
+
+    window.addEventListener('keydown', (e) => {
+      // 只用键盘启动的玩家也要解锁音频：浏览器策略只认用户手势，按键同样算
+      this.audio.unlock?.();
+      this._applyAudio();
+      this._onMenuKey(e);
+    });
 
     this.overlay = document.getElementById('overlay');
     this.titleEl = document.getElementById('title');
@@ -471,6 +482,38 @@ class Game {
     this.overlay?.classList.add('hidden');
   }
 
+  /* ---------------- 首屏启动幕 ---------------- */
+
+  /**
+   * 等标题三张图（背景 + 两张立绘）下载并解码完成后再揭幕。
+   * - 图片失败或超时（8s）也放行，宁可退回程序化夜空，也不能一直黑屏。
+   * - 后续从选人页回到标题时两套立绘都已 decode，无需再等。
+   */
+  _waitTitleArt() {
+    const imgs = [this._titleBgImg, ...Object.values(this._titleCharImgs)].filter(Boolean);
+    const decodeAll = Promise.all(imgs.map((img) => new Promise((resolve) => {
+      const done = () => resolve();
+      if (img.complete && img.naturalWidth) { done(); return; }
+      if (typeof img.decode === 'function') {
+        img.decode().then(done, done);
+      } else {
+        img.addEventListener('load', done, { once: true });
+        img.addEventListener('error', done, { once: true });
+      }
+    })));
+    const timeout = new Promise((resolve) => setTimeout(resolve, 8000));
+    Promise.race([decodeAll, timeout]).then(() => this._revealTitle());
+  }
+
+  _revealTitle() {
+    if (this._bootDone) return;
+    this._bootDone = true;
+    // 等两帧：确保 renderer 已经用补全后的标题插画画过至少一帧，再淡出启动幕
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      this._bootEl?.classList.add('done');
+    }));
+  }
+
   showTitle() {
     // 先掐断上一局的残留：隐藏中的对话、关卡结算的延迟回调，
     // 否则回到标题后按 Enter 会被旧剧本吃掉，甚至把游戏重新拉进关卡。
@@ -485,6 +528,7 @@ class Game {
     this.hud.hideBossBar();
     this.hud.clearBanner();
     this.hud.reset();
+    this.audio.playMusic?.('title');
     this.audio.setMusic?.(this.musicOn !== false);
 
     const buttons = [
@@ -761,6 +805,9 @@ class Game {
       onEvent: (type, data) => this._onStageEvent(type, data),
     });
     this.stage.onEvent = (type, data) => this._onStageEvent(type, data);
+    // 本关会出场的 AI 立绘（玩家 + Boss）现在就开始下载：
+    // 等跑到 Boss 触发对话时已经就绪，不会闪回旧的矢量立绘。
+    this.dialogue?.preparePortraits?.([this.char, def.boss]);
     if (this.stage.camera) this.stage.camera.shakeEnabled = this.screenShake;
     // STG 关的玩家是另一个类（StgPlayer），这里统一补一次火力继承
     if (this.stage.player && !this.stage.player.power) {
@@ -788,6 +835,9 @@ class Game {
     this.hud.setMaxLives(this.lives, this.char);
     this.hud.setStageName(isExtra ? 'EXTRA' : `STAGE ${index + 1}`, def.title || '');
     this.hud.banner(isExtra ? 'EXTRA STAGE' : `STAGE ${index + 1}`, def.title || '', 2.6);
+    // 本关 BOSS 的原作主题曲（8-bit 合成版）
+    this.audio.playMusic?.(def.music || 'stage1');
+    this.audio.setMusic?.(this.musicOn !== false);
     this.audio.play?.('menu');
 
     // 关卡开场对话（Extra 的开场已经在外面播过了；重挑战本关时也跳过，直接继续）
@@ -800,6 +850,19 @@ class Game {
       this.state = 'play';
       showTip();
     }
+  }
+
+  /**
+   * 带节流的音效：射击命中一帧可能结算多发子弹，
+   * 不节流会把合成器叠爆，听起来像电流噪声。
+   */
+  _sfx(name, gap = 0) {
+    if (gap > 0) {
+      const now = performance.now();
+      if (now - (this._sfxAt?.[name] || 0) < gap) return;
+      (this._sfxAt || (this._sfxAt = {}))[name] = now;
+    }
+    this.audio.play?.(name);
   }
 
   _onStageEvent(type, data) {
@@ -815,7 +878,19 @@ class Game {
         this.hud.banner('CHECKPOINT', '', 1.2);
         break;
       case 'coin':
-        this.audio.play?.('coin');
+        this._sfx('coin', 25);
+        break;
+      case 'shotHit':
+        this._sfx('shotHit', 55);
+        break;
+      case 'enemyKill':
+        this._sfx('enemyKill', 40);
+        break;
+      case 'bossHit':
+        this._sfx('bossHit', 90);
+        break;
+      case 'stomp':
+        this._sfx('stomp', 45);
         break;
       case 'cast':
         this.audio.play?.('win');
@@ -924,7 +999,7 @@ class Game {
     this.hudEl?.classList.add('hidden');
     this.hud.hideBossBar();
     this.hud.clearBanner();
-    this.audio.setMusic?.(false);
+    this.audio.playMusic?.('ending');
     this.audio.play?.('win');
     this.ending.play(spec, {
       onFinish: () => this.showTitle(),
@@ -934,6 +1009,7 @@ class Game {
   _onGameOver() {
     this.state = 'gameover';
     this.hudEl?.classList.add('hidden');
+    this.audio.playMusic?.('gameover');
     this.audio.play?.('die');
     // 已经打到 Boss 的话，重挑战回 Boss 场地而不是从头跑一遍
     const atBoss = this._canResumeBoss();
@@ -976,15 +1052,33 @@ class Game {
 
   _playDialogue(script, onEnd) {
     if (!script || !script.length) { onEnd?.(); return; }
-    this._preState = this.state;
-    this.state = 'dialogue';
-    this.dialogue.setPlayerChar(this.char);
-    this.dialogue.play(script, {
-      onEnd: () => {
-        this.input.endFrame();
-        onEnd?.();
-      },
-    });
+    const begin = () => {
+      this._preState = this.state;
+      this.state = 'dialogue';
+      this.dialogue.setPlayerChar(this.char);
+      this.dialogue.play(script, {
+        onEnd: () => {
+          this.input.endFrame();
+          onEnd?.();
+        },
+      });
+    };
+
+    // 对话出现前先把这一场会登场的 AI 立绘准备好（最多等 1.4s），
+    // 避免立绘还没下载完时先画一帧旧矢量版。
+    const keys = [this.char];
+    for (const line of script) {
+      const who = line?.who || '';
+      if (who === 'player') keys.push(this.char);
+      else if (who === 'partner') keys.push(this.char === 'marisa' ? 'reimu' : 'marisa');
+      else keys.push(who);
+    }
+    const ready = this.dialogue.preparePortraits?.([...new Set(keys)]);
+    if (!ready) { begin(); return; }
+
+    let started = false;
+    const go = () => { if (started) return; started = true; begin(); };
+    Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 1400))]).then(go, go);
   }
 
   /* ============================================================

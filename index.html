@@ -9,6 +9,10 @@
   <link rel="icon" type="image/png" sizes="128x128" href="./src/art/favicon.png" />
   <link rel="apple-touch-icon" href="./src/art/apple-touch-icon.png" />
   <link rel="stylesheet" href="./src/style.css" />
+  <!-- 标题画面三张图是首屏必需素材：预加载 + 高优先级，配合启动幕保证同帧出现 -->
+  <link rel="preload" as="image" href="./src/art/gen/title_bg.jpg" fetchpriority="high" />
+  <link rel="preload" as="image" href="./src/art/gen/reimu_title.png" fetchpriority="high" />
+  <link rel="preload" as="image" href="./src/art/gen/marisa_title.png" fetchpriority="high" />
 </head>
 <body>
   <div id="wrap">
@@ -95,6 +99,14 @@
         <div class="title-deco" aria-hidden="true">
           <span class="title-ver">Chronicle of Gensokyo · ver 1.0</span>
         </div>
+      </div>
+
+      <!-- ===== 启动幕：标题插画与立绘 decode 完成前盖住整屏 ===== -->
+      <div id="boot" aria-hidden="true">
+        <div class="boot-mark">東方新紀行</div>
+        <div class="boot-sub">～ Chronicle of Gensokyo ～</div>
+        <div class="boot-line"></div>
+        <div class="boot-tip">正在铺开幻想乡的夜色…</div>
       </div>
 
       <!-- ===== 结局演出 ===== -->

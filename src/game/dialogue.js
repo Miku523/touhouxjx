@@ -25,15 +25,47 @@ const AI_PORTRAITS = {
 };
 const AI_BASE = new URL('../art/gen/', import.meta.url);
 const aiImages = {};
-// 首屏只需要标题素材：对话立绘等首屏稳定后再排队（没就绪时 paintAiPortrait 返回 false，回退矢量立绘）
+const aiPending = {};
+
+/**
+ * 取一个角色 AI 立绘。已缓存直接返回；加载中复用同一个 Promise；
+ * 失败不 reject，回退矢量立绘，绝不把对话卡死。
+ */
+function loadPortrait(key, priority = 'high') {
+  if (aiImages[key]) return Promise.resolve(aiImages[key]);
+  if (aiPending[key]) return aiPending[key];
+  const file = AI_PORTRAITS[key];
+  if (!file) return Promise.resolve(null);
+
+  const img = new Image();
+  img.decoding = 'async';
+  // 对话立绘比场景预热更急：进关卡时就按 high 抢带宽，避免 Boss 战前还在下载
+  img.fetchPriority = priority;
+  aiPending[key] = new Promise((resolve) => {
+    img.onload = () => {
+      aiImages[key] = img;
+      resolve(img);
+    };
+    img.onerror = () => resolve(null);
+  });
+  img.src = new URL(file, AI_BASE).href;
+  return aiPending[key];
+}
+
+/** 预热一批角色的 AI 立绘（未知角色会被忽略）；永不 reject */
+export function preloadPortraits(keys) {
+  const list = [...new Set(keys || [])].filter((k) => AI_PORTRAITS[k]);
+  return Promise.all(list.map((k) => loadPortrait(k, 'high')));
+}
+
+// 开局对话就要用灵梦 / 魔理沙：页面一启动就用低优先级先拉，
+// 让它们排在标题三张图之后，但比「窗口 load 后的空闲队列」早得多。
+for (const key of ['reimu', 'marisa']) loadPortrait(key, 'low');
+
+// 其余角色等首屏稳定后再整批排队；
+// 实际进关卡 / 播对话时 preloadPortraits 会把需要的角色再提前拉一次（幂等）。
 preloadWhenIdle(() => {
-  for (const key of Object.keys(AI_PORTRAITS)) {
-    if (aiImages[key]) continue;
-    const img = new Image();
-    img.decoding = 'async';
-    img.onload = () => { aiImages[key] = img; };
-    img.src = new URL(AI_PORTRAITS[key], AI_BASE).href;
-  }
+  for (const key of Object.keys(AI_PORTRAITS)) loadPortrait(key);
 });
 
 /** 有 AI 立绘就用它（底部中心对齐、高度 560），返回是否画了 */
@@ -194,6 +226,14 @@ export class Dialogue {
   /** 设置当前操作的主角（决定 'player' 这个占位符解释成谁） */
   setPlayerChar(c) {
     this.playerChar = c === 'marisa' ? 'marisa' : 'reimu';
+  }
+
+  /**
+   * 预载若干角色的 AI 立绘；调用方可以 await 它再开对话，
+   * 保证第一帧就是 AI 版而不是旧矢量版。
+   */
+  preparePortraits(keys) {
+    return preloadPortraits(keys);
   }
 
   /**

@@ -576,6 +576,7 @@ export class StgStage {
         e.hp -= dmg;
         e.hitFlash = 0.1;
         fx?.sparkle(hx, hy, e.k.color);
+        opts.onHit?.(dmg, hx, hy);
         if (e.hp <= 0) {
           e.alive = false;
           fx?.burst(e.x, e.y, e.k.color, 12, 280);

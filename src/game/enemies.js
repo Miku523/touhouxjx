@@ -1001,6 +1001,7 @@ export class EnemyManager {
         const isStomp = player.vy > 60 && playerBottom < e.y + e.h * 0.62;
         if (isStomp) {
           e.hp -= 2;
+          opts.onStomp?.(e);
           player.vy = -560;
           player.jumpsLeft = 1;
           e.stompGrace = 0.2;
@@ -1008,6 +1009,7 @@ export class EnemyManager {
           if (e.hp <= 0) this._kill(e, fx, opts);
         } else if (player.dashing) {
           e.hp -= 3;
+          opts.onStomp?.(e);
           fx?.burst(e.x + e.w / 2, e.y + e.h / 2, e.colors.glow, 10, 240);
           if (e.hp <= 0) this._kill(e, fx, opts);
         } else {
@@ -1042,6 +1044,8 @@ export class EnemyManager {
         e.hp -= dmg;
         e.hitFlash = 0.12;
         fx?.sparkle(hx, hy, e.colors.wing);
+        // 只有真正命中才回调（Stage 侧转成 shotHit 音效）
+        opts.onHit?.(dmg, hx, hy);
       });
       if (hit) {
         if (e.hp <= 0) this._kill(e, fx, opts);
