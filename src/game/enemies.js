@@ -917,10 +917,12 @@ export class EnemyManager {
 
     // 难度细节：优先用难度表给的精确倍率（能区分 H / L），否则退回三档 enemyDifficulty
     const d = opts.diff || null;
-    this.fireScale = Number(d?.enemyFireScale) || this.bulletCooldownMul;
+    // 分面密度：2–6 面道中更稀（齐射发数变少、开火间隔变长）；Extra 传 0 → 1.00
+    const dens = Math.min(1.5, Math.max(0.4, Number(opts.stageDensity) || 1));
+    this.fireScale = (Number(d?.enemyFireScale) || this.bulletCooldownMul) / dens;
     this.bulletCooldownMul = this.fireScale;
     this.bulletSpeed = Math.min(Number(d?.bulletSpeedCap) || 520, 150 * (Number(d?.enemyBulletScale) || 1));
-    this.bulletShots = Math.max(1, Number(d?.flyerShots) || 1);
+    this.bulletShots = Math.max(1, Math.round((Number(d?.flyerShots) || 1) * dens));
   }
 
   update(dt, player, bullets, fx, opts = {}) {
@@ -1041,13 +1043,14 @@ export class EnemyManager {
     if (!shots) return;
     for (const e of this.list) {
       if (!e.alive) continue;
+      // 传 e 作为 targetRef：魔理沙的穿透弹靠它保证对同一个敌人只结算一次伤害
       const hit = shots.hitRect(e.x, e.y, e.w, e.h, (dmg, hx, hy) => {
         e.hp -= dmg;
         e.hitFlash = 0.12;
         fx?.sparkle(hx, hy, e.colors.wing);
         // 只有真正命中才回调（Stage 侧转成 shotHit 音效）
         opts.onHit?.(dmg, hx, hy);
-      });
+      }, e);
       if (hit) {
         if (e.hp <= 0) this._kill(e, fx, opts);
         else fx?.burst(e.x + e.w / 2, e.y + e.h / 2, e.colors.wing, 4, 140);

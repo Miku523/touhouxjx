@@ -15,6 +15,7 @@
 import { T } from './level.js';
 import { drawCharacter } from '../art/chars.js';
 import { drawGenChar } from '../art/genchars.js';
+import { drawHitbox } from '../art/hitbox.js';
 import { POWER, powerLevel, canSpell, spendPower } from './power.js';
 import { isInvincible } from './cheat.js';
 
@@ -24,7 +25,7 @@ export const TUNE = {
   h: 56,
 
   maxRun: 380,
-  fastMul: 1.5,           // 按住 Shift 加速移动时的速度倍率
+  focusMul: 0.55,         // 按住 Shift「低速移动」时的速度倍率（并显示判定点）
   accelGround: 2600,
   accelAir: 1700,
   accelTurn: 3600,
@@ -124,6 +125,7 @@ export class Player {
     this.invuln = 0;
     this.hearts = TUNE.heartsPerLife;
     this.alive = true;
+    this.focus = false;
     this.power = 0;
     this.maxPower = POWER.max;
 
@@ -163,6 +165,11 @@ export class Player {
     return powerLevel(this.power);
   }
 
+  /** 判定半径：真正的受伤判定圆（魔理沙比灵梦小一点） */
+  get hitRadius() {
+    return this.char === 'marisa' ? 5.4 : 6;
+  }
+
   /** 是否满足放符卡的条件 */
   canCast() {
     return this.alive && !this.casting && canSpell(this.power);
@@ -171,6 +178,9 @@ export class Player {
   update(dt, input) {
     this.prevX = this.x;
     this.prevY = this.y;
+
+    // 按住 Shift：低速移动 + 显示判定点
+    this.focus = !!input.down('fast');
 
     if (!this.alive || this.casting) {
       this._tickDeadOrCast(dt, input);
@@ -245,8 +255,8 @@ export class Player {
 
     // ---------- 水平速度 ----------
     if (!this.dashing) {
-      // 按住 Shift 加速移动：只抬高目标极速，加速度/摩擦不变
-      const maxRun = input.down('fast') ? TUNE.maxRun * TUNE.fastMul : TUNE.maxRun;
+      // 按住 Shift 低速移动：目标极速降到 55%，加速度/摩擦不变，手感更可控
+      const maxRun = this.focus ? TUNE.maxRun * TUNE.focusMul : TUNE.maxRun;
       let accel = grounded ? TUNE.accelGround : TUNE.accelAir;
       let friction = grounded ? TUNE.frictionGround : TUNE.frictionAir;
       if (onIce) {
@@ -534,5 +544,17 @@ export class Player {
     };
     if (!drawGenChar(ctx, charOpts)) drawCharacter(ctx, charOpts);
     ctx.restore();
+
+    // 低速移动时显示判定点：位置与 stage.playerHitPoint 保持一致
+    if (this.focus && this.alive) {
+      drawHitbox(
+        ctx,
+        cx,
+        p.y + this.h * 0.55,
+        this.hitRadius,
+        this.animTime,
+        this.char === 'marisa' ? '#ffd23f' : '#ff5ea8'
+      );
+    }
   }
 }

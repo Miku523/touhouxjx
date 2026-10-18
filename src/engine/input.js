@@ -21,7 +21,7 @@ export const ACTION_DEFS = [
   { action: 'down',    label: '下移 / 下选', primary: 'ArrowDown',  alt: 'KeyS' },
   { action: 'jump',    label: '跳跃',        primary: 'Space',      alt: null },
   { action: 'shoot',   label: '射击',        primary: 'KeyZ',       alt: 'KeyJ' },
-  { action: 'fast',    label: '加速移动',    primary: 'ShiftLeft',  alt: 'ShiftRight' },
+  { action: 'fast',    label: '低速移动',    primary: 'ShiftLeft',  alt: 'ShiftRight' },
   { action: 'dash',    label: '冲刺',        primary: 'KeyK',       alt: 'KeyC' },
   { action: 'cast',    label: '符卡',        primary: 'KeyX',       alt: 'KeyL' },
   { action: 'confirm', label: '确认',        primary: 'Enter',      alt: 'NumpadEnter' },

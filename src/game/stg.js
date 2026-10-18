@@ -6,11 +6,12 @@
  *  - 相机固定以 scrollSpeed 向右推进，玩家的「屏幕位置」由输入控制，
  *    世界坐标 = scroll + 屏幕位置。判定与弹幕全部用世界坐标。
  *
- * 操作：方向键自由移动，Z/J 连射，Shift 加速，K/C 冲刺（短无敌位移），X/L/V 符卡。
+ * 操作：方向键自由移动，Z/J 连射，Shift 低速移动（显示判定点），K/C 冲刺（短无敌位移），X/L/V 符卡。
  */
 import { drawCharacter } from '../art/chars.js';
 import { drawGenChar } from '../art/genchars.js';
 import { drawGenFairy } from '../art/genfairy.js';
+import { drawHitbox } from '../art/hitbox.js';
 import { POWER, powerLevel, canSpell, spendPower } from './power.js';
 import { scaleEnemyHp } from './balance.js';
 import { isInvincible } from './cheat.js';
@@ -20,7 +21,8 @@ const ACCEL = 3200;
 const FRICTION = 2600;
 const DASH_SPEED = 900;
 const DASH_TIME = 0.16;
-const HIT_R = 7;          // 玩家判定半径（东方风：判定点比视觉小得多）
+// 玩家判定半径（东方风：判定点比视觉小得多；魔理沙比灵梦小一点）
+const HIT_R = { reimu: 4.2, marisa: 3.6 };
 
 export class StgPlayer {
   constructor(opts = {}) {
@@ -60,7 +62,7 @@ export class StgPlayer {
     this.castT = 0;
 
     this.events = [];
-    this.boost = false;
+    this.focus = false;
   }
 
   emit(type, data = {}) {
@@ -89,8 +91,13 @@ export class StgPlayer {
     this.worldY = this.sy;
   }
 
+  /** 判定半径：真正的受伤判定圆（魔理沙比灵梦小一点） */
+  get hitRadius() {
+    return HIT_R[this.char] || HIT_R.reimu;
+  }
+
   get hitPoint() {
-    return { x: this.worldX, y: this.worldY + 6, r: HIT_R };
+    return { x: this.worldX, y: this.worldY + 6, r: this.hitRadius };
   }
 
   update(dt, input, scroll) {
@@ -103,6 +110,7 @@ export class StgPlayer {
     this.scroll = scroll;
 
     if (!this.alive) {
+      this.focus = false;
       this.deadT += dt;
       this.sy += 60 * dt;
       this.syncWorld(scroll);
@@ -123,9 +131,9 @@ export class StgPlayer {
     // （原来写成 up - ay，导致弹幕关上下完全反了：按 ↑ 一路沉底，按 ↓ 顶到天花板。）
     const ayAll = ay - up;
 
-    // 按住 Shift 加速移动：移速 ×1.5
-    this.boost = input.down('fast');
-    const spd = this.boost ? SPEED * 1.5 : SPEED;
+    // 按住 Shift 低速移动：移速降到 50%，并显示判定点
+    this.focus = !!input.down('fast');
+    const spd = this.focus ? SPEED * 0.5 : SPEED;
 
     if (ax !== 0) this.facing = ax;
 
@@ -263,19 +271,6 @@ export class StgPlayer {
     ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
 
-    // 判定点
-    ctx.globalAlpha = 0.9;
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(0, 6, HIT_R * 0.7, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(110,231,255,0.9)';
-    ctx.beginPath();
-    ctx.arc(0, 6, HIT_R * 1.9, 0, Math.PI * 2);
-    ctx.globalAlpha = 0.22;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-
     // 优先用 AI 帧（与平台关同一套立绘）：飞行姿势 + 随横移轻微前倾
     const charOpts = {
       char: this.char,
@@ -298,6 +293,13 @@ export class StgPlayer {
     if (!drewAI) drawCharacter(ctx, { ...charOpts, scale: 0.9 });
 
     ctx.restore();
+
+    // 判定点：只在按住 Shift 低速移动时显示。
+    // 画在角色之后（不被立绘盖住），位置严格取 hitPoint，不跟随上下浮动。
+    if (this.focus && this.alive) {
+      drawHitbox(ctx, this.sx, this.sy + 6, this.hitRadius, this.animTime,
+        this.char === 'marisa' ? '#ffd23f' : '#ff5ea8');
+    }
   }
 }
 
@@ -477,8 +479,9 @@ export class StgStage {
   /**
    * @param {import('./level.js').Level} level
    * @param {object} [diff] 难度配置（DIFFICULTIES 里的一项）；不传则按 N 处理
+   * @param {number} [stageDensity] 分面弹幕密度系数（2–6 面 < 1；Extra / 缺省 1）
    */
-  constructor(level, diff = null) {
+  constructor(level, diff = null, stageDensity = 1) {
     this.level = level;
     this.diff = diff || null;
     this.scroll = 0;
@@ -490,16 +493,19 @@ export class StgStage {
     this.finished = false;
     this.reachedBoss = false;
 
+    // 分面密度：2–6 面道中更稀（齐射发数变少、开火间隔变长）；Extra 传 0 → 1.00
+    const dens = Math.min(1.5, Math.max(0.4, Number(stageDensity) || 1));
+
     // 道中敌机的难度倍率：弹速 / 开火间隔 / 每次齐射发数
     this.enemyBulletScale = Number(diff?.enemyBulletScale) || 1;
-    this.enemyFireScale = Number(diff?.enemyFireScale) || 1;
+    this.enemyFireScale = (Number(diff?.enemyFireScale) || 1) / dens;
     this.enemySpeedCap = Number(diff?.bulletSpeedCap) || 520;
     this.enemyMods = {
       speed: this.enemyBulletScale,
       fire: this.enemyFireScale,
       cap: this.enemySpeedCap,
-      scout: Math.max(1, Number(diff?.stgScoutShots) || 1),
-      gunner: Math.max(1, Number(diff?.stgGunnerShots) || 3),
+      scout: Math.max(1, Math.round((Number(diff?.stgScoutShots) || 1) * dens)),
+      gunner: Math.max(1, Math.round((Number(diff?.stgGunnerShots) || 3) * dens)),
     };
 
     // 按关卡主色给三类敌机分配配色：主色给最常见的 scout，点缀色分给另外两类
@@ -575,7 +581,7 @@ export class StgStage {
       e.update(dt, bullets, px, py, this.enemyMods);
       if (e.x < this.scroll - 200) e.alive = false;
 
-      // 玩家子弹命中
+      // 玩家子弹命中（传 e 作为 targetRef，穿透弹对同一敌人只结算一次）
       shots?.hitRect(e.x - e.w / 2, e.y - e.h / 2, e.w, e.h, (dmg, hx, hy) => {
         e.hp -= dmg;
         e.hitFlash = 0.1;
@@ -586,7 +592,7 @@ export class StgStage {
           fx?.burst(e.x, e.y, e.k.color, 12, 280);
           opts.onKill?.(e);
         }
-      });
+      }, e);
     }
     this.enemies = this.enemies.filter((e) => e.alive);
 

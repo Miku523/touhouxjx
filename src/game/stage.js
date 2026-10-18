@@ -16,7 +16,7 @@ import { BulletPool } from './bullets.js';
 import { PlayerShots } from './playerShots.js';
 import { EnemyManager } from './enemies.js';
 import { Boss } from './boss.js';
-import { getDifficulty } from './difficulty.js';
+import { getDifficulty, enemyStageDensityOf } from './difficulty.js';
 import { scalePlayerDamage } from './balance.js';
 import { StgPlayer, StgStage } from './stg.js';
 import { POWER, powerLevel } from './power.js';
@@ -343,14 +343,19 @@ export class Stage {
     // 玩家
     if (this.mode === 'stg') {
       this.player = new StgPlayer({ char: this.char, lives: opts.lives || 3, power: opts.power || 0 });
-      this.stg = new StgStage(this.level, this.diff);
+      // 分面密度：2–6 面道中敌机齐射更稀（Extra 传 0 → 1.00）
+      this.stg = new StgStage(this.level, this.diff, enemyStageDensityOf(this.extra ? 0 : this.index + 1));
       this.camera.x = 0;
       this.camera.y = 0;
       this.camera.follow = false;
     } else {
       this.player = new Player(this.level, { char: this.char, lives: opts.lives || 3, power: opts.power || 0 });
       this._safeSpot = { x: this.player.x, y: this.player.y };
-      this.enemies = new EnemyManager(this.level, { difficulty: this.diff.enemyDifficulty, diff: this.diff });
+      this.enemies = new EnemyManager(this.level, {
+        difficulty: this.diff.enemyDifficulty,
+        diff: this.diff,
+        stageDensity: enemyStageDensityOf(this.extra ? 0 : this.index + 1),
+      });
       this.camera.snapTo(this.player.x + this.player.w / 2);
     }
 
@@ -376,7 +381,36 @@ export class Stage {
   get playerHitPoint() {
     if (this.mode === 'stg') return this.player.hitPoint;
     const p = this.player;
-    return { x: p.x + p.w / 2, y: p.y + p.h * 0.55, r: 10 };
+    return { x: p.x + p.w / 2, y: p.y + p.h * 0.55, r: p.hitRadius };
+  }
+
+  /**
+   * 灵梦追踪弹的候选目标：Boss 与杂兵一视同仁，全部塞进同一个数组，
+   * 由 PlayerShots 自己挑最近的。ref 是目标本体（命中判定 / 去重都靠它）。
+   * 每帧重建，元素是临时对象，不会留下引用。
+   */
+  _shotTargets() {
+    const out = [];
+    if (this.mode === 'stg') {
+      const list = this.stg?.enemies;
+      if (list) {
+        for (const e of list) {
+          if (!e.alive) continue;
+          out.push({ ref: e, x: e.x, y: e.y });
+        }
+      }
+    } else if (this.enemies) {
+      for (const e of this.enemies.list) {
+        if (!e.alive) continue;
+        out.push({ ref: e, x: e.x + e.w / 2, y: e.y + e.h / 2 });
+      }
+    }
+    const b = this.boss;
+    if (b && b.state === 'battle') {
+      // 命中体集中在 y-hh..y（hh = h*0.78），取它的几何中心当追踪点
+      out.push({ ref: b, x: b.x, y: b.y - b.h * 0.39 });
+    }
+    return out;
   }
 
   /* ============================================================
@@ -419,7 +453,7 @@ export class Stage {
 
     // 玩家被弹命中
     if (p.alive && p.invuln <= 0) {
-      const hit = this.bullets.hitTest(hp.x, hp.y, hp.r * 0.6);
+      const hit = this.bullets.hitTest(hp.x, hp.y, hp.r);
       if (hit) {
         this.fx.burst(hit.x, hit.y, hit.color, 10, 260);
         hit.active = false;
@@ -427,13 +461,13 @@ export class Stage {
       }
       if (this.mode === 'stg') {
         // 擦弹加分
-        const g = this.bullets.grazeTest(hp.x, hp.y, hp.r * 0.6, 26);
+        const g = this.bullets.grazeTest(hp.x, hp.y, hp.r, 26);
         if (g > 0) p.power = Math.min(p.maxPower, p.power + g * POWER.graze);
       }
     }
 
-    // 玩家子弹
-    this.shots.update(dt, { w: this.level.w, h: this.level.h });
+    // 玩家子弹（第三参是追踪目标表，灵梦的御札会就近拐弯）
+    this.shots.update(dt, { w: this.level.w, h: this.level.h }, this._shotTargets());
     if (this.mode === 'platform' && this.enemies) {
       this.enemies.damageWithShots(this.shots, this.fx, {
         onHit: () => this.onEvent('shotHit'),
@@ -589,7 +623,9 @@ export class Stage {
           aim = Math.max(-0.42, Math.min(0.42, Math.atan2(dy, dist)));
         }
       }
-      this.shots.fire(p.worldX + 14 * p.facing, gunY, p.facing, this.char, level, aim, 0.1);
+      // 平射散布：灵梦保持很窄（几乎笔直），魔理沙明显成扇形（扩散弹）
+      const fan = this.char === 'marisa' ? 0.22 : 0.1;
+      this.shots.fire(p.worldX + 14 * p.facing, gunY, p.facing, this.char, level, aim, fan);
     } else {
       // 按住 ↑ 时朝上方的目标射击（有 Boss 时自动瞄准 Boss 的高度，避免贴脸也打不中）；
       // 按住 ↓ 时朝下方射击：Boss 在下层平台/地面时也能反打，

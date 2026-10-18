@@ -1,8 +1,8 @@
 /**
  * 隐藏秘籍：无敌模式（Invincible Mode）。
  *
- * 只在标题画面有效：
- *   Shift 起手 → Q Q P P P V V V V → 空格 ×5
+ * 只在设置画面有效：
+ *   Shift 起手 → Q Q Q Q Q V V V V → 空格 ×5
  *
  * 规则：
  *  - 起手后每按对一个键就往前推进一格；按错序列里的键整串作废，重新按 Shift 起手。
@@ -20,8 +20,7 @@ const ARM_KEYS = new Set(['ShiftLeft', 'ShiftRight']);
 
 /** 完整输入序列（KeyboardEvent.code） */
 export const CHEAT_SEQUENCE = [
-  'KeyQ', 'KeyQ',
-  'KeyP', 'KeyP', 'KeyP',
+  'KeyQ', 'KeyQ', 'KeyQ', 'KeyQ', 'KeyQ',
   'KeyV', 'KeyV', 'KeyV', 'KeyV',
   'Space', 'Space', 'Space', 'Space', 'Space',
 ];

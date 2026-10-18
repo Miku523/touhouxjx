@@ -17,6 +17,10 @@
  *   N：弹数 0.96×  弹速 1.00×  开火 1.02×（几乎等于基准）
  *   H：弹数 1.16×  弹速 1.10×  开火 0.93×
  *   L：弹数 1.45×  弹速 1.22×  开火 0.80×
+ * 上面只是「难度」这一维。第 2–6 面另乘一层分面密度系数（STAGE_DENSITY，
+ * 见下），让后期关卡即使同一难度也更薄：2 面 0.80× → 6 面 0.64×。
+ * 两层互乘，例如 N 的 6 面 = 0.96 × 0.64 ≈ 0.61，L 的 6 面 = 1.45 × 0.64 ≈ 0.93。
+ * Extra（stageNumber = 0）不吃分面系数，保持固定挑战强度。
  * 三道护栏保证「有缝可解」：
  *   1) bulletSpeedCap  单发弹速硬上限，L 也不会到反应不过来的程度；
  *   2) bulletBudget    同屏敌弹预算，超了主弹幕直接停火、变招让路；
@@ -140,6 +144,44 @@ export function getDifficulty(key) {
 /** 该难度下的主线面数 */
 export function stageCountOf(key) {
   return getDifficulty(key).stageCount;
+}
+
+/**
+ * 分面弹幕密度系数（主线）。
+ * 用户反馈 2–6 面「弹幕糊脸」，尤其 2 面第 2 张、3 面第 3 张符卡。
+ * 这里对所有难度统一收薄：新开招式的弹数、同屏变招的弹数都乘这个系数；
+ * 弹速、血量、开火间隔不动，所以手感不会变「慢动作」，只是缝更宽。
+ * 1 面保持 1.00 当基准；Extra 传 0 / 7 以上也返回 1.00。
+ */
+export const STAGE_DENSITY = {
+  1: 1,
+  2: 0.8,
+  3: 0.76,
+  4: 0.72,
+  5: 0.68,
+  6: 0.64,
+};
+
+/** 道中杂兵的密度系数：比 Boss 温和一点，避免道中变成空场 */
+export const ENEMY_STAGE_DENSITY = {
+  1: 1,
+  2: 0.9,
+  3: 0.86,
+  4: 0.82,
+  5: 0.78,
+  6: 0.74,
+};
+
+/** 1 起关卡号 → Boss 弹幕密度系数；0 / 越界（Extra）返回 1 */
+export function stageDensityOf(stageNumber) {
+  const n = Number(stageNumber) || 0;
+  return STAGE_DENSITY[n] != null ? STAGE_DENSITY[n] : 1;
+}
+
+/** 1 起关卡号 → 道中敌机密度系数；0 / 越界（Extra）返回 1 */
+export function enemyStageDensityOf(stageNumber) {
+  const n = Number(stageNumber) || 0;
+  return ENEMY_STAGE_DENSITY[n] != null ? ENEMY_STAGE_DENSITY[n] : 1;
 }
 
 /**

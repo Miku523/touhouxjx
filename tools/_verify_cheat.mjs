@@ -1,4 +1,4 @@
-// 验证秘籍「无敌模式」：Shift → QQ PPP VVVV Space×5 解锁 / 再输一遍解除
+// 验证秘籍「无敌模式」：设置界面 Shift → QQQQQ VVVV Space×5 解锁 / 再输一遍解除
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -44,7 +44,7 @@ await send('Page.navigate', { url: `http://127.0.0.1:8137/index.html?cheat=${Dat
 for (let i = 0; i < 80; i++) { if (await ev('!!window.__game')) break; await sleep(150); }
 await sleep(500);
 
-// 干净起点：清掉秘籍存档，回到标题
+// 干净起点：清掉秘籍存档
 await ev(`localStorage.removeItem('hks.cheat.v1'); window.__game.showTitle();`);
 await sleep(300);
 
@@ -54,7 +54,7 @@ window.__press = (code) => window.dispatchEvent(new KeyboardEvent('keydown', {
   code, key: code === 'Space' ? ' ' : code.replace(/^Key/, ''), bubbles: true, cancelable: true,
 }));
 window.__seq = (codes) => codes.forEach((c, i) => setTimeout(() => window.__press(c), i * 60));
-window.__cheat = ['ShiftLeft','KeyQ','KeyQ','KeyP','KeyP','KeyP','KeyV','KeyV','KeyV','KeyV','Space','Space','Space','Space','Space'];
+window.__cheat = ['ShiftLeft','KeyQ','KeyQ','KeyQ','KeyQ','KeyQ','KeyV','KeyV','KeyV','KeyV','Space','Space','Space','Space','Space'];
 true;
 `);
 
@@ -68,20 +68,41 @@ const snapshot = async () => JSON.parse(await ev(`JSON.stringify({
   hearts: window.__game.stage?.player?.hearts,
 })`));
 
+// 设置页快照：顺带确认空格没有误切换任何设置项
+const settingsState = async () => JSON.parse(await ev(`JSON.stringify({
+  muted: !!window.__game.audio.muted,
+  musicOn: window.__game.musicOn !== false,
+  sfx: window.__game.audio.sfxEnabled,
+  screenShake: window.__game.screenShake,
+  lives: window.__game.lives,
+  menuIndex: window.__game.menuIndex,
+  page: window.__game._page,
+  state: window.__game.state,
+})`));
+
+// 打开设置界面（从标题进入）
+const openSettings = async () => {
+  await ev(`window.__game.showTitle(); window.__game._showSettings(0, 'title');`);
+  await sleep(400);
+};
+
+await openSettings();
 const before = await snapshot();
+const settingsBefore = await settingsState();
 
 // 1) 正确序列 → 解锁
 await ev('window.__seq(window.__cheat)');
 await sleep(1400);
 const unlocked = await snapshot();
-writeFileSync('_cheat_title_on.png', Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+const settingsAfterSeq = await settingsState();
+writeFileSync('_cheat_settings_on.png', Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
 
-// 1b) 提示 2.6s 后应还原成原副标题
-await sleep(3000);
+// 1b) 提示 2.6s 后应还原成设置页副标题
+await sleep(3200);
 const hintRestored = await snapshot();
 
 // 2) 进关（真实 startGame 流程）：HUD 徽章出现 + 伤害免疫
-await ev(`localStorage.setItem('hks.cheat.v1','1'); window.__game.startGame();`);
+await ev(`window.__game.startGame();`);
 await sleep(700);
 await ev(`(() => { const d = window.__game.dialogue; let n = 0; while (d.active && n < 600) { d.advance(); n++; } })()`);
 await sleep(1600);
@@ -116,18 +137,15 @@ const fallAfter = JSON.parse(await ev(`JSON.stringify((() => {
 })())`));
 writeFileSync('_cheat_stage.png', Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
 
-// 3) 回到标题，再输一遍序列 → 解除
-await ev(`window.__game.showTitle();`);
-await sleep(500);
+// 3) 打开设置，再输一遍序列 → 解除
+await openSettings();
 await ev('window.__seq(window.__cheat)');
 await sleep(1400);
 const relocked = await snapshot();
-writeFileSync('_cheat_title_off.png', Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+writeFileSync('_cheat_settings_off.png', Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
 
 // 4) 解除后再进关：伤害正常生效
-await ev(`window.__game.showTitle();`);
-await sleep(400);
-await ev(`window.__game.startGame();`);
+await ev(`window.__game.showTitle(); window.__game.startGame();`);
 await sleep(700);
 await ev(`(() => { const d = window.__game.dialogue; let n = 0; while (d.active && n < 600) { d.advance(); n++; } })()`);
 await sleep(1600);
@@ -139,21 +157,20 @@ const hurtNormal = JSON.parse(await ev(`JSON.stringify((() => {
   return { h0, h1: p.hearts, badgeHidden: document.querySelector('.cheat-badge')?.classList.contains('hidden') };
 })())`));
 
-// 5) 输入错误序列（先 Shift 再按错键）应重置而不解锁
-await ev(`window.__game.showTitle();`);
-await sleep(400);
+// 5) 设置页输入错误序列（先 Shift 再按错键）应重置而不解锁
+await openSettings();
 await ev(`window.__press('ShiftLeft'); window.__press('KeyZ'); window.__press('KeyQ'); window.__press('KeyQ');`);
 await sleep(400);
 const wrongSeq = await snapshot();
 
-// 6) 只按 Shift 不动 → 不影响正常操作（Shift 是 fast 键，不应吞掉其它逻辑）
-const shiftOnly = JSON.parse(await ev(`JSON.stringify((() => {
-  window.__game.showTitle();
-  return { state: window.__game.state, page: window.__game._page };
-})())`));
+// 6) 设置页只按 Shift：不应影响设置页操作（Shift 不是任何设置热键）
+await ev(`window.__press('ShiftLeft')`);
+await sleep(300);
+const shiftOnly = await snapshot();
 
 await ev(`localStorage.removeItem('hks.cheat.v1')`);
 console.log('RESULT', JSON.stringify({
-  before, unlocked, hintRestored, inStage, hurtResult, fallBefore, fallAfter, relocked, hurtNormal, wrongSeq, shiftOnly, errors,
+  before, settingsBefore, unlocked, settingsAfterSeq, hintRestored,
+  inStage, hurtResult, fallBefore, fallAfter, relocked, hurtNormal, wrongSeq, shiftOnly, errors,
 }, null, 2));
 ws.close(); proc.kill(); await sleep(300); process.exit(0);

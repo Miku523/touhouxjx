@@ -20,6 +20,7 @@ __pycache__/
 # 工具脚本生成的临时数据
 models.json
 arktest.json
+tools/build/themes.json
 
 # 通用
 node_modules/

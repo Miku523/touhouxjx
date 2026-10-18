@@ -219,8 +219,9 @@ class Game {
     if (!this.buttonsEl) return;
     this.buttonsEl.className = 'buttons' + (opts.grid ? ' ' + opts.grid : '');
     this._noDirect = !!opts.noDirect;
-    // 离开标题页就把没输完的秘籍序列作废，免得在别的菜单里接着触发
-    if (this._page === 'title' && (opts.page || '') !== 'title') resetCheatInput();
+    // 离开设置页就把没输完的秘籍序列作废，免得在别的菜单里接着触发
+    if (this._page === 'settings' && (opts.page || '') !== 'settings') resetCheatInput();
+    this._titleHintBase = null;
     this._page = opts.page || '';
     this._onSelect = typeof opts.onSelect === 'function' ? opts.onSelect : null;
     this.buttonsEl.innerHTML = '';
@@ -390,9 +391,9 @@ class Game {
 
     const action = this.input.actionOf(e.code);
 
-    // 隐藏秘籍（只在标题画面）：Shift 起手 → Q Q P P P V V V V → 空格 ×5
-    // 必须抢在热键之前吞掉，否则 Q 会触发「退出游戏」、空格会直接点「开始游戏」
-    if (this._page === 'title') {
+    // 隐藏秘籍（只在设置画面）：Shift 起手 → Q Q Q Q Q V V V V → 空格 ×5
+    // 必须抢在热键 / 确认键之前吞掉，否则 Q 可能触发退出、空格会切换当前设置项
+    if (this._page === 'settings') {
       const cheat = cheatKey(e.code);
       if (cheat) {
         e.preventDefault();
@@ -469,25 +470,26 @@ class Game {
 
   /**
    * 秘籍生效 / 解除时的反馈：
-   * 音效 + 标题页副标题的一行提示（不打断当前菜单）。
+   * 音效 + 当前面板副标题的一行提示（2.6s 后还原，不打断菜单操作）。
    */
   _onCheatToggle(on) {
     this.audio.play?.(on ? 'checkpoint' : 'menu');
     this.hud?.setInvincible(on);
-    this._flashTitleHint(on ? '◈ 无敌模式 · 已开启' : '◈ 无敌模式 · 已解除');
+    this._flashHint(on ? '◈ 无敌模式 · 已开启（再输一遍解除）' : '◈ 无敌模式 · 已解除');
   }
 
-  _flashTitleHint(text) {
+  _flashHint(text) {
     const el = this.subtitleEl;
     if (!el) return;
     clearTimeout(this._titleHintTimer);
-    if (this._page === 'title') this._titleHintBase = this._titleHintBase || el.textContent;
+    const page = this._page;
+    // 记住被临时覆盖的副标题，超时后还原（2.6s 内重复触发不许覆盖原值）
+    const base = this._titleHintBase ?? el.textContent;
+    this._titleHintBase = base;
     el.textContent = text;
     this._titleHintTimer = setTimeout(() => {
       // 期间如果切去了别的页面，就别覆盖那边的副标题
-      if (this.state === 'menu' && this._page === 'title' && el.textContent === text) {
-        el.textContent = this._titleHintBase || '';
-      }
+      if (this._page === page && el.textContent === text) el.textContent = base;
       this._titleHintBase = null;
     }, 2600);
   }
@@ -591,8 +593,6 @@ class Game {
       '',
       { title: true, page: 'title' }
     );
-    // 秘籍提示会临时占用副标题，记下原文以便 2.6s 后还原
-    this._titleHintBase = '～ Chronicle of Gensokyo ～';
   }
 
   showCharSelect() {
@@ -601,12 +601,12 @@ class Game {
     const cards = [
       {
         key: 'reimu', name: '博丽灵梦', en: 'HAKUREI REIMU',
-        note: '符卡「梦想封印」', digit: '1',
+        note: '追踪御札 · 符卡「梦想封印」', digit: '1',
         tone: '#ff92a8', glow: '255, 120, 145', img: art('reimu_title.png'),
       },
       {
         key: 'marisa', name: '雾雨魔理沙', en: 'KIRISAME MARISA',
-        note: '火力稍强 · 符卡「魔炮」', digit: '2',
+        note: '扩散穿透 · 符卡「魔炮」', digit: '2',
         tone: '#ffd45e', glow: '255, 205, 110', img: art('marisa_title.png'),
       },
     ];
@@ -739,7 +739,7 @@ class Game {
       { ...row('help-move', '左右移动', cap('left') + cap('right')), groupTitle: '移动', glyph: '動' },
       row('help-move', '上下移动 / 选择', cap('up') + cap('down')),
       row('help-move', '跳跃', cap('jump') + '<span class="help-tip">二段跳</span>'),
-      row('help-move', '加速移动', cap('fast') + '<span class="help-tip">按住</span>'),
+      row('help-move', '低速移动 / 判定点', cap('fast') + '<span class="help-tip">按住显示判定点</span>'),
       { ...row('help-act', '射击', cap('shoot')), groupTitle: '战斗', glyph: '戰' },
       row('help-act', '向上射击', cap('up') + '<span class="help-tip">按住打空中</span>'),
       row('help-act', '向下射击', cap('down') + '<span class="help-tip">按住打脚下</span>'),
@@ -1338,7 +1338,7 @@ class Game {
 
     this._setPanel('设置', '即时生效，自动保存 · 残机从下一局开始生效', rows,
       '↑ ↓ 选择　← → 调整　ENTER 切换　ESC 返回',
-      { screen: true, en: 'OPTIONS', grid: 'set-grid', scene: 'moon', select: index }
+      { screen: true, en: 'OPTIONS', grid: 'set-grid', scene: 'moon', select: index, page: 'settings' }
     );
   }
 

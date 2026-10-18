@@ -20,7 +20,7 @@
 
 import { drawBoss, BOSS_INFO } from '../art/bosses.js';
 import { drawGenBoss } from '../art/genboss.js';
-import { getDifficulty, bossPhasesFor, scaleBossHp } from './difficulty.js';
+import { getDifficulty, bossPhasesFor, scaleBossHp, stageDensityOf } from './difficulty.js';
 import { scalePlayerDamage, scaleEnemyHp } from './balance.js';
 
 const TAU = Math.PI * 2;
@@ -363,14 +363,13 @@ export const BOSS_DEFS = {
         ],
       },
       {
-        // 全难度大削（用户反馈：E/N/H/L 都上来就撞墙）。
-        // 旧版主招是 6 臂螺旋 rate 0.07：单这一招峰值就有 69(E)/84(N)/92(H)/107(L) 发/秒，
-        // 还叠 215 速的 5 连自机狙。现改为 3 臂低速螺旋 rate 0.18（峰值约 13/16/18/21 发/秒），
-        // 全卡弹速压到 ≤150，另外两招各约 5.6 / 2.1 发/秒。
+        // 二次大削（用户第二次反馈：2 面第 2 张还是糊脸）。
+        // 在原「3 臂低速螺旋」的基础上再收：扇 7→5 发、螺旋 3→2 臂且间隔 0.18→0.30、
+        // 自机狙 3→2 发并减速到 135。三招叠加峰值约 6.5 发/秒，留大缝。
         name: '蠢符「小虫风暴」', hp: 960, patterns: [
-          { typeName: 'fan', n: 7, spread: 1.2, speed: 100, color: '#a8ff8f', rate: 1.25, r: 5, wobble: 45 },
-          { typeName: 'spiral', arms: 3, speed: 92, color: '#d6ff7a', rate: 0.18, spin: 1.8, r: 4 },
-          { typeName: 'aimed', n: 3, spread: 0.7, speed: 150, color: '#ffffff', rate: 1.4, r: 5, weight: 0.75 },
+          { typeName: 'fan', n: 5, spread: 1.3, speed: 95, color: '#a8ff8f', rate: 1.55, r: 5, wobble: 40 },
+          { typeName: 'spiral', arms: 2, speed: 88, color: '#d6ff7a', rate: 0.3, spin: 1.6, r: 4 },
+          { typeName: 'aimed', n: 2, spread: 0.7, speed: 135, color: '#ffffff', rate: 1.8, r: 5, weight: 0.7 },
         ],
       },
       {
@@ -403,10 +402,13 @@ export const BOSS_DEFS = {
         ],
       },
       {
+        // 用户点名要削的 3 面第 3 张。原版双环 26×2 发 + 14 发快环 + 3 发 285 速自机狙，
+        // 每轮约 66 发。现在 18×2 发慢冰环 + 10 发快环 + 2 发 235 速自机狙（约 46 发/轮），
+        // 开火间隔也拉长，慢环仍是「找缝钻」而不是「没缝」。
         name: '冻符「完美冻结」', hp: 1080, patterns: [
-          { typeName: 'ring', n: 26, speed: 62, color: '#a8e8ff', rate: 1.4, r: 9, type: 2, spinAngle: 0.2, rings: 2 },
-          { typeName: 'ring', n: 14, speed: 150, color: '#d6f6ff', rate: 0.9, r: 5, spinAngle: 0.8 },
-          { typeName: 'aimed', n: 3, spread: 0.3, speed: 285, color: '#ffffff', rate: 1.0, r: 5 },
+          { typeName: 'ring', n: 18, speed: 58, color: '#a8e8ff', rate: 1.6, r: 9, type: 2, spinAngle: 0.2, rings: 2 },
+          { typeName: 'ring', n: 10, speed: 145, color: '#d6f6ff', rate: 1.15, r: 5, spinAngle: 0.85 },
+          { typeName: 'aimed', n: 2, spread: 0.3, speed: 235, color: '#ffffff', rate: 1.35, r: 5 },
         ],
       },
       {
@@ -685,6 +687,8 @@ export class Boss {
     this.difficulty = getDifficulty(opts.difficulty).key;
     this.diff = getDifficulty(this.difficulty);
     this.stageNumber = Number(opts.stageNumber) || 0;
+    // 分面密度：2–6 面统一收薄（Extra 的 stageNumber = 0 → 1.00）
+    this.stageDensity = stageDensityOf(this.stageNumber);
     const trimmed = bossPhasesFor(def.phases, this.difficulty, this.stageNumber);
     this.phases = scaleBossHp(trimmed, this.difficulty, def.hp);
 
@@ -797,7 +801,7 @@ export class Boss {
     this._pat = {
       angle: this.rnd(0, TAU),                 // 整招的基准角
       dir: this.chance(0.5) ? 1 : -1,          // 旋转 / 转向方向
-      nScale: this.rnd(0.78, 1.26) * (1 + (this.wild - 0.6) * 0.15) * this.diff.bulletCountScale,
+      nScale: this.rnd(0.78, 1.26) * (1 + (this.wild - 0.6) * 0.15) * this.diff.bulletCountScale * this.stageDensity,
       speedScale: this.rnd(0.86, 1.14) * this.diff.bulletSpeedScale,
       spreadScale: this.rnd(0.78, 1.26),
       rateScale: this.rnd(0.85, 1.18) * this.diff.fireIntervalScale,
@@ -927,8 +931,8 @@ export class Boss {
     const aim = Math.atan2(py - this.y, px - this.x);
     const color = this.chance(0.5) ? this.def.accent : '#ffffff';
     const kind = this.rndInt(0, 2);
-    // 弹数与弹速：难度倍率 × 密度自适应，速度同样夹到上限
-    const cnt = this.diff.bulletCountScale * this.pressure;
+    // 弹数与弹速：难度倍率 × 分面密度 × 密度自适应，速度同样夹到上限
+    const cnt = this.diff.bulletCountScale * this.pressure * this.stageDensity;
     const sp = (v) => Math.min(this.speedCap, Math.max(20, v * this.diff.bulletSpeedScale));
 
     if (kind === 0) {
@@ -1153,11 +1157,12 @@ export class Boss {
     if (this.state !== 'battle' || !shots) return;
     const hw = this.w * 0.46;
     const hh = this.h * 0.78;
+    // 传 this 作为 targetRef：穿透弹对 Boss 也只结算一次（同一条弹不会连续帧反复削血）
     shots.hitRect(this.x - hw, this.y - hh, hw * 2, hh, (dmg, hx, hy) => {
       this.damage(dmg);
       fx?.sparkle(hx, hy, this.inmDefColor());
       onHit?.(dmg);
-    });
+    }, this);
   }
 
   inmDefColor() {
