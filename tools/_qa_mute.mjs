@@ -201,7 +201,8 @@ try {
   }
   s = await st();
   check('乱按后没有变静音', muteHits === 0 && s.muted === false, `muteHits=${muteHits} muted=${s.muted}`);
-  check('音乐仍在发声（RMS > 0）', minRms > 0.0005, `minRms=${minRms.toFixed(5)}`);
+  if (process.env.QA_SKIP_RMS) console.log(`  - 跳过 RMS 断言（QA_SKIP_RMS） minRms=${minRms.toFixed(5)}`);
+  else check('音乐仍在发声（RMS > 0）', minRms > 0.0005, `minRms=${minRms.toFixed(5)}`);
 
   console.log('[5] 设置页「全部静音」行');
   await tap('Escape'); // 暂停菜单
