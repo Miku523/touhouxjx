@@ -436,7 +436,43 @@ def melody_score(st, dur):
     return mono * 0.25 + cov * 0.20 + reg * 0.15 + step * 0.30 + dens * 0.10
 
 
-def pick_voices(chans, dur):
+# 人工复核过的主旋律通道表。
+# 这些改编 MIDI 里 lead 类 program 经常缺失、或只演一小段，纯算法会在
+# 「单音性 / 级进 / 密度」之间选到伴奏跑动。这里按听感复核结论钉死，
+# 依据：最高声部占比(top%)、program、音区、是否贯穿全曲、是否单音。
+# 键 = 曲 key，值 = (通道, 依据)；未列出的曲目走自动挑选。
+OVERRIDE_LEAD = {
+    'stage1': (2, '唯一 lead 类 program(76 pan flute) 通道；163 音、中位 71，28s 起的主歌线'),
+    'stage2': (0, 'ch0 取最高音后是连续旋律线(79 81 83 81 83 76 76 78 79 81 83 86...)；'
+                  'ch5(prog6) 是 60-64-67-72 式的分解和弦、ch3 是低音华彩，都不是主旋律；'
+                  'ch1(trumpet) 与 ch0 同旋律，取 ch0'),
+    'stage3': (7, 'prog80 方波主音，472 音、密度 5.1 音/秒、音区 86；钢琴 ch3 是它的 doubling'),
+    'stage4': (0, 'ch0(prog56 trumpet) 有 55.7% 的时间是整首的最高声部，882 音、中位 76'),
+    'stage5': (10, 'lead 类通道只在 67-116s 片段；ch10(prog48 strings) 398 音、'
+                   '1.7-116.5s 基本连续覆盖全曲，是贯穿全曲的旋律线'),
+    'stage6': (0, 'ch0 钢琴右手=33% 时长的最高声部，964 音、复音 24%、级进为主'),
+    'extra': (6, 'ch6(prog80 方波) 44.5% 时长是最高声部，594 音；ch2 是同曲另一个声部'),
+}
+
+
+def to_monophonic(notes, min_dur=0.05):
+    """把声部压成严格单音：新音开始时截断前一个音（保证 lead 干净不糊）。"""
+    ns = sorted(notes, key=lambda n: (n['t'], -n['m']))
+    out = []
+    for n in ns:
+        n = dict(n)
+        if out:
+            prev = out[-1]
+            end = prev['t'] + prev['d']
+            if end > n['t'] + 1e-6:
+                prev['d'] = round(max(min_dur, n['t'] - prev['t']), 3)
+        if out and abs(n['t'] - out[-1]['t']) < 1e-6 and n['m'] == out[-1]['m']:
+            continue
+        out.append(n)
+    return out
+
+
+def pick_voices(chans, dur, key=None):
     """返回 (lead, bass, harmony, reasons)。
 
     1) 先把「音符完全重合 / 整八度 doubling」的通道合并，只留最像主旋律的一条；
@@ -463,6 +499,17 @@ def pick_voices(chans, dur):
     for d, won in dropped[:6]:
         reasons.append('  重复通道 ch%d(prog=%d,%d音) 与 ch%d(prog=%d,%d音) 重合/八度 doubling，丢弃'
                        % (d['ch'], d['prog'], d['count'], won['ch'], won['prog'], won['count']))
+    ovr = OVERRIDE_LEAD.get(key)
+    if ovr:
+        have = set(x['ch'] for x in reps)
+        if ovr[0] not in have:
+            for d, _won in dropped:
+                if d['ch'] == ovr[0]:
+                    reps.append(d)
+                    break
+        if ovr[0] not in set(x['ch'] for x in reps):
+            reasons.append('  人工复核指定的 ch%d 在本曲不可用，改用自动挑选' % ovr[0])
+
     reps.sort(key=lambda s: -s['count'])
     max_count = reps[0]['count']
 
@@ -515,6 +562,8 @@ def pick_voices(chans, dur):
             sc -= 0.15
         if s['gap'] > 20 and not fillable(s):
             sc -= 0.15
+        if ovr and s['ch'] == ovr[0]:
+            sc += 100.0
         return sc
 
     ranked = sorted(rest, key=lambda s: -lead_score(s))
@@ -525,11 +574,15 @@ def pick_voices(chans, dur):
         % (lead['ch'], lead['prog'], lead['count'], lead['med'], lead['poly'] * 100,
            lead['leap'], lead['dens'], lead['cov'] * 100, lead['gap'], lead_score(lead)))
 
+    if ovr and lead['ch'] == ovr[0]:
+        reasons.append('  主旋律依据（人工复核）：%s' % ovr[1])
+
     # --- 和声/伴奏：和弦/琶音性质，排除与主旋律同节奏同音高的重复 ---
     pool_h = [s for s in reps
               if s['ch'] not in (bass['ch'], lead['ch'])
               and s['count'] >= max(20, max_count * 0.08)
-              and note_overlap(s['notes'], lead['notes']) < 0.3]
+              and note_overlap(s['notes'], lead['notes']) < 0.2
+              and onset_overlap(s['notes'], lead['notes']) < 0.5]
     pool_h.sort(key=lambda s: -(s['count'] * (0.35 + s['poly'])))
     harm = pool_h[:3]
     for s in harm:
@@ -724,7 +777,7 @@ def build_song(song, chans, segs, limit=SOLO_LIMIT, verbose=False):
     if raw_end <= 0:
         raise SystemExit('空 MIDI: %s' % song['key'])
 
-    lead_s, bass_s, harm_s, reasons = pick_voices(chans, raw_end)
+    lead_s, bass_s, harm_s, reasons = pick_voices(chans, raw_end, song['key'])
     lead_ch, bass_ch = lead_s['ch'], bass_s['ch']
     harm_chs = [s['ch'] for s in harm_s]
 
@@ -745,7 +798,7 @@ def build_song(song, chans, segs, limit=SOLO_LIMIT, verbose=False):
     for f in fills:
         reasons.append('  补缝 %.1f-%.1fs 用 ch%d(prog=%d) 的 %d 音' % (f[0], f[1], f[2], f[3], f[4]))
 
-    lead = clip_range(mono_ize(lead_raw, keep='high'))
+    lead = clip_range(to_monophonic(mono_ize(lead_raw, keep='high')))
     bass = clip_range(mono_ize(chans[bass_ch]['notes'], keep='low'))
 
     harm = []
@@ -777,6 +830,17 @@ def build_song(song, chans, segs, limit=SOLO_LIMIT, verbose=False):
     lead = dedupe(lead)
     bass = dedupe(bass)
     harm = dedupe(harm)
+
+    # --- 掐头：把全曲所有事件（含鼓）整体前移，使第一个事件 t=0 ---
+    # 原 MIDI 开头常有 0.8-2.8s 静音，进关时 BGM 会晚响 2-3 秒。
+    events = [n['t'] for n in lead + bass + harm] + [d[0] for d in drums]
+    pre_first = round(min(events), 3) if events else 0.0
+    if pre_first > 0:
+        for n in lead + bass + harm:
+            n['t'] = round(n['t'] - pre_first, 3)
+        drums = [(round(d[0] - pre_first, 3), d[1], d[2]) for d in drums]
+    reasons.append('  掐头：首个事件原在 %.3fs，整体前移 %.3fs（现在 t=0 起）'
+                   % (pre_first, pre_first))
 
     # 末端
     end = 0.0
@@ -825,6 +889,7 @@ def build_song(song, chans, segs, limit=SOLO_LIMIT, verbose=False):
             tr['notes'] = [n for n in tr['notes'] if n['t'] < duration]
     data['size'] = size
     data['reasons'] = reasons
+    data['pre_first'] = pre_first
     data['lead_stats'] = st
     data['bass_stats'] = st_bass
     return data
@@ -869,10 +934,13 @@ def render_header(results):
  * - 贝斯：音区最低、以 C2-C4 为主，program 32-39 的通道优先；三角波。
  * - 主旋律：program 73-87 中音符最多者（并列时取同时发声少、音区高者）；
  *   无 lead 类 program 时取「单音性最强 + 音区最高」的通道；方波。
+ *   这 7 首是改编 MIDI（多处 lead 缺失/只演一段），逐个复核了
+ *   「最高声部占比 + 音高走向」，最终通道见下方每首的依据（OVERRIDE_LEAD）。
  * - 和声：其余通道合并抽稀，同一时刻最多 2 个音；方波，增益压低。
  * - 时间：用 set_tempo 建立的 tempo map 逐段换算成秒（保留原曲的渐慢），
  *   量化到 1ms，不做固定 BPM 重采样。
  * - 每首 ≤4 条轨；同一时刻最多 4 个旋律声部发声；循环片段 ≤%d 秒。
+ * - 掐头：所有事件（含鼓）整体前移，使第一个事件 t=0，避免进关 BGM 延迟。
  *
  * 各曲通道选择依据：
 %s

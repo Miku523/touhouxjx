@@ -82,10 +82,26 @@ try {
   const t0 = Date.now();
   await send('Page.navigate', { url: `${URL0}?dlgai=${t0}` });
 
-  for (let i = 0; i < 200; i++) {
-    await sleep(100);
-    if (await ev('!!window.__game')) break;
+  let gameReady = false;
+  for (let i = 0; i < 400; i++) {
+    await sleep(150);
+    if (await ev('!!window.__game')) { gameReady = true; break; }
+    if (i % 20 === 0) {
+      console.log('WAIT', i, await ev('JSON.stringify({ rs: document.readyState, href: location.href, title: document.title, boot: !!document.getElementById("boot") })'));
+    }
   }
+  console.log('GAME_READY', gameReady);
+  if (!gameReady) {
+    console.log('PAGE_ERRORS', JSON.stringify(errors));
+    throw new Error('game not ready');
+  }
+  // 等启动幕揭完，模拟玩家在标题界面出现后才点开始
+  for (let i = 0; i < 120; i++) {
+    if (await ev("document.getElementById('boot')?.classList.contains('done')")) break;
+    await sleep(100);
+  }
+  await sleep(700);
+  console.log('BOOT_DONE', await ev("document.getElementById('boot')?.classList.contains('done')"));
 
   const res = await ev(`(async () => {
     const g = window.__game;
