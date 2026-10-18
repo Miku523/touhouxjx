@@ -16,6 +16,7 @@ import { Ending } from './game/ending.js';
 import { endingFor } from './game/endings.js';
 import { STORY } from './game/story.js';
 import { DIFFICULTY_KEYS, DIFFICULTIES, getDifficulty } from './game/difficulty.js';
+import { cheatKey, resetCheatInput, isInvincible } from './game/cheat.js';
 
 const MAIN_STAGES = () => LEVELS.filter((l) => !l.extra);
 const EXTRA_STAGE = () => LEVELS.find((l) => l.extra);
@@ -218,6 +219,8 @@ class Game {
     if (!this.buttonsEl) return;
     this.buttonsEl.className = 'buttons' + (opts.grid ? ' ' + opts.grid : '');
     this._noDirect = !!opts.noDirect;
+    // 离开标题页就把没输完的秘籍序列作废，免得在别的菜单里接着触发
+    if (this._page === 'title' && (opts.page || '') !== 'title') resetCheatInput();
     this._page = opts.page || '';
     this._onSelect = typeof opts.onSelect === 'function' ? opts.onSelect : null;
     this.buttonsEl.innerHTML = '';
@@ -387,6 +390,20 @@ class Game {
 
     const action = this.input.actionOf(e.code);
 
+    // 隐藏秘籍（只在标题画面）：Shift 起手 → Q Q P P P V V V V → 空格 ×5
+    // 必须抢在热键之前吞掉，否则 Q 会触发「退出游戏」、空格会直接点「开始游戏」
+    if (this._page === 'title') {
+      const cheat = cheatKey(e.code);
+      if (cheat) {
+        e.preventDefault();
+        if (cheat.toggled) this._onCheatToggle(cheat.invincible);
+        else if (cheat.ok) this.audio.play?.('select');
+        else this.audio.play?.('menu');
+        this.input.endFrame();
+        return;
+      }
+    }
+
     // 0) 按键设置页：Del / 退格 一键恢复默认
     if ((e.code === 'Delete' || e.code === 'Backspace') && this._page === 'keybinds') {
       e.preventDefault();
@@ -448,6 +465,31 @@ class Game {
         this.input.endFrame();
       }
     }
+  }
+
+  /**
+   * 秘籍生效 / 解除时的反馈：
+   * 音效 + 标题页副标题的一行提示（不打断当前菜单）。
+   */
+  _onCheatToggle(on) {
+    this.audio.play?.(on ? 'checkpoint' : 'menu');
+    this.hud?.setInvincible(on);
+    this._flashTitleHint(on ? '◈ 无敌模式 · 已开启' : '◈ 无敌模式 · 已解除');
+  }
+
+  _flashTitleHint(text) {
+    const el = this.subtitleEl;
+    if (!el) return;
+    clearTimeout(this._titleHintTimer);
+    if (this._page === 'title') this._titleHintBase = this._titleHintBase || el.textContent;
+    el.textContent = text;
+    this._titleHintTimer = setTimeout(() => {
+      // 期间如果切去了别的页面，就别覆盖那边的副标题
+      if (this.state === 'menu' && this._page === 'title' && el.textContent === text) {
+        el.textContent = this._titleHintBase || '';
+      }
+      this._titleHintBase = null;
+    }, 2600);
   }
 
   /** 改键捕获：下一个按下的键绑定给当前动作 */
@@ -524,6 +566,7 @@ class Game {
     this.state = 'menu';
     this.stage = null;
     this._captureAction = null;
+    resetCheatInput();
     this.hudEl?.classList.add('hidden');
     this.hud.hideBossBar();
     this.hud.clearBanner();
@@ -546,8 +589,10 @@ class Game {
       '～ Chronicle of Gensokyo ～',
       buttons,
       '',
-      { title: true }
+      { title: true, page: 'title' }
     );
+    // 秘籍提示会临时占用副标题，记下原文以便 2.6s 后还原
+    this._titleHintBase = '～ Chronicle of Gensokyo ～';
   }
 
   showCharSelect() {
@@ -832,6 +877,7 @@ class Game {
     }
 
     this.hud.reset();
+    this.hud.setInvincible(isInvincible());
     this.hud.setMaxLives(this.lives, this.char);
     this.hud.setStageName(isExtra ? 'EXTRA' : `STAGE ${index + 1}`, def.title || '');
     this.hud.banner(isExtra ? 'EXTRA STAGE' : `STAGE ${index + 1}`, def.title || '', 2.6);

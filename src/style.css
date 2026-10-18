@@ -98,6 +98,28 @@ body {
   border-left: 2px solid rgba(242, 210, 75, .5);
 }
 .lives { display: flex; gap: calc(var(--s) * 8px); align-items: center; }
+
+/* 秘籍「无敌模式」徽章（hud.js 动态插入）：金色小牌，常驻在残机右侧 */
+.cheat-badge {
+  margin-left: calc(var(--s) * 14px);
+  padding: calc(var(--s) * 3px) calc(var(--s) * 9px) calc(var(--s) * 2px);
+  font-family: var(--serif);
+  font-size: calc(var(--s) * 11px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: .22em;
+  color: #fff6cf;
+  background: linear-gradient(180deg, rgba(242, 210, 75, .3), rgba(120, 80, 12, .34));
+  border: 1px solid rgba(242, 210, 75, .72);
+  border-radius: calc(var(--s) * 3px);
+  box-shadow: 0 0 calc(var(--s) * 12px) rgba(242, 210, 75, .38), inset 0 0 calc(var(--s) * 8px) rgba(255, 232, 150, .22);
+  text-shadow: 0 0 calc(var(--s) * 6px) rgba(242, 210, 75, .85);
+  animation: cheatGlow 1.9s ease-in-out infinite;
+}
+@keyframes cheatGlow {
+  0%, 100% { opacity: .88; }
+  50% { opacity: 1; }
+}
 .life {
   position: relative;
   width: calc(var(--s) * 14px);

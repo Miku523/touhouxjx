@@ -21,6 +21,7 @@
 import { drawBoss, BOSS_INFO } from '../art/bosses.js';
 import { drawGenBoss } from '../art/genboss.js';
 import { getDifficulty, bossPhasesFor, scaleBossHp } from './difficulty.js';
+import { scalePlayerDamage, scaleEnemyHp } from './balance.js';
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -356,25 +357,29 @@ export const BOSS_DEFS = {
     phases: [
       {
         name: '灯符「萤火虫现象」', hp: 800, patterns: [
-          { typeName: 'fan', n: 9, spread: 1.5, speed: 95, color: '#a8ff8f', rate: 1.0, r: 5, wobble: 60 },
-          { typeName: 'spiral', arms: 3, speed: 92, color: '#d6ff7a', rate: 0.12, spin: 2.2, r: 4 },
-          { typeName: 'scatter', n: 6, speed: 105, color: '#a8ff8f', rate: 1.1, r: 4, aimed: true, arc: 1.6, weight: 0.75 },
+          { typeName: 'fan', n: 7, spread: 1.4, speed: 95, color: '#a8ff8f', rate: 1.3, r: 5, wobble: 60 },
+          { typeName: 'spiral', arms: 2, speed: 90, color: '#d6ff7a', rate: 0.18, spin: 2.2, r: 4 },
+          { typeName: 'scatter', n: 5, speed: 105, color: '#a8ff8f', rate: 1.35, r: 4, aimed: true, arc: 1.6, weight: 0.75 },
         ],
       },
       {
+        // 全难度大削（用户反馈：E/N/H/L 都上来就撞墙）。
+        // 旧版主招是 6 臂螺旋 rate 0.07：单这一招峰值就有 69(E)/84(N)/92(H)/107(L) 发/秒，
+        // 还叠 215 速的 5 连自机狙。现改为 3 臂低速螺旋 rate 0.18（峰值约 13/16/18/21 发/秒），
+        // 全卡弹速压到 ≤150，另外两招各约 5.6 / 2.1 发/秒。
         name: '蠢符「小虫风暴」', hp: 960, patterns: [
-          { typeName: 'spiral', arms: 6, speed: 132, color: '#8ef07a', rate: 0.07, spin: -3.0, r: 5 },
-          { typeName: 'aimed', n: 5, spread: 0.85, speed: 215, color: '#ffffff', rate: 0.9, r: 5 },
-          { typeName: 'spray', n: 2, speed: 138, color: '#d6ff7a', rate: 0.1, r: 4, arc: 1.2, aimed: true, weight: 0.8 },
+          { typeName: 'fan', n: 7, spread: 1.2, speed: 100, color: '#a8ff8f', rate: 1.25, r: 5, wobble: 45 },
+          { typeName: 'spiral', arms: 3, speed: 92, color: '#d6ff7a', rate: 0.18, spin: 1.8, r: 4 },
+          { typeName: 'aimed', n: 3, spread: 0.7, speed: 150, color: '#ffffff', rate: 1.4, r: 5, weight: 0.75 },
         ],
       },
       {
         name: '隐虫「萤火虫之夜」', hp: 1120, patterns: [
-          { typeName: 'spiral', arms: 4, speed: 120, color: '#a8ff8f', rate: 0.09, spin: 2.8, r: 4, type: 2 },
-          { typeName: 'ring', n: 18, speed: 110, color: '#8ef07a', rate: 1.15, r: 5, spinAngle: 0.4 },
-          { typeName: 'homing', n: 2, speed: 110, color: '#d6ff7a', rate: 1.2, r: 6, homing: 1.4, weight: 0.7 },
-          { typeName: 'fan', n: 7, spread: 1.1, speed: 150, color: '#a8ff8f', rate: 0.7, r: 5, wobble: 40, weight: 0.9 },
-          { typeName: 'vortex', arms: 4, speed: 125, color: '#d6ff7a', rate: 0.5, r: 4, type: 3, turn: 1.5, weight: 0.95 },
+          { typeName: 'spiral', arms: 3, speed: 105, color: '#a8ff8f', rate: 0.16, spin: 2.8, r: 4, type: 2 },
+          { typeName: 'ring', n: 14, speed: 110, color: '#8ef07a', rate: 1.4, r: 5, spinAngle: 0.4 },
+          { typeName: 'homing', n: 2, speed: 105, color: '#d6ff7a', rate: 1.5, r: 6, homing: 1.4, weight: 0.7 },
+          { typeName: 'fan', n: 6, spread: 1.1, speed: 130, color: '#a8ff8f', rate: 1.0, r: 5, wobble: 40, weight: 0.9 },
+          { typeName: 'vortex', arms: 3, speed: 115, color: '#d6ff7a', rate: 0.8, r: 4, type: 3, turn: 1.5, weight: 0.95 },
         ],
       },
     ],
@@ -683,7 +688,7 @@ export class Boss {
     const trimmed = bossPhasesFor(def.phases, this.difficulty, this.stageNumber);
     this.phases = scaleBossHp(trimmed, this.difficulty, def.hp);
 
-    this.maxHp = Math.max(1, Math.round(def.hp * this.diff.hpScale));
+    this.maxHp = Math.max(1, Math.round(scaleEnemyHp(def.hp * this.diff.hpScale)));
     this.hp = this.maxHp;
 
     this.x = x;
@@ -1166,7 +1171,7 @@ export class Boss {
     const hh = this.h * 0.72;
     const p = player;
     if (this.x - hw < p.x + p.w && this.x + hw > p.x && this.y - hh < p.y + p.h && this.y > p.y) {
-      this.damage(28);
+      this.damage(scalePlayerDamage(28));
       this.hurtCd = 0.35;
       fx?.shockwave(p.x + p.w / 2, p.y + p.h / 2, '#ffffff', 14, 480, 0.3);
       return true;

@@ -24,6 +24,8 @@
  * 另外 Boss 还有密度自适应（pressure）：屏幕越满，新开的一招弹数越薄。
  */
 
+import { scaleEnemyHp } from './balance.js';
+
 /** 可选难度（顺序即开始界面按钮顺序） */
 export const DIFFICULTY_KEYS = ['E', 'N', 'H', 'L'];
 
@@ -166,11 +168,11 @@ export function bossPhasesFor(phases, difficulty, stageNumber) {
   return list.filter((_, i) => i !== hardIdx);
 }
 
-/** 给每条符卡血条套上难度血量倍率，返回新数组 */
+/** 给每条符卡血条套上难度血量倍率与全局血量倍率，返回新数组 */
 export function scaleBossHp(phases, difficulty, fallbackHp = 100) {
   const diff = getDifficulty(difficulty);
   return (Array.isArray(phases) ? phases : []).map((p) => ({
     ...p,
-    hp: Math.max(1, Math.round((Number(p.hp) || fallbackHp) * diff.hpScale)),
+    hp: Math.max(1, Math.round(scaleEnemyHp((Number(p.hp) || fallbackHp) * diff.hpScale))),
   }));
 }

@@ -17,6 +17,7 @@ import { PlayerShots } from './playerShots.js';
 import { EnemyManager } from './enemies.js';
 import { Boss } from './boss.js';
 import { getDifficulty } from './difficulty.js';
+import { scalePlayerDamage } from './balance.js';
 import { StgPlayer, StgStage } from './stg.js';
 import { POWER, powerLevel } from './power.js';
 import { drawSky, drawParallax, drawTiles, drawAmbient } from '../art/scenes.js';
@@ -639,7 +640,7 @@ export class Stage {
     this.camera.shake(20, 0.5);
 
     // 对 Boss / 敌人造成伤害
-    if (this.boss) this.boss.damage(90 + 80 * lv);
+    if (this.boss) this.boss.damage(scalePlayerDamage(90 + 80 * lv));
     if (this.mode === 'platform' && this.enemies) {
       this.enemies.damageArea(hp.x, hp.y, 900, 99, this.fx, {
         onKill: () => {

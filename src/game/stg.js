@@ -12,6 +12,8 @@ import { drawCharacter } from '../art/chars.js';
 import { drawGenChar } from '../art/genchars.js';
 import { drawGenFairy } from '../art/genfairy.js';
 import { POWER, powerLevel, canSpell, spendPower } from './power.js';
+import { scaleEnemyHp } from './balance.js';
+import { isInvincible } from './cheat.js';
 
 const SPEED = 340;
 const ACCEL = 3200;
@@ -193,6 +195,8 @@ export class StgPlayer {
   }
 
   hurt(dir = 1) {
+    // 秘籍「无敌模式」：完全免疫伤害
+    if (isInvincible()) return;
     if (this.invuln > 0 || !this.alive) return;
     this.hearts--;
     this.invuln = 1.4;
@@ -317,8 +321,8 @@ class StgEnemy {
     this.x = x;
     this.y = y;
     this.baseY = y;
-    this.hp = k.hp;
-    this.maxHp = k.hp;
+    this.hp = scaleEnemyHp(k.hp);
+    this.maxHp = scaleEnemyHp(k.hp);
     this.w = k.w;
     this.h = k.h;
     this.vx = -k.speed;

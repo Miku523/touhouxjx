@@ -24,6 +24,13 @@ export class Hud {
     this.elBanner = document.getElementById('banner');
     this.elTip = document.getElementById('tip');
 
+    // 秘籍「无敌模式」徽章：挂在残机左侧，默认隐藏
+    this.elCheatBadge = document.createElement('span');
+    this.elCheatBadge.className = 'cheat-badge hidden';
+    this.elCheatBadge.textContent = '無敵';
+    document.querySelector('#hud .hud-left')?.appendChild(this.elCheatBadge);
+    this._invincible = false;
+
     this._lives = -1;
     this._power = -1;
     this._powerRaw = -1;
@@ -48,6 +55,12 @@ export class Hud {
   setChar(char) {
     this._char = char === 'marisa' ? 'marisa' : 'reimu';
     if (this.elLives) this.elLives.dataset.char = this._char;
+  }
+
+  /** 秘籍「无敌模式」徽章开关 */
+  setInvincible(on) {
+    this._invincible = !!on;
+    this.elCheatBadge?.classList.toggle('hidden', !this._invincible);
   }
 
   _buildLives(n) {

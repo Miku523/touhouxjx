@@ -9,6 +9,8 @@
  * 视觉尺寸 ≈ 2r（与 hitRect 的 ±r 判定盒一致），保证「打中了」看起来合理。
  */
 
+import { scalePlayerDamage } from './balance.js';
+
 const MAX_SHOTS = 160;
 const SS = 2; // 超采样倍率
 
@@ -294,7 +296,7 @@ export class PlayerShots {
    */
   fire(x, y, dir, char, powerLevel = 1, aim = 0, spread) {
     const lv = Math.min(4, Math.max(1, powerLevel | 0));
-    // 弹数成长：1 / 2 / 3 / 5 发，配合 3 点单发伤害，DPS 约 35 → 176
+    // 弹数成长：1 / 2 / 3 / 5 发；单发伤害 4（灵梦）/ 4.6（魔理沙），再乘 balance.js 的攻击倍率
     const shots = [1, 2, 3, 5][lv - 1];
     // 向上射击时用大扇形覆盖不同的高度/距离，平射用很小的散布
     const fan = spread === undefined ? (aim ? 0.55 : 0.09) : spread;
@@ -309,7 +311,7 @@ export class PlayerShots {
       b.vy = Math.sin(ang) * 980;
       b.life = 0.6;
       b.r = char === 'marisa' ? 8 : 7;
-      b.damage = char === 'marisa' ? 4.6 : 4;
+      b.damage = scalePlayerDamage(char === 'marisa' ? 4.6 : 4);
       b.char = char;
       b.rot = dir > 0 ? 0 : Math.PI;
       b.t = 0;

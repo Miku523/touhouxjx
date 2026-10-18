@@ -16,6 +16,7 @@ import { T } from './level.js';
 import { drawCharacter } from '../art/chars.js';
 import { drawGenChar } from '../art/genchars.js';
 import { POWER, powerLevel, canSpell, spendPower } from './power.js';
+import { isInvincible } from './cheat.js';
 
 /** 调参集中在这里（32px tile 尺度） */
 export const TUNE = {
@@ -318,7 +319,18 @@ export class Player {
 
     // ---------- 掉出地图 ----------
     if (this.y > this.level.h + 80) {
-      this.die();
+      if (isInvincible()) {
+        // 无敌模式不掉命：送回检查点，火力保留
+        this.x = this.checkpoint.x;
+        this.y = this.checkpoint.y;
+        this.prevX = this.x;
+        this.prevY = this.y;
+        this.vx = 0;
+        this.vy = 0;
+        this.onGround = false;
+      } else {
+        this.die();
+      }
     }
   }
 
@@ -432,6 +444,8 @@ export class Player {
 
   /** 受伤。dir：伤害来源方向（-1 从左边来，玩家被推向右边） */
   hurt(dir, sourceX = null) {
+    // 秘籍「无敌模式」：完全免疫伤害（尖刺 / 弹幕 / 接触伤害都走这里）
+    if (isInvincible()) return;
     if (this.invuln > 0 || !this.alive || this.casting) return;
     if (sourceX !== null) dir = this.x + this.w / 2 < sourceX ? -1 : 1;
     this.hearts--;

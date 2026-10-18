@@ -24,6 +24,7 @@
  */
 import { T } from './level.js';
 import { drawGenFairy } from '../art/genfairy.js';
+import { scaleEnemyHp } from './balance.js';
 
 /**
  * 五色宝石色系。
@@ -86,8 +87,8 @@ function makeFairy(type, x, y, idx, tint) {
     vx: type === 'flyer' ? 0 : 52,
     vy: 0,
     facing: -1,
-    hp: 2,
-    maxHp: 2,
+    hp: scaleEnemyHp(2),
+    maxHp: scaleEnemyHp(2),
     alive: true,
     hitFlash: 0,
     baseY: y,
