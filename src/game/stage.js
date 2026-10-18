@@ -26,7 +26,21 @@ import { drawSky, drawParallax, drawTiles, drawAmbient } from '../art/scenes.js'
  * 程序化场景作为 fallback，图片加载完成后优先使用。
  * 图片 2048x1152 (16:9)，按屏幕 cover 裁切 + 随关卡进度横移，形成纵深。
  * ------------------------------------------------------------------ */
-const BG_MAX_VARIANTS = 3;
+/**
+ * 每套背景实际有几张：<theme>.jpg、<theme>_2.jpg ……目前全套都是 2 张。
+ * 以前是「一直探到第 3 张、靠 404 判断缺图」，静态托管下每次进关都会在控制台
+ * 留一条 404。这里显式写死张数：加新变体时把对应数字 +1 即可。
+ */
+const BG_VARIANTS = {
+  shrine: 2,
+  forest: 2,
+  lake: 2,
+  mountain: 2,
+  nether: 2,
+  moon: 2,
+  mansion: 2,
+};
+const BG_VARIANTS_DEFAULT = 2;
 const _bgCache = new Map();
 
 function _bgEntry(theme, idx) {
@@ -46,13 +60,10 @@ function _bgEntry(theme, idx) {
 }
 
 function _bgFor(theme) {
-  // 预先触发 1~3 张变体加载；缺图时只保留存在的
+  // 只请求确实存在的变体；加载中的变体由调用方按 e.ok 过滤
+  const n = BG_VARIANTS[theme] || BG_VARIANTS_DEFAULT;
   const list = [];
-  for (let i = 0; i < BG_MAX_VARIANTS; i++) {
-    const e = _bgEntry(theme, i);
-    if (i === 0 || e.ok) list.push(e);
-    if (e.failed && i > 0) break;
-  }
+  for (let i = 0; i < n; i++) list.push(_bgEntry(theme, i));
   return list;
 }
 
