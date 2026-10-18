@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>拾取物预览</title>
+<style>
+  html, body { margin: 0; background: #14101c; }
+  canvas { display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1200" height="420"></canvas>
+<script type="module">
+import { Stage } from './src/game/stage.js';
+import { LEVELS } from './src/assets/levels.js';
+
+const ctx = document.getElementById('c').getContext('2d');
+const stage = new Stage({ def: LEVELS[0], index: 0, char: 'reimu', lives: 3, onEvent: () => {} });
+
+// 造一排金币（不同动画相位）+ 两个 P 点
+const items = [];
+for (let i = 0; i < 8; i++) {
+  items.push({ kind: 'coin', x: 120 + i * 95, y: 140, taken: false, t: i * 0.55 });
+}
+for (let i = 0; i < 2; i++) {
+  items.push({ kind: 'power', x: 400 + i * 120, y: 290, taken: false, t: i * 1.2 });
+}
+stage.pickups = items;
+
+ctx.fillStyle = '#14101c';
+ctx.fillRect(0, 0, 1200, 420);
+
+// 深色背景块，模拟关卡环境
+ctx.fillStyle = 'rgba(40,26,52,0.85)';
+ctx.fillRect(0, 180, 1200, 240);
+
+stage._drawPickups(ctx, null);
+
+ctx.fillStyle = 'rgba(255,235,210,0.75)';
+ctx.font = '15px system-ui, sans-serif';
+ctx.fillText('上行：金币（8 个不同相位）　下行：P 点符札', 20, 40);
+window.__ready = true;
+</script>
+</body>
+</html>

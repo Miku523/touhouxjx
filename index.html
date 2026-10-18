@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>东方新纪行 ～ Chronicle of Gensokyo</title>
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game" width="1280" height="720"></canvas>
+
+    <div id="ui">
+      <!-- ===== 战斗 HUD ===== -->
+      <div id="hud" class="hidden">
+        <div class="hud-row">
+          <div class="hud-left">
+            <div id="lives" class="lives" data-char="reimu"></div>
+          </div>
+
+          <div class="hud-mid">
+            <div class="power-head">
+              <span class="pl">POWER</span>
+              <span class="plv" title="火力等级：吃 P 点提升，放符卡会下降">
+                <b>Lv.</b><i id="powerLvNum">1</i>
+                <span class="lpips" id="powerPips"><i></i><i></i><i></i><i></i></span>
+              </span>
+            </div>
+            <div class="power-body">
+              <div class="pbar" id="powerBar">
+                <span id="powerCastMark" class="pcast" title="符卡消耗 50 POWER"></span>
+                <i id="powerFill"></i>
+              </div>
+              <span id="powerNum" class="pn">0</span>
+              <span class="pdim">/ <b id="powerMax">128</b></span>
+              <span id="powerPop" class="ppop" aria-live="polite"></span>
+            </div>
+          </div>
+
+          <div class="hud-right">
+            <div class="stage-info">
+              <div class="stage-line">
+                <span id="stageName" class="sn">STAGE 1</span>
+                <span id="timer" class="tm">0:00</span>
+              </div>
+              <span id="stageSub" class="ss">博丽神社 · 黄昏樱花</span>
+            </div>
+            <button id="settingsBtn" class="hud-settings" type="button" title="设置 / 暂停 (Esc)">设置</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Boss 血条 ===== -->
+      <div id="bossBar" class="hidden">
+        <div class="boss-head">
+          <span id="bossName"></span>
+          <span id="bossPhase"></span>
+        </div>
+        <div class="bbar"><i id="bossFill"></i></div>
+      </div>
+
+      <!-- ===== 关卡横幅 ===== -->
+      <div id="banner" class="banner"></div>
+
+      <!-- ===== 剧情对白 ===== -->
+      <div id="dialogue" class="hidden">
+        <div class="dlg-portrait left"><canvas id="portraitL" width="400" height="560"></canvas></div>
+        <div class="dlg-portrait right"><canvas id="portraitR" width="400" height="560"></canvas></div>
+        <div class="dlg-box">
+          <div id="speaker" class="dlg-speaker"></div>
+          <div id="dlgText" class="dlg-text"></div>
+          <div class="dlg-next">▼ 空格 / 点击继续</div>
+        </div>
+      </div>
+
+      <!-- ===== 菜单层 ===== -->
+      <div id="overlay" class="overlay">
+        <div class="panel">
+          <div class="logo-block">
+            <h1 id="title">东方新纪行</h1>
+            <p id="subtitle">～ Chronicle of Gensokyo</p>
+          </div>
+          <div class="menu-block">
+            <div id="buttons" class="buttons"></div>
+            <p id="hint" class="hint"></p>
+          </div>
+        </div>
+        <div class="title-deco" aria-hidden="true">
+          <span class="title-ver">Chronicle of Gensokyo · ver 1.0</span>
+        </div>
+      </div>
+
+      <!-- ===== 触摸控制 ===== -->
+      <div id="touch" class="touch hidden">
+        <div class="tpad left-pad">
+          <button data-k="left" class="tbtn">◀</button>
+          <button data-k="right" class="tbtn">▶</button>
+        </div>
+        <div class="tpad right-pad">
+          <button data-k="cast" class="tbtn small">符</button>
+          <button data-k="shoot" class="tbtn small">弾</button>
+          <button data-k="dash" class="tbtn small">≫</button>
+          <button data-k="jump" class="tbtn">▲</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

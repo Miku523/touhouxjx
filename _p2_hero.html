@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>P2 · 主角状态检查</title>
+<style>
+  html,body{margin:0;background:#0b0910;color:#ddd3c0;font-family:system-ui,sans-serif;overflow:hidden}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="760"></canvas>
+<script type="module">
+import { drawGenChar } from './src/art/genchars.js';
+
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+const load = (src) => new Promise((res) => {
+  const im = new Image();
+  im.onload = () => res(im);
+  im.onerror = () => res(null);
+  im.src = src;
+});
+
+const STATES = [
+  { st: 'idle', label: 'idle 待机' },
+  { st: 'run', label: 'run 奔跑' },
+  { st: 'jump', label: 'jump 起跳' },
+  { st: 'fall', label: 'fall 下落' },
+  { st: 'dash', label: 'dash 冲刺' },
+  { st: 'fly', label: 'fly 飞行' },
+];
+
+const main = async () => {
+  const bgDark = await load('src/art/gen/bg/mansion.jpg');
+  const bgBright = await load('src/art/gen/bg/lake.jpg');
+  const font = '600 12px system-ui';
+
+  ctx.fillStyle = '#0b0910';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+
+  const CW = 204, CH = 320;
+  ['reimu', 'marisa'].forEach((ch, row) => {
+    STATES.forEach((s, i) => {
+      const ox = 8 + i * (CW + 6);
+      const oy = 8 + row * (CH + 34);
+      const bg = (i % 2 === 0) ? bgDark : bgBright;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(ox, oy, CW, CH);
+      ctx.clip();
+      if (bg) {
+        const sc = Math.max(CW / bg.width, CH / bg.height);
+        ctx.drawImage(bg, ox + (CW - bg.width * sc) / 2, oy + (CH - bg.height * sc) / 2, bg.width * sc, bg.height * sc);
+      }
+      // 地面
+      const gy = oy + CH - 46;
+      ctx.fillStyle = 'rgba(20,26,18,.92)';
+      ctx.fillRect(ox, gy, CW, CH - (gy - oy));
+      ctx.strokeStyle = 'rgba(180,240,160,.5)';
+      ctx.beginPath(); ctx.moveTo(ox, gy + 0.5); ctx.lineTo(ox + CW, gy + 0.5); ctx.stroke();
+
+      ctx.save();
+      ctx.translate(ox + CW / 2, gy + 4);
+      drawGenChar(ctx, {
+        char: ch, state: s.st, t: 1.35, facing: 1, vx: 220, vy: s.st === 'jump' ? -300 : 300,
+        flash: s.st === 'hurt' ? 0.8 : 0, alpha: 1, scale: 1,
+      });
+      ctx.restore();
+
+      ctx.restore();
+      ctx.fillStyle = '#ffe9c0';
+      ctx.font = font;
+      ctx.textAlign = 'center';
+      ctx.fillText(ch + ' · ' + s.label, ox + CW / 2, oy + CH + 18);
+    });
+  });
+
+  document.title = 'done';
+};
+main().catch((e) => { console.error(e); document.title = 'err:' + e.message; });
+</script>
+</body>
+</html>

@@ -1,0 +1,194 @@
+/* ---------- 离屏精灵：拾取物 / 检查点（零图片，运行时只 drawImage） ---------- */
+const _spriteCache = new Map();
+function bakeSprite(key, w, h, paint) {
+  let c = _spriteCache.get(key);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    paint(c.getContext('2d'));
+    _spriteCache.set(key, c);
+  }
+  return c;
+}
+
+/** 灵玉外晕：粉白柔光 */
+function orbGlow() {
+  return bakeSprite('orbGlow', 64, 64, (g) => {
+    const r = g.createRadialGradient(32, 32, 2, 32, 32, 31);
+    r.addColorStop(0, 'rgba(255, 206, 236, 0.55)');
+    r.addColorStop(0.42, 'rgba(255, 132, 198, 0.20)');
+    r.addColorStop(1, 'rgba(255, 110, 180, 0)');
+    g.fillStyle = r;
+    g.beginPath();
+    g.arc(32, 32, 31, 0, Math.PI * 2);
+    g.fill();
+  });
+}
+
+/** 灵玉本体：白热核心 + 樱花内芯 + 细环 */
+function orbBody() {
+  return bakeSprite('orbBody', 40, 40, (g) => {
+    const cx = 20;
+    const cy = 20;
+    g.strokeStyle = 'rgba(255, 228, 246, 0.6)';
+    g.lineWidth = 1.2;
+    g.beginPath();
+    g.arc(cx, cy, 17, 0, Math.PI * 2);
+    g.stroke();
+    const b = g.createRadialGradient(cx - 3.5, cy - 4, 1, cx, cy, 10.5);
+    b.addColorStop(0, '#ffffff');
+    b.addColorStop(0.34, '#ffe9f4');
+    b.addColorStop(0.72, '#ffa8d2');
+    b.addColorStop(1, '#d94f92');
+    g.fillStyle = b;
+    g.beginPath();
+    g.arc(cx, cy, 10.5, 0, Math.PI * 2);
+    g.fill();
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+      g.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      g.beginPath();
+      g.ellipse(cx + Math.cos(a) * 4.4, cy + Math.sin(a) * 4.4, 3.2, 2.2, a, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.fillStyle = 'rgba(255, 214, 120, 0.95)';
+    g.beginPath();
+    g.arc(cx, cy, 1.8, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    g.beginPath();
+    g.ellipse(cx - 4, cy - 5, 2.5, 1.5, -0.6, 0, Math.PI * 2);
+    g.fill();
+  });
+}
+
+/** 符札冷光 */
+function ofudaGlow() {
+  return bakeSprite('ofudaGlow', 64, 64, (g) => {
+    const r = g.createRadialGradient(32, 32, 3, 32, 32, 31);
+    r.addColorStop(0, 'rgba(150, 236, 255, 0.52)');
+    r.addColorStop(0.45, 'rgba(90, 200, 255, 0.18)');
+    r.addColorStop(1, 'rgba(70, 180, 255, 0)');
+    g.fillStyle = r;
+    g.beginPath();
+    g.arc(32, 32, 31, 0, Math.PI * 2);
+    g.fill();
+  });
+}
+
+/** P 点符札：白纸 + 朱印 + 蓝 P */
+function ofudaPaper() {
+  return bakeSprite('ofudaPaper', 36, 50, (g) => {
+    const x = 6;
+    const y = 3;
+    const w = 24;
+    const h = 44;
+    const pg = g.createLinearGradient(x, 0, x + w, 0);
+    pg.addColorStop(0, '#fffdf2');
+    pg.addColorStop(0.5, '#f4ecd6');
+    pg.addColorStop(1, '#ded2b8');
+    g.fillStyle = pg;
+    g.beginPath();
+    g.roundRect(x, y, w, h, 1.5);
+    g.fill();
+    g.strokeStyle = 'rgba(150, 60, 70, 0.55)';
+    g.lineWidth = 1;
+    g.stroke();
+    g.fillStyle = 'rgba(196, 52, 62, 0.85)';
+    g.fillRect(x, y, w, 3);
+    g.fillRect(x, y + h - 3, w, 3);
+    g.fillStyle = '#2f8fd0';
+    g.font = 'bold 17px serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('P', x + w / 2, y + h / 2);
+    g.fillStyle = 'rgba(255, 255, 255, 0.55)';
+    g.fillRect(x + 2, y + 6, 2.5, h - 14);
+  });
+}
+
+/** 检查点：石灯籠（未点亮 / 已点亮） */
+function lanternSprite(on) {
+  return bakeSprite(on ? 'lanternOn' : 'lanternOff', 48, 96, (g) => {
+    const cx = 24;
+    const stone = on ? '#3b3550' : '#272232';
+    const stoneLight = on ? '#585074' : '#3a3448';
+    // 底座
+    g.fillStyle = stone;
+    g.fillRect(cx - 13, 84, 26, 8);
+    g.fillStyle = stoneLight;
+    g.fillRect(cx - 10, 80, 20, 6);
+    // 柱
+    g.fillStyle = stone;
+    g.fillRect(cx - 5, 46, 10, 36);
+    g.fillStyle = stoneLight;
+    g.fillRect(cx - 5, 46, 3, 36);
+    // 中台
+    g.fillStyle = stone;
+    g.beginPath();
+    g.moveTo(cx - 14, 46);
+    g.lineTo(cx + 14, 46);
+    g.lineTo(cx + 10, 40);
+    g.lineTo(cx - 10, 40);
+    g.closePath();
+    g.fill();
+    // 火袋
+    g.fillStyle = on ? '#2c2438' : '#1c1826';
+    g.beginPath();
+    g.moveTo(cx - 11, 40);
+    g.lineTo(cx - 7, 20);
+    g.lineTo(cx + 7, 20);
+    g.lineTo(cx + 11, 40);
+    g.closePath();
+    g.fill();
+    // 火口
+    if (on) {
+      g.fillStyle = '#ffcf8a';
+      g.fillRect(cx - 5, 26, 10, 10);
+      g.fillStyle = 'rgba(255, 255, 235, 0.9)';
+      g.fillRect(cx - 2.5, 28, 5, 6);
+    } else {
+      g.fillStyle = '#100d18';
+      g.fillRect(cx - 5, 26, 10, 11);
+    }
+    // 笠
+    g.fillStyle = stone;
+    g.beginPath();
+    g.moveTo(cx - 18, 20);
+    g.quadraticCurveTo(cx, 8, cx + 18, 20);
+    g.closePath();
+    g.fill();
+    g.fillStyle = stoneLight;
+    g.beginPath();
+    g.moveTo(cx - 18, 20);
+    g.quadraticCurveTo(cx, 8, cx + 18, 20);
+    g.lineTo(cx + 14, 17);
+    g.quadraticCurveTo(cx, 7, cx - 14, 17);
+    g.closePath();
+    g.fill();
+    // 宝珠
+    g.fillStyle = stoneLight;
+    g.beginPath();
+    g.arc(cx, 6, 4, 0, Math.PI * 2);
+    g.fill();
+    // 月光轮廓
+    g.strokeStyle = 'rgba(210, 208, 255, 0.22)';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(cx + 18, 20);
+    g.quadraticCurveTo(cx, 8, cx - 18, 20);
+    g.stroke();
+    // 苔痕
+    g.fillStyle = 'rgba(60, 92, 66, 0.55)';
+    g.fillRect(cx - 13, 84, 8, 3);
+    g.fillRect(cx - 10, 80, 5, 2);
+  });
+}
+function lanternOn() {
+  return lanternSprite(true);
+}
+function lanternOff() {
+  return lanternSprite(false);
+}
+

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>P2 · Boss 战斗立绘检查</title>
+<style>
+  html,body{margin:0;background:#0b0910;color:#ddd3c0;font-family:system-ui,sans-serif;overflow:hidden}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script type="module">
+import { drawGenBoss } from './src/art/genboss.js';
+
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+const BOSS = [
+  { key: 'rumia', bg: 'shrine', accent: '#c46bff', name: '露米娅' },
+  { key: 'wriggle', bg: 'forest', accent: '#6cff9e', name: '莉格露' },
+  { key: 'cirno', bg: 'lake', accent: '#6ecbff', name: '琪诺' },
+  { key: 'aya', bg: 'mountain', accent: '#ff6b6b', name: '射命丸文' },
+  { key: 'yuyuko', bg: 'nether', accent: '#ff86c8', name: '西行寺幽幽子' },
+  { key: 'kaguya', bg: 'moon', accent: '#b48bff', name: '蓬莱山辉夜' },
+  { key: 'flandre', bg: 'mansion', accent: '#ff4b5c', name: '芙兰朵露' },
+];
+
+const load = (src) => new Promise((res) => {
+  const im = new Image();
+  im.onload = () => res(im);
+  im.onerror = () => res(null);
+  im.src = src;
+});
+
+const COLS = 4, ROWS = 2;
+const CW = 316, CH = 330;
+
+const main = async () => {
+  ctx.fillStyle = '#0b0910';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  const bgs = await Promise.all(BOSS.map((b) => load('src/art/gen/bg/' + b.bg + '.jpg')));
+  // 等图片解码（drawGenBoss 内部 onload 后才有 art）
+  await new Promise((r) => setTimeout(r, 900));
+
+  BOSS.forEach((b, i) => {
+    const col = i % COLS, row = (i / COLS) | 0;
+    const ox = 6 + col * (CW + 6);
+    const oy = 6 + row * (CH + 6);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(ox, oy, CW, CH);
+    ctx.clip();
+
+    const bg = bgs[i];
+    if (bg) {
+      const s = Math.max(CW / bg.width, CH / bg.height);
+      ctx.drawImage(bg, ox + (CW - bg.width * s) / 2, oy + (CH - bg.height * s) / 2, bg.width * s, bg.height * s);
+    }
+
+    const cx = ox + CW / 2;
+    const fy = oy + CH - 14;
+
+    // 背后主题光晕（与 boss.js 一致）
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(cx, fy - 130, 10, cx, fy - 130, 150);
+    g.addColorStop(0, b.accent + '55');
+    g.addColorStop(1, b.accent + '00');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, fy - 130, 150, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    ctx.translate(cx, fy);
+    const ok = drawGenBoss(ctx, { boss: b.key, t: 1.2, facing: -1, flash: 0, alpha: 1, scale: 1 });
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    ctx.fillRect(ox, oy, CW, 22);
+    ctx.fillStyle = '#ffe9c0';
+    ctx.font = '600 12px system-ui';
+    ctx.textAlign = 'left';
+    ctx.fillText(b.name + ' / ' + b.key + (ok ? '' : '  [程序化 fallback]'), ox + 8, oy + 15);
+    ctx.restore();
+  });
+
+  document.title = 'done';
+};
+main().catch((e) => { console.error(e); document.title = 'err:' + e.message; });
+</script>
+</body>
+</html>

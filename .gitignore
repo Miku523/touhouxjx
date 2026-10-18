@@ -1,0 +1,31 @@
+# 调试截图与临时产物（241MB，不入库）
+_*.png
+_*.jpg
+_*.jpeg
+_tmp_*
+
+# 无头浏览器 profile
+_edgeprof/
+_edgeprof_ui/
+_edgeprof_direct/
+
+# 纹理导出 / 候选图 / 备份等中间产物（52MB）
+_ice_tex/
+_cand/
+_p2_backup/
+__pycache__/
+
+# 工具脚本生成的临时数据
+models.json
+arktest.json
+
+# 通用
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+*.log
+
+# 改版前备份
+.bak_*

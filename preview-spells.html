@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>符卡弹幕预览 · 7 Boss</title>
+<style>
+  html, body { margin: 0; background: #0b0910; color: #ddd3c0; font-family: system-ui, sans-serif; }
+  canvas { display: block; margin: 0 auto; }
+  h1 { text-align: center; font-size: 16px; font-weight: 400; opacity: .75; padding: 10px 0 4px; }
+</style>
+</head>
+<body>
+<h1>每位 Boss 第二阶段的符卡 —— 模拟 5 秒后的弹幕形态</h1>
+<canvas id="c" width="1340" height="980"></canvas>
+<script type="module">
+import { Boss } from './src/game/boss.js';
+import { BulletPool } from './src/game/bullets.js';
+
+const KEYS = ['rumia', 'wriggle', 'cirno', 'aya', 'yuyuko', 'kaguya', 'flandre'];
+const NAMES = { rumia: '露米娅', wriggle: '莉格露', cirno: '琪诺', aya: '射命丸文', yuyuko: '幽幽子', kaguya: '辉夜', flandre: '芙兰朵露' };
+const ctx = document.getElementById('c').getContext('2d');
+
+const fakeFx = { burst() {}, sparkle() {}, flash() {}, shockwave() {}, impact() {}, jumpRing() {}, landDust() {}, dashGhost() {} };
+const player = { x: 0, y: 260, w: 28, h: 56, alive: true };
+
+const CELL_W = 440, CELL_H = 320, COLS = 3, PAD = 10;
+
+KEYS.forEach((key, i) => {
+  const col = i % COLS, row = Math.floor(i / COLS);
+  const ox = PAD + col * (CELL_W + PAD);
+  const oy = 40 + row * (CELL_H + 60);
+
+  const pool = new BulletPool(1200);
+  const boss = new Boss(key, 0, -40);
+  boss.state = 'battle';
+
+  // 推到第二阶段（符卡更花）
+  boss.damage(Math.ceil(boss.maxHp * 0.55));
+
+  for (let f = 0; f < 150; f++) {
+    boss.update(1 / 60, player, pool, fakeFx, {});
+    pool.update(1 / 60, player, { x: -300, y: -200, w: 1000, h: 900 });
+  }
+
+  // 画格子
+  ctx.save();
+  ctx.translate(ox, oy);
+  ctx.fillStyle = 'rgba(18,14,26,0.92)';
+  ctx.fillRect(0, 0, CELL_W, CELL_H);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.strokeRect(0.5, 0.5, CELL_W - 1, CELL_H - 1);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, CELL_W, CELL_H);
+  ctx.clip();
+  ctx.translate(CELL_W / 2, CELL_H * 0.62);
+  pool.draw(ctx, { x: 0, y: 0 });
+  ctx.restore();
+
+  ctx.fillStyle = '#ffd9a0';
+  ctx.font = '13px system-ui, sans-serif';
+  ctx.fillText(NAMES[key] + ' · ' + boss.phaseName, 10, 20);
+  ctx.fillStyle = 'rgba(220,210,190,0.55)';
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.fillText('弹数 ' + pool.count(), 10, CELL_H - 10);
+  ctx.restore();
+});
+
+window.__spells_ready = true;
+</script>
+</body>
+</html>

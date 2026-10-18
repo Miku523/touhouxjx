@@ -1,0 +1,313 @@
+/**
+ * 剧情对话系统：DOM 文本 + canvas 矢量立绘 + 打字机效果。
+ *
+ * 用法：
+ *   const dlg = new Dialogue();
+ *   dlg.play(script, { onEnd: () => resume() });
+ *   // 每帧：dlg.update(dt)  —— 即使用户不看对话，也要驱动立绘呼吸/眨眼
+ *   // 推进：dlg.advance()   —— 空格/确认键/点击
+ */
+import * as BossArt from '../art/bosses.js';
+import { drawCharacter } from '../art/chars.js';
+
+/* ---------------- AI 立绘（Seedream 生成，tools/cutout.py 抠图） ---------------- */
+const AI_PORTRAITS = {
+  reimu: 'reimu.png',
+  marisa: 'marisa.png',
+  rumia: 'rumia.png',
+  wriggle: 'wriggle.png',
+  cirno: 'cirno.png',
+  aya: 'aya.png',
+  yuyuko: 'yuyuko.png',
+  kaguya: 'kaguya.png',
+  flandre: 'flandre.png',
+};
+const AI_BASE = new URL('../art/gen/', import.meta.url);
+const aiImages = {};
+(function preloadAiPortraits() {
+  for (const key of Object.keys(AI_PORTRAITS)) {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => { aiImages[key] = img; };
+    img.src = new URL(AI_PORTRAITS[key], AI_BASE).href;
+  }
+})();
+
+/** 有 AI 立绘就用它（底部中心对齐、高度 560），返回是否画了 */
+function paintAiPortrait(ctx, o) {
+  const img = aiImages[o.char];
+  if (!img || !img.naturalWidth) return false;
+  const h = 560;
+  const w = img.naturalWidth * (h / img.naturalHeight);
+  ctx.save();
+  ctx.globalAlpha = o.alpha ?? 1;
+  // 情绪：慌张/受击轻微侧倾，开心稍微抬头
+  if (o.mood === 'panic') ctx.rotate(-0.03);
+  else if (o.mood === 'sad') ctx.rotate(0.02);
+  ctx.drawImage(img, -w / 2, -h, w, h);
+  ctx.restore();
+  return true;
+}
+
+/** 立绘兜底：bosses.js 的 drawPortrait 还没就绪时用它，保证对话不崩 */
+function fallbackPortrait(ctx, o) {
+  const t = o.t || 0;
+  const key = o.char;
+  ctx.save();
+  ctx.globalAlpha = o.alpha ?? 1;
+  if (key === 'reimu' || key === 'marisa') {
+    ctx.scale(4.2, 4.2);
+    drawCharacter(ctx, {
+      char: key, state: 'idle', t, facing: 1, vx: 0, vy: 0, flash: 0, alpha: 1, scale: 1,
+    });
+  } else {
+    // 未知 / 尚未实现的 Boss：占位剪影
+    const g = ctx.createLinearGradient(0, -420, 0, 0);
+    g.addColorStop(0, 'rgba(60,40,80,0.9)');
+    g.addColorStop(1, 'rgba(20,12,30,0.95)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(0, -150, 110, 160, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,158,203,0.4)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function paintPortrait(ctx, o) {
+  if (paintAiPortrait(ctx, o)) return;
+  if (typeof BossArt.drawPortrait === 'function') return BossArt.drawPortrait(ctx, o);
+  return fallbackPortrait(ctx, o);
+}
+
+export const CHAR_NAMES = {
+  reimu: '博丽灵梦',
+  marisa: '雾雨魔理沙',
+  rumia: '露米娅',
+  wriggle: '莉格露·奈特巴格',
+  cirno: '琪露诺',
+  aya: '射命丸文',
+  yuyuko: '西行寺幽幽子',
+  kaguya: '蓬莱山辉夜',
+  flandre: '芙兰朵露·斯卡雷特',
+  youmu: '魂魄妖梦',
+  sakuya: '十六夜咲夜',
+  unknown: '？？？',
+};
+
+const CHAR_TYPE_SPEED = 46; // 每秒显示字数
+
+export class Dialogue {
+  constructor() {
+    this.el = document.getElementById('dialogue');
+    this.speakerEl = document.getElementById('speaker');
+    this.textEl = document.getElementById('dlgText');
+    this.portraitL = document.getElementById('portraitL');
+    this.portraitR = document.getElementById('portraitR');
+    this.ctxL = this.portraitL ? this.portraitL.getContext('2d') : null;
+    this.ctxR = this.portraitR ? this.portraitR.getContext('2d') : null;
+
+    this.active = false;
+    this.script = [];
+    this.index = 0;
+    this.charT = 0;
+    this.shown = 0;
+    this.fullText = '';
+    this.t = 0;
+    this.onEnd = null;
+
+    this.speaker = null;
+    this.leftChar = null;
+    this.rightChar = null;
+    this.leftMood = 'normal';
+    this.rightMood = 'normal';
+    this.playerChar = 'reimu';
+
+    this._clickHandler = () => {
+      if (this.active) this._onClick();
+    };
+    this.el?.addEventListener('pointerdown', this._clickHandler);
+  }
+
+  get isTyping() {
+    return this.shown < this.fullText.length;
+  }
+
+  /**
+   * @param {{who:string,text:string,mood?:string,side?:'left'|'right'}[]} script
+   * @param {{onEnd?:Function}} [opts]
+   */
+  play(script, opts = {}) {
+    this.script = script || [];
+    this.index = 0;
+    this.active = true;
+    this.onEnd = opts.onEnd || null;
+    this.t = 0;
+    this.el?.classList.remove('hidden');
+    this._applyLine();
+  }
+
+  /** 对话结束 */
+  close() {
+    this.active = false;
+    this.el?.classList.add('hidden');
+    const cb = this.onEnd;
+    this.onEnd = null;
+    if (cb) cb();
+  }
+
+  /** 强制中止：返回标题/重开时用，不触发 onEnd，避免旧剧本把游戏重新拉起来 */
+  stop() {
+    this.active = false;
+    this.script = [];
+    this.index = 0;
+    this.fullText = '';
+    this.shown = 0;
+    this.onEnd = null;
+    this.el?.classList.add('hidden');
+  }
+
+  _onClick() {
+    this.advance();
+  }
+
+  advance() {
+    if (!this.active) return;
+    if (this.isTyping) {
+      this.shown = this.fullText.length;
+      this._renderText();
+      return;
+    }
+    this.index++;
+    if (this.index >= this.script.length) {
+      this.close();
+    } else {
+      this._applyLine();
+    }
+  }
+
+  /** 设置当前操作的主角（决定 'player' 这个占位符解释成谁） */
+  setPlayerChar(c) {
+    this.playerChar = c === 'marisa' ? 'marisa' : 'reimu';
+  }
+
+  /**
+   * 解析剧本里的 who：
+   *   'player'            → 当前操作的主角
+   *   剧本里写死的主角名   → 换成搭档，避免「两个魔理沙同屏」
+   *   其它（Boss / 旁白） → 原样返回
+   */
+  _resolveWho(who) {
+    const partnerKey = this.playerChar === 'marisa' ? 'reimu' : 'marisa';
+    if (who === 'player') return this.playerChar;
+    // 'partner' 明确表示「另一位主角」，与玩家选择无关，永远指向搭档
+    if (who === 'partner') return partnerKey;
+    // 兼容剧本里写死的主角名：若与玩家重合则视为搭档，避免「两个魔理沙同屏」
+    if (who === this.playerChar) return partnerKey;
+    return who;
+  }
+
+  /** 台词占位符：{me}=玩家名 {partner}=搭档名 {self}=说话人自己 */
+  _subst(text, who) {
+    if (!text) return '';
+    const me = this.playerChar === 'marisa' ? '魔理沙' : '灵梦';
+    const partner = me === '魔理沙' ? '灵梦' : '魔理沙';
+    const self = who === 'reimu' ? '灵梦' : who === 'marisa' ? '魔理沙' : (CHAR_NAMES[who] || who);
+    return text
+      .replace(/\{me\}/g, me)
+      .replace(/\{partner\}/g, partner)
+      .replace(/\{self\}/g, self);
+  }
+
+  _applyLine() {
+    const line = this.script[this.index];
+    if (!line) return;
+    let who = this._resolveWho(line.who || 'unknown');
+    const isNarrator = who === 'narrator';
+    // 玩家固定在左、搭档固定在右，避免搭档的立绘顶掉玩家
+    const side = line.side || (who === this.playerChar ? 'left' : 'right');
+
+    this.speaker = who;
+    this.fullText = this._subst(line.text || '', who);
+    this.shown = 0;
+    this.charT = 0;
+
+    // 说话方立绘高亮（旁白不改动立绘）
+    if (!isNarrator) {
+      if (side === 'left') {
+        this.leftChar = who;
+        this.leftMood = line.mood || 'normal';
+        this.rightMood = 'normal';
+      } else {
+        this.rightChar = who;
+        this.rightMood = line.mood || 'normal';
+        this.leftMood = 'normal';
+      }
+    }
+
+    if (this.speakerEl) {
+      this.speakerEl.textContent = isNarrator ? '' : (CHAR_NAMES[who] || who);
+    }
+    this._renderText();
+    this._renderPortraits();
+    this._updateActiveClass();
+  }
+
+  _renderText() {
+    if (!this.textEl) return;
+    this.textEl.textContent = this.fullText.slice(0, Math.floor(this.shown));
+  }
+
+  _updateActiveClass() {
+    const line = this.script[this.index];
+    let who = this._resolveWho(line?.who || 'unknown');
+    const side = line?.side || (who === this.playerChar ? 'left' : 'right');
+    const leftWrap = this.portraitL?.parentElement;
+    const rightWrap = this.portraitR?.parentElement;
+    if (leftWrap) leftWrap.classList.toggle('active', side === 'left' && !!this.leftChar);
+    if (rightWrap) rightWrap.classList.toggle('active', side === 'right' && !!this.rightChar);
+    if (leftWrap) leftWrap.classList.toggle('hidden', !this.leftChar);
+    if (rightWrap) rightWrap.classList.toggle('hidden', !this.rightChar);
+  }
+
+  _renderPortraits() {
+    if (this.ctxL && this.leftChar) this._paint(this.ctxL, this.portraitL, this.leftChar, this.leftMood);
+    if (this.ctxR && this.rightChar) this._paint(this.ctxR, this.portraitR, this.rightChar, this.rightMood);
+  }
+
+  _paint(ctx, canvas, charKey, mood) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height - 10);
+    paintPortrait(ctx, {
+      char: charKey,
+      t: this.t,
+      mood: mood || 'normal',
+      alpha: 1,
+    });
+    ctx.restore();
+  }
+
+  update(dt) {
+    if (!this.active) return;
+    this.t += dt;
+
+    if (this.isTyping) {
+      this.charT += dt * CHAR_TYPE_SPEED;
+      while (this.charT >= 1 && this.shown < this.fullText.length) {
+        this.charT -= 1;
+        this.shown++;
+      }
+      this._renderText();
+    }
+
+    // 立绘持续重绘（呼吸 / 眨眼 / 发梢）
+    this._renderPortraits();
+  }
+
+  destroy() {
+    this.el?.removeEventListener('pointerdown', this._clickHandler);
+  }
+}

@@ -1,0 +1,407 @@
+  _buildTitleBg() {
+    const c = document.createElement('canvas');
+    c.width = VIEW_W; c.height = VIEW_H;
+    const g = c.getContext('2d');
+    const rnd = (() => {
+      let a = 0x9e3779b9;
+      return () => {
+        a = (Math.imul(a ^ (a >>> 15), 0x85ebca6b) + 0x165667b1) | 0;
+        return ((a >>> 8) & 0xffffff) / 0x1000000;
+      };
+    })();
+
+    /* ---------- 夜空：深蓝到梅紫，地平时分暖 ---------- */
+    const sky = g.createLinearGradient(0, 0, 0, 680);
+    sky.addColorStop(0, '#04050e');
+    sky.addColorStop(0.24, '#090e2b');
+    sky.addColorStop(0.44, '#171342');
+    sky.addColorStop(0.62, '#311a4c');
+    sky.addColorStop(0.78, '#54254e');
+    sky.addColorStop(0.90, '#78344a');
+    sky.addColorStop(1, '#93414b');
+    g.fillStyle = sky;
+    g.fillRect(0, 0, VIEW_W, VIEW_H);
+
+    /* 银河斜带：一条极淡的紫白尘带 */
+    g.save();
+    g.translate(240, -60);
+    g.rotate(0.34);
+    const mw = g.createLinearGradient(0, 0, 0, 230);
+    mw.addColorStop(0, 'rgba(120, 140, 220, 0)');
+    mw.addColorStop(0.38, 'rgba(150, 160, 240, 0.10)');
+    mw.addColorStop(0.58, 'rgba(214, 198, 255, 0.12)');
+    mw.addColorStop(0.8, 'rgba(150, 160, 240, 0.07)');
+    mw.addColorStop(1, 'rgba(120, 140, 220, 0)');
+    g.fillStyle = mw;
+    g.fillRect(0, -60, 1900, 360);
+    g.restore();
+
+    /* 地平线暖光：神社方向的黄昏余烬 */
+    const hz = g.createRadialGradient(760, 596, 30, 760, 596, 760);
+    hz.addColorStop(0, 'rgba(255, 146, 96, 0.20)');
+    hz.addColorStop(0.4, 'rgba(226, 84, 96, 0.11)');
+    hz.addColorStop(1, 'rgba(140, 40, 90, 0)');
+    g.fillStyle = hz;
+    g.fillRect(0, 300, VIEW_W, 420);
+
+    /* ---------- 星：三级亮度 + 少量十字星 ---------- */
+    for (let i = 0; i < 320; i++) {
+      const x = rnd() * VIEW_W;
+      const y = Math.pow(rnd(), 1.35) * 520;
+      const tier = rnd();
+      const r = tier > 0.94 ? 1.5 + rnd() * 0.9 : tier > 0.7 ? 0.9 + rnd() * 0.5 : 0.45 + rnd() * 0.3;
+      g.globalAlpha = (tier > 0.94 ? 0.75 : tier > 0.7 ? 0.45 : 0.22) + rnd() * 0.18;
+      g.fillStyle = rnd() < 0.22 ? '#ffd9e6' : rnd() < 0.5 ? '#dfe8ff' : '#fff6ea';
+      g.beginPath();
+      g.arc(x, y, r, 0, Math.PI * 2);
+      g.fill();
+      if (tier > 0.965) {
+        g.globalAlpha *= 0.5;
+        g.strokeStyle = '#fff';
+        g.lineWidth = 0.8;
+        g.beginPath(); g.moveTo(x - r * 3.2, y); g.lineTo(x + r * 3.2, y); g.stroke();
+        g.beginPath(); g.moveTo(x, y - r * 3.2); g.lineTo(x, y + r * 3.2); g.stroke();
+      }
+    }
+    g.globalAlpha = 1;
+
+    /* ---------- 月：外晕 / 月体 / 环形山 / 光柱 ---------- */
+    const mx = 986, my = 168, mr = 84;
+    const haloWide = g.createRadialGradient(mx, my, mr * 0.6, mx, my, 430);
+    haloWide.addColorStop(0, 'rgba(214, 224, 255, 0.30)');
+    haloWide.addColorStop(0.28, 'rgba(190, 196, 250, 0.13)');
+    haloWide.addColorStop(1, 'rgba(150, 160, 240, 0)');
+    g.fillStyle = haloWide;
+    g.beginPath(); g.arc(mx, my, 430, 0, Math.PI * 2); g.fill();
+
+    const haloWarm = g.createRadialGradient(mx, my, mr * 0.9, mx, my, 190);
+    haloWarm.addColorStop(0, 'rgba(255, 240, 214, 0.34)');
+    haloWarm.addColorStop(1, 'rgba(255, 226, 200, 0)');
+    g.fillStyle = haloWarm;
+    g.beginPath(); g.arc(mx, my, 190, 0, Math.PI * 2); g.fill();
+
+    // 光柱：从月亮向下散开，极低透明度
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 4; i++) {
+      const a = -1.9 + i * 0.16;
+      g.save();
+      g.translate(mx, my);
+      g.rotate(a);
+      const sh = g.createLinearGradient(0, 0, 0, 620);
+      sh.addColorStop(0, 'rgba(226, 232, 255, 0.09)');
+      sh.addColorStop(1, 'rgba(180, 190, 255, 0)');
+      g.fillStyle = sh;
+      g.beginPath();
+      g.moveTo(-6, 0); g.lineTo(6, 0); g.lineTo(74, 620); g.lineTo(-86, 620);
+      g.closePath(); g.fill();
+      g.restore();
+    }
+    g.restore();
+
+    const body = g.createRadialGradient(mx - mr * 0.34, my - mr * 0.38, 6, mx, my, mr);
+    body.addColorStop(0, '#fffef8');
+    body.addColorStop(0.42, '#fdf4de');
+    body.addColorStop(0.74, '#eddfc6');
+    body.addColorStop(1, '#cdbca8');
+    g.fillStyle = body;
+    g.beginPath(); g.arc(mx, my, mr, 0, Math.PI * 2); g.fill();
+
+    // 月海与环形山（裁剪在月体内）
+    g.save();
+    g.beginPath(); g.arc(mx, my, mr, 0, Math.PI * 2); g.clip();
+    for (let i = 0; i < 14; i++) {
+      const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * (mr - 8);
+      const cx = mx + Math.cos(a) * d, cy = my + Math.sin(a) * d;
+      const cr = 3 + rnd() * 13;
+      g.globalAlpha = 0.05 + rnd() * 0.07;
+      g.fillStyle = '#8b7a72';
+      g.beginPath(); g.ellipse(cx, cy, cr, cr * (0.6 + rnd() * 0.5), rnd() * 3, 0, Math.PI * 2); g.fill();
+      g.globalAlpha = 0.10 + rnd() * 0.10;
+      g.strokeStyle = '#fffaf0';
+      g.lineWidth = 1;
+      g.beginPath(); g.arc(cx, cy, cr * 0.86, -2.4, 0.5); g.stroke();
+    }
+    // 下半侧阴影，制造体积
+    const term = g.createLinearGradient(mx, my - mr, mx, my + mr);
+    term.addColorStop(0, 'rgba(120, 110, 140, 0)');
+    term.addColorStop(0.72, 'rgba(90, 86, 120, 0.10)');
+    term.addColorStop(1, 'rgba(70, 66, 104, 0.20)');
+    g.globalAlpha = 1;
+    g.fillStyle = term;
+    g.fillRect(mx - mr, my - mr, mr * 2, mr * 2);
+    g.restore();
+
+    /* ---------- 云：靠近月亮被照亮的薄卷云 ---------- */
+    const cloud = (x, y, w, h, alpha, tint) => {
+      const cg = g.createLinearGradient(x - w, y, x + w, y);
+      cg.addColorStop(0, 'rgba(90, 70, 130, 0)');
+      cg.addColorStop(0.42, tint + alpha * 0.55 + ')');
+      cg.addColorStop(0.62, tint + alpha + ')');
+      cg.addColorStop(1, 'rgba(90, 70, 130, 0)');
+      g.fillStyle = cg;
+      g.beginPath();
+      g.ellipse(x, y, w, h, -0.02, 0, Math.PI * 2);
+      g.fill();
+    };
+    cloud(820, 236, 330, 13, 0.16, 'rgba(236, 226, 255, ');
+    cloud(1080, 300, 300, 9, 0.12, 'rgba(255, 226, 236, ');
+    cloud(560, 330, 380, 16, 0.10, 'rgba(180, 166, 240, ');
+    cloud(940, 404, 420, 12, 0.09, 'rgba(255, 206, 206, ');
+    cloud(300, 210, 300, 9, 0.08, 'rgba(180, 190, 250, ');
+    cloud(1180, 460, 260, 14, 0.08, 'rgba(255, 190, 190, ');
+
+    /* ---------- 远山：四层，越远越淡 ---------- */
+    const ridge = (base, amp, color, phases, rim) => {
+      const pts = [];
+      for (let x = 0; x <= VIEW_W; x += 6) {
+        const y = base
+          + Math.sin(x * 0.0052 + phases[0]) * amp
+          + Math.sin(x * 0.0131 + phases[1]) * amp * 0.42
+          + Math.sin(x * 0.0327 + phases[2]) * amp * 0.15;
+        pts.push(x, y);
+      }
+      g.beginPath();
+      g.moveTo(0, VIEW_H);
+      for (let i = 0; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+      g.lineTo(VIEW_W, VIEW_H);
+      g.closePath();
+      g.fillStyle = color;
+      g.fill();
+      if (rim) {
+        g.save();
+        g.globalCompositeOperation = 'lighter';
+        g.beginPath();
+        g.moveTo(pts[0], pts[1]);
+        for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+        g.strokeStyle = rim;
+        g.lineWidth = 1.2;
+        g.stroke();
+        g.restore();
+      }
+      return pts;
+    };
+    ridge(478, 46, '#2c2452', [0.4, 2.1, 4.6], 'rgba(150, 170, 255, 0.10)');
+    ridge(518, 38, '#241b45', [2.4, 0.8, 3.4], 'rgba(190, 170, 255, 0.08)');
+    ridge(556, 30, '#1a1235', [4.1, 3.2, 1.2], 'rgba(255, 180, 190, 0.07)');
+    const near = ridge(596, 20, '#120c26', [1.1, 5.4, 2.6], null);
+
+    // 最近一道山脊上的针叶林剪影
+    g.fillStyle = '#100a22';
+    for (let i = 0; i < 46; i++) {
+      const x = 40 + i * 27 + (rnd() - 0.5) * 16;
+      const idx = Math.min(near.length - 2, Math.max(0, Math.round(x / 6) * 2));
+      const by = near[idx + 1] + 2;
+      const h = 10 + rnd() * 22;
+      g.beginPath();
+      g.moveTo(x, by - h);
+      g.lineTo(x + h * 0.30, by);
+      g.lineTo(x - h * 0.30, by);
+      g.closePath();
+      g.fill();
+    }
+
+    // 山脚雾带：把山与地面分开
+    const mist = g.createLinearGradient(0, 520, 0, 640);
+    mist.addColorStop(0, 'rgba(140, 118, 180, 0)');
+    mist.addColorStop(0.5, 'rgba(160, 132, 190, 0.16)');
+    mist.addColorStop(1, 'rgba(120, 96, 150, 0)');
+    g.fillStyle = mist;
+    g.fillRect(0, 520, VIEW_W, 130);
+
+    /* ---------- 右：鸟居 + 提灯（暖色记忆点） ---------- */
+    const tx = 1076, ty = 566, th = 158;
+    g.save();
+    g.translate(tx, ty);
+    // 柱（略带透视，底宽顶窄）
+    const pillar = (bx, bw) => {
+      g.beginPath();
+      g.moveTo(bx - bw / 2, 0);
+      g.lineTo(bx - bw * 0.36, -th + 30);
+      g.lineTo(bx + bw * 0.36, -th + 30);
+      g.lineTo(bx + bw / 2, 0);
+      g.closePath();
+      g.fill();
+    };
+    g.fillStyle = '#150b22';
+    pillar(-62, 18);
+    pillar(62, 18);
+    // 笠木：两端上翘，中间厚
+    g.beginPath();
+    g.moveTo(-116, -th + 2);
+    g.quadraticCurveTo(0, -th - 30, 116, -th + 2);
+    g.lineTo(116, -th + 18);
+    g.quadraticCurveTo(0, -th - 8, -116, -th + 18);
+    g.closePath();
+    g.fill();
+    // 贯与额束
+    g.fillRect(-84, -th + 54, 168, 11);
+    g.fillRect(-13, -th + 30, 26, 26);
+    g.fillRect(-4, -th + 34, 8, 18);
+    // 鸟居上的提灯
+    g.fillStyle = '#1a0f24';
+    g.fillRect(-6, -th + 66, 12, 5);
+    const lg = g.createRadialGradient(0, -th + 88, 2, 0, -th + 88, 46);
+    lg.addColorStop(0, 'rgba(255, 196, 120, 0.75)');
+    lg.addColorStop(0.35, 'rgba(255, 150, 80, 0.28)');
+    lg.addColorStop(1, 'rgba(255, 120, 60, 0)');
+    g.fillStyle = lg;
+    g.beginPath(); g.arc(0, -th + 88, 46, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ffb45e';
+    g.beginPath(); g.ellipse(0, -th + 88, 9, 13, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255, 244, 214, 0.9)';
+    g.beginPath(); g.ellipse(0, -th + 85, 4, 6, 0, 0, Math.PI * 2); g.fill();
+    // 月光轮廓
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.strokeStyle = 'rgba(214, 206, 255, 0.20)';
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(72, -th + 40); g.lineTo(74, 0); g.stroke();
+    g.beginPath(); g.moveTo(-116, -th + 8); g.quadraticCurveTo(0, -th - 22, 116, -th + 8); g.stroke();
+    g.restore();
+    g.restore();
+
+    /* ---------- 左：神社 + 石灯籠（暖色记忆点） ---------- */
+    g.save();
+    g.translate(196, 606);
+    // 屋顶
+    g.fillStyle = '#150c22';
+    g.beginPath();
+    g.moveTo(-176, 22);
+    g.quadraticCurveTo(-150, -6, -96, -14);
+    g.lineTo(-96, -30);
+    g.quadraticCurveTo(-40, -40, -24, -66);
+    g.quadraticCurveTo(-12, -84, 0, -84);
+    g.quadraticCurveTo(12, -84, 24, -66);
+    g.quadraticCurveTo(40, -40, 96, -30);
+    g.lineTo(96, -14);
+    g.quadraticCurveTo(150, -6, 176, 22);
+    g.lineTo(150, 22);
+    g.quadraticCurveTo(96, 4, 80, 22);
+    g.lineTo(-80, 22);
+    g.quadraticCurveTo(-96, 4, -150, 22);
+    g.closePath();
+    g.fill();
+    // 屋檐轮廓光
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.strokeStyle = 'rgba(255, 190, 170, 0.16)';
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(-176, 22); g.quadraticCurveTo(-150, -6, -96, -14);
+    g.stroke();
+    g.restore();
+    // 墙与窗
+    g.fillStyle = '#100a1a';
+    g.fillRect(-84, 22, 168, 46);
+    g.fillStyle = 'rgba(255, 176, 96, 0.34)';
+    for (let i = 0; i < 3; i++) g.fillRect(-58 + i * 52, 34, 24, 20);
+    g.fillStyle = 'rgba(255, 214, 150, 0.22)';
+    for (let i = 0; i < 3; i++) g.fillRect(-58 + i * 52, 34, 24, 5);
+    g.restore();
+
+    // 石灯籠
+    g.save();
+    g.translate(352, 672);
+    g.fillStyle = '#170f24';
+    g.fillRect(-5, -38, 10, 38);
+    g.fillRect(-16, -44, 32, 7);
+    g.beginPath();
+    g.moveTo(-14, -44); g.lineTo(-8, -62); g.lineTo(8, -62); g.lineTo(14, -44);
+    g.closePath(); g.fill();
+    g.fillRect(-13, -70, 26, 8);
+    const slg = g.createRadialGradient(0, -56, 2, 0, -56, 44);
+    slg.addColorStop(0, 'rgba(255, 210, 140, 0.55)');
+    slg.addColorStop(0.4, 'rgba(255, 160, 90, 0.18)');
+    slg.addColorStop(1, 'rgba(255, 140, 70, 0)');
+    g.fillStyle = slg;
+    g.beginPath(); g.arc(0, -56, 44, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ffcf8a';
+    g.fillRect(-6, -60, 12, 10);
+    g.restore();
+
+    /* ---------- 左上：樱枝与花簇 ---------- */
+    const branch = (x0, y0, x1, y1, x2, y2, w, color) => {
+      g.beginPath();
+      g.moveTo(x0, y0);
+      g.quadraticCurveTo(x1, y1, x2, y2);
+      g.strokeStyle = color;
+      g.lineWidth = w;
+      g.lineCap = 'round';
+      g.stroke();
+    };
+    branch(-24, 76, 150, 118, 356, 96, 8, '#150c1c');
+    branch(120, 120, 190, 176, 268, 198, 5, '#150c1c');
+    branch(262, 108, 314, 70, 392, 58, 4.5, '#150c1c');
+    branch(60, 92, 74, 48, 126, 16, 3.6, '#150c1c');
+
+    const blossom = (x, y, s, hue) => {
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      const bg = g.createRadialGradient(x, y, 0, x, y, s * 4.2);
+      bg.addColorStop(0, 'rgba(255, 150, 196, 0.34)');
+      bg.addColorStop(0.5, 'rgba(255, 130, 190, 0.10)');
+      bg.addColorStop(1, 'rgba(255, 120, 180, 0)');
+      g.fillStyle = bg;
+      g.beginPath(); g.arc(x, y, s * 4.2, 0, Math.PI * 2); g.fill();
+      g.restore();
+      for (let p = 0; p < 5; p++) {
+        const a = (p / 5) * Math.PI * 2 + 0.4;
+        g.fillStyle = hue;
+        g.beginPath();
+        g.ellipse(x + Math.cos(a) * s * 0.62, y + Math.sin(a) * s * 0.62, s * 0.54, s * 0.42, a, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.fillStyle = 'rgba(255, 244, 248, 0.95)';
+      g.beginPath(); g.arc(x, y, s * 0.27, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255, 210, 90, 0.85)';
+      g.beginPath(); g.arc(x, y, s * 0.12, 0, Math.PI * 2); g.fill();
+    };
+    const spots = [
+      [44, 92], [92, 108], [140, 128], [190, 168], [232, 188],
+      [266, 112], [312, 88], [352, 68], [70, 44], [104, 20], [20, 122],
+      [380, 54], [148, 60],
+    ];
+    spots.forEach(([x, y], i) => {
+      blossom(x, y, 3.6 + (i % 3) * 1.2, i % 2 ? '#ff9ecb' : '#ffc6de');
+    });
+
+    /* ---------- 地面与前景 ---------- */
+    const ground = g.createLinearGradient(0, 604, 0, VIEW_H);
+    ground.addColorStop(0, 'rgba(18, 11, 30, 0.0)');
+    ground.addColorStop(0.22, 'rgba(13, 8, 24, 0.9)');
+    ground.addColorStop(1, '#07040e');
+    g.fillStyle = ground;
+    g.fillRect(0, 586, VIEW_W, VIEW_H - 586);
+
+    // 前景灌木剪影
+    g.fillStyle = '#0a0614';
+    for (let i = 0; i < 11; i++) {
+      const x = rnd() * VIEW_W;
+      const w = 30 + rnd() * 90;
+      const h = 10 + rnd() * 26;
+      g.beginPath();
+      g.ellipse(x, VIEW_H - 6 + rnd() * 4, w, h, 0, Math.PI, 0);
+      g.fill();
+    }
+
+    // 草叶：两层，近层亮一点
+    for (let pass = 0; pass < 2; pass++) {
+      g.save();
+      g.strokeStyle = pass === 0 ? 'rgba(52, 32, 70, 0.85)' : 'rgba(96, 62, 112, 0.55)';
+      g.lineWidth = pass === 0 ? 1.6 : 1.1;
+      for (let i = 0; i < 120; i++) {
+        const x = (i / 120) * VIEW_W + (rnd() - 0.5) * 14;
+        const h = (pass === 0 ? 12 : 20) + rnd() * (pass === 0 ? 26 : 34);
+        const lean = (rnd() - 0.5) * (pass === 0 ? 8 : 14);
+        g.beginPath();
+        g.moveTo(x, VIEW_H + 6);
+        g.quadraticCurveTo(x + lean * 0.35, VIEW_H - h * 0.55, x + lean, VIEW_H - h);
+        g.stroke();
+      }
+      g.restore();
+    }
+
+    return c;
+  }
+

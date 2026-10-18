@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>AI Boss 战斗立绘 · 预览</title>
+<style>
+  html, body { margin: 0; background: #14101c; color: #e8dfd0; font-family: system-ui, sans-serif; }
+  canvas { display: block; margin: 0 auto; }
+  .note { text-align: center; padding: 8px; font-size: 13px; opacity: .7; }
+</style>
+</head>
+<body>
+<div class="note">drawGenBoss() 输出 —— 7 位 Boss，显示高度 236px（游戏内尺寸）</div>
+<canvas id="c" width="1400" height="380"></canvas>
+<script type="module">
+import { drawGenBoss } from './src/art/genboss.js';
+
+const KEYS = ['rumia', 'wriggle', 'cirno', 'aya', 'yuyuko', 'kaguya', 'flandre'];
+const NAMES = { rumia: '露米娅', wriggle: '莉格露', cirno: '琪露诺', aya: '射命丸文', yuyuko: '幽幽子', kaguya: '辉夜', flandre: '芙兰朵露' };
+const ctx = document.getElementById('c').getContext('2d');
+
+// 等图片加载
+await new Promise((res) => {
+  let n = 0;
+  for (const k of KEYS) {
+    const img = new Image();
+    img.src = './src/art/gen/boss/' + k + '.png';
+    img.onload = img.onerror = () => { if (++n === KEYS.length) res(); };
+  }
+});
+
+function frame(t) {
+  ctx.clearRect(0, 0, 1400, 380);
+  // 背景
+  const g = ctx.createLinearGradient(0, 0, 0, 380);
+  g.addColorStop(0, '#1b1428');
+  g.addColorStop(1, '#0d0a14');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 1400, 380);
+
+  KEYS.forEach((k, i) => {
+    const x = 100 + i * 200;
+    ctx.save();
+    ctx.translate(x, 330);
+    drawGenBoss(ctx, { boss: k, t, state: 'idle', facing: -1, flash: 0, alpha: 1, scale: 1 });
+    ctx.restore();
+    ctx.fillStyle = '#cbbfa8';
+    ctx.font = '13px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(NAMES[k] + ' / ' + k, x, 360);
+  });
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+window.__genboss_ready = true;
+</script>
+</body>
+</html>

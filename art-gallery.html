@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>东方新纪行 · 人物插图总览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: #14101c;
+    color: #e8e2f0;
+    padding: 32px 40px 64px;
+  }
+  h1 { font-size: 26px; font-weight: 600; letter-spacing: 2px; }
+  h1 small { font-size: 13px; color: #9a8fb8; font-weight: 400; margin-left: 12px; letter-spacing: 0; }
+  h2 {
+    font-size: 18px; margin: 40px 0 16px; padding-left: 12px;
+    border-left: 4px solid #ff9ec7; letter-spacing: 1px;
+  }
+  h2 small { font-size: 12px; color: #8a7fa8; font-weight: 400; margin-left: 10px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+  }
+  .grid.wide { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .card {
+    background: #1e1830;
+    border: 1px solid #342a4e;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform .18s, border-color .18s;
+  }
+  .card:hover { transform: translateY(-3px); border-color: #ff9ec7; }
+  .thumb {
+    /* 棋盘格底，方便看透明 PNG */
+    background:
+      repeating-conic-gradient(#2a2340 0% 25%, #221c36 0% 50%) 0 0 / 24px 24px;
+    display: flex; align-items: flex-end; justify-content: center;
+    height: 260px; padding: 10px 10px 0;
+  }
+  .thumb img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+  .grid.frames .thumb { height: 170px; align-items: center; padding: 10px; }
+  .meta { padding: 10px 14px 12px; }
+  .meta .name { font-size: 15px; font-weight: 600; }
+  .meta .file { font-size: 11px; color: #8a7fa8; margin-top: 3px; word-break: break-all; }
+  .tag {
+    display: inline-block; font-size: 10px; color: #14101c; background: #8ef07a;
+    border-radius: 4px; padding: 1px 6px; margin-left: 8px; vertical-align: 2px;
+  }
+  .tag.battle { background: #ffb45e; }
+</style>
+</head>
+<body>
+
+<h1>东方新纪行 · 人物插图总览<small>src/art/gen/ 目录全部人物素材</small></h1>
+
+<h2>主角 · 对话立绘<small>dialogue.js 优先使用</small></h2>
+<div class="grid">
+  <div class="card"><div class="thumb"><img src="src/art/gen/reimu.png"></div>
+    <div class="meta"><div class="name">博丽灵梦</div><div class="file">gen/reimu.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/marisa.png"></div>
+    <div class="meta"><div class="name">雾雨魔理沙</div><div class="file">gen/marisa.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/reimu_title.png"></div>
+    <div class="meta"><div class="name">灵梦 · 标题用</div><div class="file">gen/reimu_title.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/marisa_title.png"></div>
+    <div class="meta"><div class="name">魔理沙 · 标题用</div><div class="file">gen/marisa_title.png</div></div></div>
+</div>
+
+<h2>主角 · 场内动作帧<small>genchars.js 按状态切换</small></h2>
+<div class="grid frames">
+  <div class="card"><div class="thumb"><img src="src/art/gen/run/reimu_idle.png"></div>
+    <div class="meta"><div class="name">灵梦 · 待机</div><div class="file">run/reimu_idle.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/run/reimu_run_0.png"></div>
+    <div class="meta"><div class="name">灵梦 · 跑 1</div><div class="file">run/reimu_run_0.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/run/reimu_run_2.png"></div>
+    <div class="meta"><div class="name">灵梦 · 跑 3</div><div class="file">run/reimu_run_2.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/run/reimu_jump.png"></div>
+    <div class="meta"><div class="name">灵梦 · 跳</div><div class="file">run/reimu_jump.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/run/reimu_fall.png"></div>
+    <div class="meta"><div class="name">灵梦 · 落</div><div class="file">run/reimu_fall.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/run/reimu_fly.png"></div>
+    <div class="meta"><div class="name">灵梦 · 飞</div><div class="file">run/reimu_fly.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/run/marisa_idle.png"></div>
+    <div class="meta"><div class="name">魔理沙 · 待机</div><div class="file">run/marisa_idle.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/run/marisa_run_0.png"></div>
+    <div class="meta"><div class="name">魔理沙 · 跑 1</div><div class="file">run/marisa_run_0.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/run/marisa_run_2.png"></div>
+    <div class="meta"><div class="name">魔理沙 · 跑 3</div><div class="file">run/marisa_run_2.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/run/marisa_jump.png"></div>
+    <div class="meta"><div class="name">魔理沙 · 跳</div><div class="file">run/marisa_jump.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/run/marisa_fall.png"></div>
+    <div class="meta"><div class="name">魔理沙 · 落</div><div class="file">run/marisa_fall.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/run/marisa_fly.png"></div>
+    <div class="meta"><div class="name">魔理沙 · 飞</div><div class="file">run/marisa_fly.png</div></div></div>
+</div>
+
+<h2>Boss · 战斗立绘<span class="tag battle">待接入</span><small>gen/boss/，目前游戏内仍是矢量绘制</small></h2>
+<div class="grid">
+  <div class="card"><div class="thumb"><img src="src/art/gen/boss/rumia.png"></div>
+    <div class="meta"><div class="name">露米娅</div><div class="file">boss/rumia.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/boss/wriggle.png"></div>
+    <div class="meta"><div class="name">莉格露</div><div class="file">boss/wriggle.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/boss/cirno.png"></div>
+    <div class="meta"><div class="name">琪露诺</div><div class="file">boss/cirno.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/boss/aya.png"></div>
+    <div class="meta"><div class="name">射命丸文</div><div class="file">boss/aya.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/boss/yuyuko.png"></div>
+    <div class="meta"><div class="name">西行寺幽幽子</div><div class="file">boss/yuyuko.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/boss/kaguya.png"></div>
+    <div class="meta"><div class="name">蓬莱山辉夜</div><div class="file">boss/kaguya.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/boss/flandre.png"></div>
+    <div class="meta"><div class="name">芙兰朵露</div><div class="file">boss/flandre.png</div></div></div>
+</div>
+
+<h2>Boss · 对话立绘<small>对白时显示</small></h2>
+<div class="grid">
+  <div class="card"><div class="thumb"><img src="src/art/gen/rumia.png"></div>
+    <div class="meta"><div class="name">露米娅</div><div class="file">gen/rumia.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/wriggle.png"></div>
+    <div class="meta"><div class="name">莉格露</div><div class="file">gen/wriggle.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/cirno.png"></div>
+    <div class="meta"><div class="name">琪露诺</div><div class="file">gen/cirno.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/aya.png"></div>
+    <div class="meta"><div class="name">射命丸文</div><div class="file">gen/aya.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/yuyuko.png"></div>
+    <div class="meta"><div class="name">西行寺幽幽子</div><div class="file">gen/yuyuko.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/kaguya.png"></div>
+    <div class="meta"><div class="name">蓬莱山辉夜</div><div class="file">gen/kaguya.png</div></div></div>
+  <div class="card"><div class="thumb"><img src="src/art/gen/flandre.png"></div>
+    <div class="meta"><div class="name">芙兰朵露</div><div class="file">gen/flandre.png</div></div></div>
+</div>
+
+<h2>杂兵<small>14:04 新增</small></h2>
+<div class="grid">
+  <div class="card"><div class="thumb"><img src="src/art/gen/fairy.png"></div>
+    <div class="meta"><div class="name">妖精（杂兵）</div><div class="file">gen/fairy.png</div></div></div>
+</div>
+
+</body>
+</html>

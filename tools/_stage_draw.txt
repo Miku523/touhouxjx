@@ -1,0 +1,151 @@
+  _drawPickups(ctx, cam) {
+    for (const it of this.pickups) {
+      if (it.taken) continue;
+      if (cam && (it.x < cam.x - 60 || it.x > cam.x + VIEW_W + 60)) continue;
+      const bob = Math.sin(it.t * 3) * 3;
+      ctx.save();
+      ctx.translate(it.x, it.y + bob);
+      if (it.kind === 'coin') {
+        const pulse = 0.95 + Math.sin(it.t * 2.4) * 0.05;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.62 + Math.sin(it.t * 2.4) * 0.12;
+        ctx.drawImage(orbGlow(), -27, -27, 54, 54);
+        ctx.globalAlpha = 1;
+        // 环绕的两片小花瓣
+        for (let k = 0; k < 2; k++) {
+          const a = it.t * 2.1 + k * Math.PI;
+          ctx.globalAlpha = 0.55 - k * 0.18;
+          ctx.fillStyle = '#ffd3ec';
+          ctx.beginPath();
+          ctx.ellipse(Math.cos(a) * 15, Math.sin(a) * 5.5, 2.6, 1.4, a, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.rotate(Math.sin(it.t * 1.7) * 0.14);
+        ctx.scale(pulse, pulse);
+        ctx.drawImage(orbBody(), -15, -15, 30, 30);
+      } else {
+        // P 点：蓝白符札
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.55 + Math.sin(it.t * 2.0) * 0.10;
+        ctx.drawImage(ofudaGlow(), -27, -27, 54, 54);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.rotate(Math.sin(it.t * 1.6) * 0.10);
+        ctx.drawImage(ofudaPaper(), -13, -18.5, 26, 37);
+      }
+      ctx.restore();
+    }
+  }
+
+  _drawCheckpoints(ctx, cam) {
+    for (const c of this.checkpoints) {
+      if (cam && (c.x < cam.x - 80 || c.x > cam.x + VIEW_W + 80)) continue;
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      if (c.active) {
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(0, -52, 4, 0, -52, 52);
+        g.addColorStop(0, 'rgba(255, 208, 138, 0.40)');
+        g.addColorStop(0.45, 'rgba(255, 168, 96, 0.14)');
+        g.addColorStop(1, 'rgba(255, 140, 70, 0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(0, -52, 52, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+      }
+      ctx.drawImage(c.active ? lanternOn() : lanternOff(), -22, -88, 44, 88);
+      ctx.restore();
+    }
+  }
+
+  _drawGoal(ctx, cam) {
+    const gx = this.goalX;
+    if (!gx) return;
+    if (cam && (gx < cam.x - 200 || gx > cam.x + VIEW_W + 200)) return;
+    const gy = (this.level.rows - 4) * 32;
+    ctx.save();
+    ctx.translate(gx, gy);
+
+    // 地面投影
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, 2, 96, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 鸟居：木纹 + 受光面 + 暗部
+    const wood = (x, y, w, h, light) => {
+      const gr = ctx.createLinearGradient(x, 0, x + w, 0);
+      gr.addColorStop(0, light ? '#8c2a22' : '#5e1a18');
+      gr.addColorStop(0.36, light ? '#d8563c' : '#a03628');
+      gr.addColorStop(0.7, light ? '#b8402e' : '#7c241d');
+      gr.addColorStop(1, '#4a1414');
+      ctx.fillStyle = gr;
+      ctx.fillRect(x, y, w, h);
+    };
+    wood(-58, -118, 13, 118, true);
+    wood(45, -118, 13, 118, false);
+    // 笠木：两端上翘
+    ctx.beginPath();
+    ctx.moveTo(-84, -126);
+    ctx.quadraticCurveTo(0, -146, 84, -126);
+    ctx.lineTo(84, -110);
+    ctx.quadraticCurveTo(0, -128, -84, -110);
+    ctx.closePath();
+    const capG = ctx.createLinearGradient(0, -146, 0, -108);
+    capG.addColorStop(0, '#e06a4a');
+    capG.addColorStop(0.5, '#a83427');
+    capG.addColorStop(1, '#5a1716');
+    ctx.fillStyle = capG;
+    ctx.fill();
+    // 贯
+    wood(-68, -98, 136, 11, true);
+    // 额束
+    ctx.fillStyle = '#2a1216';
+    ctx.fillRect(-8, -122, 16, 24);
+
+    // 注连绳与纸垂
+    ctx.strokeStyle = 'rgba(232, 214, 176, 0.85)';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(-44, -92);
+    ctx.quadraticCurveTo(0, -80, 44, -92);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(248, 244, 232, 0.92)';
+    for (let i = 0; i < 4; i++) {
+      const x = -30 + i * 20;
+      const sway = Math.sin(this.t * 1.8 + i) * 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x, -87);
+      ctx.lineTo(x + 5 + sway, -87);
+      ctx.lineTo(x + 5 + sway, -70);
+      ctx.lineTo(x + 2.5 + sway * 0.5, -74);
+      ctx.lineTo(x + sway, -70);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 暖光：门内是目的地
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(0, -64, 6, 0, -64, 130);
+    g.addColorStop(0, 'rgba(255, 176, 120, 0.30)');
+    g.addColorStop(0.45, 'rgba(255, 140, 90, 0.10)');
+    g.addColorStop(1, 'rgba(255, 120, 70, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, -64, 130, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 地面光斑
+    const pool = ctx.createRadialGradient(0, 0, 2, 0, 0, 70);
+    pool.addColorStop(0, 'rgba(255, 170, 110, 0.18)');
+    pool.addColorStop(1, 'rgba(255, 140, 90, 0)');
+    ctx.fillStyle = pool;
+    ctx.beginPath();
+    ctx.ellipse(0, 2, 76, 16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+

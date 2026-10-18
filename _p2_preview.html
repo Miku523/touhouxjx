@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>P2 · 主角可读性 A/B</title>
+<style>
+  html,body{margin:0;background:#0b0910;color:#ddd3c0;font-family:system-ui,sans-serif;overflow:hidden}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script type="module">
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+const load = (src) => new Promise((res, rej) => {
+  const im = new Image();
+  im.onload = () => res(im);
+  im.onerror = () => rej(new Error('load ' + src));
+  im.src = src;
+});
+
+function prep(img) {
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const c2 = document.createElement('canvas');
+  c2.width = w; c2.height = h;
+  const c = c2.getContext('2d', { willReadFrequently: true });
+  c.drawImage(img, 0, 0);
+  const d = c.getImageData(0, 0, w, h);
+  const p = d.data;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    if (!p[i + 3]) continue;
+    if (p[i + 3] < 210 && p[i] > 205 && p[i + 1] > 205 && p[i + 2] > 205) { p[i + 3] = 0; continue; }
+    if (x < x0) x0 = x; if (x > x1) x1 = x;
+    if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  c.putImageData(d, 0, 0);
+  const sil = document.createElement('canvas');
+  sil.width = w; sil.height = h;
+  const sc = sil.getContext('2d');
+  sc.drawImage(c2, 0, 0);
+  sc.globalCompositeOperation = 'source-in';
+  sc.fillStyle = '#fff';
+  sc.fillRect(0, 0, w, h);
+  return { img: c2, sil, w, h, bbox: { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 } };
+}
+
+const VAR = [
+  { h: 92, rim: 0, halo: 0, glow: 0, sat: 1, name: 'H92 现状' },
+  { h: 104, rim: 0, halo: 0, glow: 0, sat: 1, name: 'H104' },
+  { h: 104, rim: 1, halo: 0, glow: 0, sat: 1, name: '+轮廓光' },
+  { h: 104, rim: 1, halo: 1, glow: 0, sat: 1, name: '+光+暗贴纸' },
+  { h: 104, rim: 1, halo: 0, glow: 1, sat: 1.06, name: '+光+背光+饱和' },
+];
+
+const TILE_W = 256, TILE_H = 300, GAP = 8;
+const BG_SRC = { x: 210, y: 400, w: TILE_W, h: TILE_H };
+
+const main = async () => {
+  const bg = await load('_p2_bg_crop.png');
+  const F = prep(await load('src/art/gen/run/reimu_idle.png'));
+  ctx.fillStyle = '#0b0910';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  const cols = 5;
+  VAR.forEach((v, i) => {
+    const ox = GAP + i * (TILE_W + GAP);
+    const oy = 40;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(ox, oy, TILE_W, TILE_H);
+    ctx.clip();
+    ctx.drawImage(bg, BG_SRC.x, BG_SRC.y, TILE_W, TILE_H, ox, oy, TILE_W, TILE_H);
+    // 地面线：草地表面约在裁片 y=245 附近
+    drawOne(ox + TILE_W / 2, oy + 246, F, v);
+    ctx.restore();
+    ctx.fillStyle = '#ffe9c0';
+    ctx.font = '600 13px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(v.name, ox + TILE_W / 2, oy + TILE_H + 22);
+  });
+  document.title = 'done';
+};
+
+function drawOne(cx, gy, F, v) {
+  const s = v.h / F.bbox.h;
+  const dx = -(F.bbox.x + F.bbox.w / 2) * s;
+  const dy = -(F.bbox.y + F.bbox.h) * s;
+
+  ctx.save();
+  const sh = ctx.createRadialGradient(cx, gy, 0, cx, gy, 26);
+  sh.addColorStop(0, 'rgba(0,0,0,.42)');
+  sh.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sh;
+  ctx.beginPath(); ctx.ellipse(cx, gy, 26, 7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(cx, gy);
+  ctx.imageSmoothingQuality = 'high';
+
+  if (v.glow) {
+    const g = ctx.createRadialGradient(0, -v.h * 0.5, 4, 0, -v.h * 0.5, v.h * 0.62);
+    g.addColorStop(0, 'rgba(255,214,170,0.20)');
+    g.addColorStop(0.55, 'rgba(255,170,140,0.08)');
+    g.addColorStop(1, 'rgba(255,170,140,0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(0, -v.h * 0.5, v.h * 0.62, v.h * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  if (v.halo) {
+    ctx.save();
+    ctx.globalAlpha = 0.42;
+    ctx.filter = 'blur(2.2px)';
+    const k = 1.075;
+    ctx.translate(-dx / 1, -dy / 1);
+    ctx.translate(dx + (F.bbox.w / 2) * s, dy + F.bbox.h * s);
+    ctx.scale(k, k);
+    ctx.translate(-(dx + (F.bbox.w / 2) * s), -(dy + F.bbox.h * s));
+    ctx.drawImage(tint(F.sil, '#140a18'), dx, dy, F.w * s, F.h * s);
+    ctx.restore();
+  }
+
+  if (v.rim) {
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(tint(F.sil, '#ffd9b0'), dx - 1.4, dy - 1.8, F.w * s, F.h * s);
+    ctx.restore();
+  }
+
+  ctx.globalAlpha = 1;
+  if (v.sat !== 1) ctx.filter = 'saturate(' + v.sat + ') contrast(1.04)';
+  ctx.drawImage(F.img, dx, dy, F.w * s, F.h * s);
+  ctx.filter = 'none';
+  ctx.restore();
+}
+
+const tintCache = new Map();
+function tint(silCanvas, color) {
+  const key = color + silCanvas.width;
+  if (tintCache.has(key)) return tintCache.get(key);
+  const c = document.createElement('canvas');
+  c.width = silCanvas.width; c.height = silCanvas.height;
+  const g = c.getContext('2d');
+  g.drawImage(silCanvas, 0, 0);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = color;
+  g.fillRect(0, 0, c.width, c.height);
+  tintCache.set(key, c);
+  return c;
+}
+
+main().catch((e) => { console.error(e); document.title = 'err:' + e.message; });
+</script>
+</body>
+</html>

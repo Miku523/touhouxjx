@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>shot</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+  iframe { position: fixed; inset: 0; width: 100vw; height: 100vh; border: 0; }
+</style>
+</head>
+<body>
+<iframe id="f" src="/index.html"></iframe>
+<script>
+  const q = new URLSearchParams(location.search);
+  const stage = parseInt(q.get('n') || '0', 10);
+  const hold = parseInt(q.get('hold') || '2500', 10);
+  const f = document.getElementById('f');
+  f.addEventListener('load', () => {
+    const w = f.contentWindow;
+    let tries = 0;
+    const boot = () => {
+      const g = w.__game;
+      if (!g) {
+        if (tries++ < 40) return setTimeout(boot, 120);
+        return;
+      }
+      try {
+        g.startStage(stage);
+        setTimeout(() => {
+          try {
+            if (g.dialogue) g.dialogue.close();
+            g.state = 'play';
+            if (g.dialogue) g.dialogue.active = false;
+            const d = w.document.getElementById('dialogue');
+            if (d) d.classList.add('hidden');
+            const ov = w.document.getElementById('overlay');
+            if (ov) ov.classList.add('hidden');
+          } catch (e) {}
+        }, 700);
+      } catch (e) {}
+    };
+    boot();
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,3792 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>《东方新纪行》场景预览 · 七套主题</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #07070c; color: #e8e2f0; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #241430 0%, rgba(7,7,12,0) 65%),
+      #07070c;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    padding: 18px 26px 10px;
+  }
+  header h1 {
+    font-size: 19px; font-weight: 600; letter-spacing: .06em; margin: 0;
+    background: linear-gradient(90deg, #ffb7d8, #c8b6ff 45%, #9fd8ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  header .sub { font-size: 12.5px; color: #8a8398; letter-spacing: .04em; }
+  header .spacer { flex: 1; }
+  .btn {
+    font: inherit; font-size: 12.5px; color: #d8d2e6; cursor: pointer;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.13);
+    border-radius: 999px; padding: 6px 14px; transition: all .18s;
+  }
+  .btn:hover { background: rgba(255,255,255,.11); border-color: rgba(255,255,255,.25); }
+  #fps { font-size: 12px; color: #7fd8a8; min-width: 74px; text-align: right; font-variant-numeric: tabular-nums; }
+  main { padding: 0 26px 30px; }
+  .frame {
+    border-radius: 16px; overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.09), 0 24px 70px rgba(0,0,0,.65);
+    background: #05050a;
+  }
+  canvas { display: block; width: 100%; height: auto; }
+  footer { padding: 0 26px 26px; font-size: 12px; color: #726b82; line-height: 1.9; }
+  footer b { color: #b9aecf; font-weight: 500; }
+  #zoomWrap {
+    position: fixed; inset: 0; z-index: 50; display: none;
+    background: rgba(4,3,8,.92);
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+    cursor: zoom-out; backdrop-filter: blur(3px);
+  }
+  #zoomWrap.on { display: flex; }
+  #zoom {
+    width: min(95vw, calc(92vh * 16 / 9)); height: auto;
+    border-radius: 10px; box-shadow: 0 0 0 1px rgba(255,255,255,.14), 0 30px 90px #000;
+  }
+  #zoomHint { font-size: 12px; color: #8f88a0; letter-spacing: .06em; }
+</style>
+</head>
+<body>
+<header>
+  <h1>《东方新纪行》场景预览</h1>
+  <span class="sub">七套主题 · 天空 / 三层视差 / 地形 / 环境粒子</span>
+  <span class="spacer"></span>
+  <span id="fps">-- fps</span>
+  <button class="btn" id="slow">慢动作</button>
+  <button class="btn" id="pause">暂停</button>
+</header>
+<main>
+  <div class="frame"><canvas id="sheet" width="1920" height="1080"></canvas></div>
+</main>
+<footer>
+  点击任意画格可全屏放大（1:1 逻辑分辨率 1280×720）看细节，点击任意处返回。
+  每个画格都是一次完整的渲染管线调用：<b>drawSky → drawParallax → drawTiles → drawAmbient</b>，
+  相机在关卡里缓慢横移，可观察视差与水面 / 粒子动画。本页内联了 <b>src/art/scenes.js</b> 的当前快照，因此可以直接双击打开。
+</footer>
+
+<div id="zoomWrap"><canvas id="zoom" width="1280" height="720"></canvas><div id="zoomHint">点击任意处返回</div></div>
+
+<script>
+/* ================================================================= */
+/*  以下为 src/art/scenes.js 内联快照（去掉模块语法，便于 file:// 打开） */
+/* ================================================================= */
+/**
+ * 场景美术：天空 / 三层视差 / 地形瓦片 / 环境粒子
+ * ------------------------------------------------------------------
+ * 《东方新纪行》—— 1280x720 逻辑分辨率，纯 Canvas2D 程序化矢量绘制，零依赖。
+ *
+ * 设计要点：
+ *  1. 七套主题共享同一套绘制骨架，每套有独立的天空渐变、天体、视差剪影、
+ *     地形配色与环境粒子，气质差异靠"配色 + 剪影元素 + 粒子行为"三者共同建立。
+ *  2. 所有粒子 / 视差元素都由下标哈希派生，纯确定性，绝不调用 Math.random，
+ *     所以暂停、回放、低帧率时都不会闪烁。
+ *  3. drawTiles 只遍历相机可见范围（约 42x24 个），单瓦片控制在 ~10 次路径操作内，
+ *     不使用 shadowBlur，也不在瓦片里创建渐变（渐变只出现在天空 / 视差层）。
+ *  4. 每个导出函数都在 save()/restore() 内完成，不污染调用方状态。
+ *
+ * 坐标：cam.x / cam.y 为相机左上角的世界坐标；屏幕坐标 = 世界坐标 - cam。
+ */
+
+const VIEW_W = 1280;
+const VIEW_H = 720;
+const T = 32;          // 与 level.js 保持一致（自包含，不 import）
+const TAU = Math.PI * 2;
+
+/* 瓦片类型（与 level.js 的常量数值一致） */
+const EMPTY = 0;
+const SOLID = 1;
+const GRASS = 2;
+const BRICK = 3;
+const PLATFORM = 4;
+const SPIKE = 5;
+const ICE = 6;
+const MUSHROOM = 7;
+const WATER = 8;
+const VINE = 9;
+
+/* ------------------------------------------------------------------ */
+/* 工具                                                                */
+/* ------------------------------------------------------------------ */
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/** 整数哈希 -> [0,1)：同一下标每帧结果完全一致 */
+function hash1(n) {
+  let x = n | 0;
+  x = Math.imul(x ^ 0x9e3779b9, 0x85ebca6b);
+  x ^= x >>> 13;
+  x = Math.imul(x, 0xc2b2ae35);
+  x ^= x >>> 16;
+  return (x >>> 0) / 4294967296;
+}
+
+/** 小型确定性随机数发生器（用于一次性生成剪影造型） */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hexToRgb(hex) {
+  let h = hex.charAt(0) === '#' ? hex.slice(1) : hex;
+  if (h.length === 3) {
+    h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  }
+  return [
+    parseInt(h.slice(0, 2), 16) || 0,
+    parseInt(h.slice(2, 4), 16) || 0,
+    parseInt(h.slice(4, 6), 16) || 0,
+  ];
+}
+
+const _mixCache = new Map();
+/** 两色线性混合，结果缓存（颜色计算量很小，但可以省点 GC） */
+function mix(a, b, t) {
+  const tt = clamp(t, 0, 1);
+  const key = a + '|' + b + '|' + tt.toFixed(3);
+  let v = _mixCache.get(key);
+  if (v) return v;
+  if (_mixCache.size > 900) _mixCache.clear();
+  const ca = hexToRgb(a);
+  const cb = hexToRgb(b);
+  const r = Math.round(lerp(ca[0], cb[0], tt));
+  const g = Math.round(lerp(ca[1], cb[1], tt));
+  const bl = Math.round(lerp(ca[2], cb[2], tt));
+  v = '#' + ((1 << 24) | (r << 16) | (g << 8) | bl).toString(16).slice(1);
+  _mixCache.set(key, v);
+  return v;
+}
+
+const _rgbaCache = new Map();
+/** hex + 透明度 -> rgba 字符串（带缓存） */
+function rgba(hex, a) {
+  const alpha = clamp(a, 0, 1);
+  const key = hex + '|' + alpha.toFixed(2);
+  let v = _rgbaCache.get(key);
+  if (v) return v;
+  if (_rgbaCache.size > 900) _rgbaCache.clear();
+  const c = hexToRgb(hex);
+  v = 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + alpha + ')';
+  _rgbaCache.set(key, v);
+  return v;
+}
+
+/**
+ * 柔光精灵：把径向渐变预先烘焙成小画布并按颜色缓存。
+ * 云、雾、辉光、萤火都复用它们，避免每帧创建大量渐变对象。
+ */
+const _glowCache = new Map();
+function glowSprite(color) {
+  if (typeof document === 'undefined') return null;
+  let c = _glowCache.get(color);
+  if (c) return c;
+  if (_glowCache.size > 24) _glowCache.clear();
+  const S = 128;
+  c = document.createElement('canvas');
+  c.width = S;
+  c.height = S;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  const grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  grd.addColorStop(0, rgba(color, 1));
+  grd.addColorStop(0.32, rgba(color, 0.5));
+  grd.addColorStop(0.68, rgba(color, 0.12));
+  grd.addColorStop(1, rgba(color, 0));
+  g.fillStyle = grd;
+  g.fillRect(0, 0, S, S);
+  _glowCache.set(color, c);
+  return c;
+}
+
+/** 画一团柔光。add=true 时用 lighter 叠加，适合月光 / 萤火 / 雾 */
+function glow(ctx, x, y, rx, ry, color, alpha, add) {
+  const sp = glowSprite(color);
+  if (!sp) return;
+  ctx.save();
+  if (add !== false) ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = clamp(alpha, 0, 1);
+  ctx.drawImage(sp, x - rx, y - ry, rx * 2, ry * 2);
+  ctx.restore();
+}
+
+/** 平滑折线（二次贝塞尔穿过中点），用于山脊 / 丘陵轮廓 */
+function traceSmooth(ctx, pts) {
+  const n = pts.length;
+  ctx.beginPath();
+  if (!n) return;
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  if (n === 2) {
+    ctx.lineTo(pts[1][0], pts[1][1]);
+    return;
+  }
+  for (let i = 1; i < n - 1; i++) {
+    const xc = (pts[i][0] + pts[i + 1][0]) * 0.5;
+    const yc = (pts[i][1] + pts[i + 1][1]) * 0.5;
+    ctx.quadraticCurveTo(pts[i][0], pts[i][1], xc, yc);
+  }
+  ctx.lineTo(pts[n - 1][0], pts[n - 1][1]);
+}
+
+/** 折线（保留硬角），用于尖峰、建筑 */
+function traceLine(ctx, pts) {
+  ctx.beginPath();
+  if (!pts.length) return;
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+}
+
+/**
+ * 把一条从左到右的天际线补成闭合多边形并做垂直渐变填充。
+ * @param {number} yTop 渐变起点
+ * @param {number} yBot 渐变终点（一般 760）
+ */
+function fillSkylineGrad(ctx, pts, yTop, yBot, cTop, cBot) {
+  if (pts.length < 2) return;
+  traceSmooth(ctx, pts);
+  const last = pts[pts.length - 1];
+  const first = pts[0];
+  ctx.lineTo(last[0], yBot);
+  ctx.lineTo(first[0], yBot);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(0, yTop, 0, yBot);
+  g.addColorStop(0, cTop);
+  g.addColorStop(1, cBot);
+  ctx.fillStyle = g;
+  ctx.fill();
+}
+
+/** 同上，但保留硬角（尖峰） */
+function fillPeaksGrad(ctx, pts, yTop, yBot, cTop, cBot) {
+  if (pts.length < 2) return;
+  traceLine(ctx, pts);
+  const last = pts[pts.length - 1];
+  const first = pts[0];
+  ctx.lineTo(last[0], yBot);
+  ctx.lineTo(first[0], yBot);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(0, yTop, 0, yBot);
+  g.addColorStop(0, cTop);
+  g.addColorStop(1, cBot);
+  ctx.fillStyle = g;
+  ctx.fill();
+}
+
+/** 平行重复绘制两遍（周期 >= 1280，两遍足够铺满屏幕） */
+function repeatX(period, ox, fn) {
+  fn(ox);
+  fn(ox + period);
+}
+
+/* ------------------------------------------------------------------ */
+/* 主题表                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 每套主题字段：
+ *   sky       天空三元渐变
+ *   accent    点缀色（花瓣 / 萤火 / 新月辉光等）
+ *   far/mid/near  三层视差基色
+ *   glow      天体与灯光辉光色
+ *   haze      低空雾气 / 地平线霞光
+ *   cloud     云带颜色
+ *   stars     星星数量（0 = 不画）
+ *   celestial 天体 { kind, x, y, r, color, core }
+ *   ground    草皮上的小点缀类型
+ *   tile      地形配色
+ */
+const THEMES = {
+  shrine: {
+    name: '博丽神社 · 黄昏樱',
+    sky: ['#150c22', '#3d1a3a', '#8a3a52'],
+    accent: '#ff9ecb',
+    far: '#241426',
+    mid: '#301a2c',
+    near: '#1a0e1c',
+    glow: '#ffb070',
+    haze: '#c4706c',
+    cloud: '#a85a62',
+    clouds: 7,
+    stars: 34,
+    celestial: { kind: 'sun', x: 962, y: 372, r: 78, color: '#ffb877', core: '#fff0cc' },
+    ground: 'petal',
+    tile: {
+      soil: '#4a3126', soilDark: '#2f1d16', soilLight: '#5f4332', pebble: '#7a5a45',
+      grass: '#81954a', grassDark: '#54632c', grassLight: '#b3c46a', grassTip: '#dbe08f',
+      brick: '#8a7264', brickDark: '#584438', brickLight: '#a8917e',
+      wood: '#8a5a3c', woodDark: '#553322', woodLight: '#b7845c',
+      ice: '#a9d6e0', iceLight: '#e8fbff', iceDark: '#6fa6b8',
+      water: '#537d99', waterLight: '#a8d8e8', waterDark: '#2f4a5e',
+      cap: '#d64a5a', capDark: '#8c2434', stem: '#e8dccb',
+      spike: '#c9b9a6', spikeDark: '#7e6c5e',
+      vine: '#3f5a34', leaf: '#7fa04e',
+    },
+  },
+
+  forest: {
+    name: '魔法森林 · 萤火夜雾',
+    sky: ['#050f0d', '#0b2019', '#1c3a2c'],
+    accent: '#d9f56e',
+    far: '#0a1a15',
+    mid: '#0c241c',
+    near: '#04100c',
+    glow: '#9fe86a',
+    haze: '#2f6b52',
+    cloud: '#173a2e',
+    clouds: 4,
+    stars: 120,
+    celestial: { kind: 'moon', x: 300, y: 132, r: 40, color: '#dff5c0', core: '#f6ffe8' },
+    ground: 'spore',
+    tile: {
+      soil: '#26301f', soilDark: '#151b11', soilLight: '#3a4630', pebble: '#556047',
+      grass: '#4f7a3a', grassDark: '#2e4a26', grassLight: '#7fae4e', grassTip: '#b6d96a',
+      brick: '#3c4638', brickDark: '#232b22', brickLight: '#56624f',
+      wood: '#4a3a28', woodDark: '#2a2016', woodLight: '#6d5638',
+      ice: '#8cc6bd', iceLight: '#d8f7ee', iceDark: '#4f8a84',
+      water: '#3f6b5e', waterLight: '#7fbcae', waterDark: '#244238',
+      cap: '#c0473f', capDark: '#7a2620', stem: '#d8cdb8',
+      spike: '#a8b09a', spikeDark: '#5f6a58',
+      vine: '#2f4a28', leaf: '#5c8a3a',
+    },
+  },
+
+  lake: {
+    name: '雾之湖 · 冰蓝晨曦',
+    sky: ['#0a1622', '#24445c', '#9fc3cf'],
+    accent: '#c6f2ff',
+    far: '#2c4557',
+    mid: '#1b3042',
+    near: '#0c1922',
+    glow: '#eaf9ff',
+    haze: '#a8cad6',
+    cloud: '#cfe6ec',
+    clouds: 6,
+    stars: 96,
+    celestial: { kind: 'moon', x: 942, y: 168, r: 62, color: '#eafcff', core: '#ffffff' },
+    ground: 'frost',
+    tile: {
+      soil: '#33454f', soilDark: '#1e2b31', soilLight: '#4a606c', pebble: '#6d8691',
+      grass: '#6f9a8e', grassDark: '#42655c', grassLight: '#a5c9bd', grassTip: '#d8f2e8',
+      brick: '#5a7080', brickDark: '#36474f', brickLight: '#7d94a4',
+      wood: '#6a5a4a', woodDark: '#40362c', woodLight: '#8d7862',
+      ice: '#bfe6f2', iceLight: '#f2fdff', iceDark: '#7fb3c6',
+      water: '#4c7f9c', waterLight: '#a9dcef', waterDark: '#2b4f66',
+      cap: '#c8556a', capDark: '#7d2c3d', stem: '#e6e2d8',
+      spike: '#c4d8de', spikeDark: '#78939e',
+      vine: '#33524a', leaf: '#6f9e88',
+    },
+  },
+
+  mountain: {
+    name: '妖怪之山 · 瀑布溪谷',
+    sky: ['#16222c', '#40596a', '#b9ced2'],
+    accent: '#d6ffe8',
+    far: '#4b6577',
+    mid: '#2b4149',
+    near: '#131f1e',
+    glow: '#fff3d8',
+    haze: '#a9c3c9',
+    cloud: '#e2eef0',
+    clouds: 9,
+    stars: 18,
+    celestial: { kind: 'sun', x: 318, y: 128, r: 52, color: '#fff0c4', core: '#ffffff' },
+    ground: 'moss',
+    tile: {
+      soil: '#3b4038', soilDark: '#24271f', soilLight: '#555c4f', pebble: '#79806e',
+      grass: '#617f4a', grassDark: '#3d5430', grassLight: '#8fb064', grassTip: '#cfe0a0',
+      brick: '#6a6a60', brickDark: '#42423b', brickLight: '#8d8d80',
+      wood: '#5f4a34', woodDark: '#392a1d', woodLight: '#82684a',
+      ice: '#c6e2ea', iceLight: '#f0fbff', iceDark: '#84a8b4',
+      water: '#52788a', waterLight: '#a5c9d6', waterDark: '#2f4d5c',
+      cap: '#b85048', capDark: '#732923', stem: '#ddd6c4',
+      spike: '#b6b6a6', spikeDark: '#6d6d60',
+      vine: '#3d5236', leaf: '#6f9150',
+    },
+  },
+
+  nether: {
+    name: '白玉楼 · 冥界花海',
+    sky: ['#0b0410', '#241032', '#582a5a'],
+    accent: '#ff7aa8',
+    far: '#2c1434',
+    mid: '#190b22',
+    near: '#08030e',
+    glow: '#efe2ff',
+    haze: '#8a5a9a',
+    cloud: '#5a3a6a',
+    clouds: 5,
+    stars: 90,
+    celestial: { kind: 'moon', x: 902, y: 176, r: 88, color: '#f2e6ff', core: '#fffaff' },
+    ground: 'soul',
+    tile: {
+      soil: '#2a1a2e', soilDark: '#180d1b', soilLight: '#3d2942', pebble: '#5a4160',
+      grass: '#6f4a72', grassDark: '#43294a', grassLight: '#9a6f9c', grassTip: '#d9a8d0',
+      brick: '#4a3350', brickDark: '#2c1d31', brickLight: '#6a4d72',
+      wood: '#4a2a38', woodDark: '#2a1520', woodLight: '#70445a',
+      ice: '#c9b8e8', iceLight: '#f0e8ff', iceDark: '#8a74ad',
+      water: '#4a3a6a', waterLight: '#9a86c9', waterDark: '#2a1b40',
+      cap: '#b03a5a', capDark: '#6a1c33', stem: '#e0d4dc',
+      spike: '#b9a8c6', spikeDark: '#6f5c80',
+      vine: '#3a2a48', leaf: '#7a5a8a',
+    },
+  },
+
+  moon: {
+    name: '月都 · 永远亭',
+    sky: ['#040814', '#0e1830', '#2b3a68'],
+    accent: '#eaf2ff',
+    far: '#3b4c7c',
+    mid: '#1f2b4d',
+    near: '#0a1024',
+    glow: '#fff6dc',
+    haze: '#8ea0cf',
+    cloud: '#8ea0cf',
+    clouds: 4,
+    stars: 150,
+    celestial: { kind: 'moon', x: 640, y: 196, r: 138, color: '#fffbe8', core: '#ffffff' },
+    ground: 'dew',
+    tile: {
+      soil: '#2c3448', soilDark: '#191e2b', soilLight: '#414c64', pebble: '#66738c',
+      grass: '#4f7a6a', grassDark: '#2f5045', grassLight: '#7fb09a', grassTip: '#c6ecd8',
+      brick: '#4c5a78', brickDark: '#2c374a', brickLight: '#6d7d9c',
+      wood: '#5a5040', woodDark: '#332d24', woodLight: '#7d7058',
+      ice: '#d4e8f5', iceLight: '#ffffff', iceDark: '#94b4cc',
+      water: '#4a6a9c', waterLight: '#a5c6ea', waterDark: '#2a3f63',
+      cap: '#b04a68', capDark: '#70283f', stem: '#e4e4e8',
+      spike: '#c8d2de', spikeDark: '#7a8898',
+      vine: '#384a3a', leaf: '#6f9a7a',
+    },
+  },
+
+  mansion: {
+    name: '红魔馆地下 · 血月水晶',
+    sky: ['#0e0308', '#2b0714', '#5e1024'],
+    accent: '#ff4a63',
+    far: '#2b0a18',
+    mid: '#1a0610',
+    near: '#090205',
+    glow: '#ff3148',
+    haze: '#7d1128',
+    cloud: '#5a1020',
+    clouds: 6,
+    stars: 42,
+    celestial: { kind: 'bloodmoon', x: 954, y: 186, r: 92, color: '#ff3a4e', core: '#ffd0c0' },
+    ground: 'ember',
+    tile: {
+      soil: '#3a2026', soilDark: '#211014', soilLight: '#54303a', pebble: '#78464e',
+      grass: '#7a2e3a', grassDark: '#4a1622', grassLight: '#a54a56', grassTip: '#d4808a',
+      brick: '#5a2a34', brickDark: '#351720', brickLight: '#7d3e4a',
+      wood: '#4a2830', woodDark: '#281218', woodLight: '#6e3f48',
+      ice: '#c8a8d8', iceLight: '#f4e6ff', iceDark: '#8a5f9c',
+      water: '#5c2a3f', waterLight: '#b05a76', waterDark: '#33131f',
+      cap: '#d63a4a', capDark: '#8a1622', stem: '#d8c8cc',
+      spike: '#b89aa2', spikeDark: '#6d4a52',
+      vine: '#3a1a24', leaf: '#7a2f3f',
+    },
+  },
+};
+
+const THEME_KEYS = Object.keys(THEMES);
+const DEFAULT_THEME = 'shrine';
+
+function themeKey(name) {
+  return THEMES[name] ? name : DEFAULT_THEME;
+}
+
+function themeOf(name) {
+  return THEMES[themeKey(name)] || THEMES[DEFAULT_THEME];
+}
+
+function camOf(cam) {
+  return cam && typeof cam.x === 'number'
+    ? cam
+    : { x: 0, y: 0 };
+}
+
+/* ------------------------------------------------------------------ */
+/* 天空：渐变 + 星空 + 天体 + 云带 + 地平线霞光                        */
+/* ------------------------------------------------------------------ */
+
+function drawStars(ctx, th, cam, t) {
+  const n = th.stars | 0;
+  if (n <= 0) return;
+  const starCol = mix('#ffffff', th.accent, 0.45);
+  const spanX = 1440;
+  const spanY = 470;
+  ctx.save();
+  for (let i = 0; i < n; i++) {
+    const hx = hash1(i * 733 + 17);
+    const hy = hash1(i * 977 + 53);
+    const hs = hash1(i * 131 + 7);
+    const size = 0.9 + hs * 1.7;
+    const tw = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t * (0.5 + hs * 1.6) + hx * TAU));
+    let x = (hx * spanX - cam.x * 0.015) % spanX;
+    if (x < 0) x += spanX;
+    x -= 80;
+    const y = 8 + hy * spanY;
+    ctx.globalAlpha = tw * 0.8;
+    ctx.fillStyle = starCol;
+    ctx.fillRect(x, y, size, size);
+  }
+  // 少量亮星带十字光芒
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 5; i++) {
+    const hx = hash1(i * 313 + 91);
+    const hy = hash1(i * 617 + 23);
+    let x = (hx * spanX - cam.x * 0.02) % spanX;
+    if (x < 0) x += spanX;
+    x -= 80;
+    const y = 20 + hy * 330;
+    const a = 0.4 + 0.35 * (0.5 + 0.5 * Math.sin(t * 1.1 + i));
+    ctx.globalAlpha = a * 0.5;
+    ctx.fillStyle = th.accent;
+    ctx.fillRect(x - 5, y, 10, 1);
+    ctx.fillRect(x, y - 5, 1, 10);
+  }
+  ctx.restore();
+}
+
+function drawCelestial(ctx, th, cam, t) {
+  const c = th.celestial;
+  if (!c) return;
+  const key = th === THEMES.mansion ? 'bloodmoon' : c.kind;
+  const x = c.x - cam.x * 0.016;
+  const y = c.y - cam.y * 0.02;
+  const r = c.r;
+
+  ctx.save();
+
+  // 大气辉光（远处光晕更大更淡）
+  glow(ctx, x, y, r * 4.6, r * 4.6, c.color, 0.16);
+  glow(ctx, x, y, r * 2.4, r * 2.4, c.color, 0.3);
+  glow(ctx, x, y, r * 1.35, r * 1.35, c.core || c.color, 0.42);
+
+  // 太阳：放射光束（两层，宽的做体积、窄的做方向）
+  if (key === 'sun') {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.042;
+    ctx.fillStyle = c.color;
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * TAU + t * 0.008 + 0.22;
+      const len = 460 + hash1(i * 37 + 5) * 420;
+      const wid = 0.014 + hash1(i * 11 + 2) * 0.014;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a - wid) * len, Math.sin(a - wid) * len);
+      ctx.lineTo(Math.cos(a + wid) * len, Math.sin(a + wid) * len);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 天体本体：一圈径向渐变让边缘柔和
+  const g = ctx.createRadialGradient(x - r * 0.34, y - r * 0.34, r * 0.08, x, y, r);
+  g.addColorStop(0, c.core || c.color);
+  g.addColorStop(0.62, c.color);
+  g.addColorStop(1, mix(c.color, th.sky[0], 0.35));
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, TAU);
+  ctx.fill();
+
+  if (key === 'moon' || key === 'bloodmoon') {
+    // 月海 / 环形山：用确定性哈希分布，血月更暗更碎
+    const maria = key === 'bloodmoon' ? 0.2 : 0.1;
+    const darkCol = key === 'bloodmoon' ? '#5a0a14' : mix(c.color, '#7a86b8', 0.5);
+    ctx.save();
+    ctx.globalAlpha = maria;
+    ctx.fillStyle = darkCol;
+    const craters = key === 'bloodmoon' ? 11 : 9;
+    for (let i = 0; i < craters; i++) {
+      const a = hash1(i * 97 + 5) * TAU;
+      const rr = Math.sqrt(hash1(i * 53 + 11)) * r * 0.74;
+      const cr = r * (0.06 + hash1(i * 31 + 7) * 0.13);
+      ctx.beginPath();
+      ctx.ellipse(
+        x + Math.cos(a) * rr,
+        y + Math.sin(a) * rr * 0.9,
+        cr * 1.15,
+        cr,
+        hash1(i * 13 + 3) * TAU,
+        0,
+        TAU
+      );
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 亮部边缘（月球受光的感觉）
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = c.core || '#ffffff';
+    ctx.lineWidth = Math.max(1.2, r * 0.02);
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.985, Math.PI * 0.95, Math.PI * 1.85);
+    ctx.stroke();
+    ctx.restore();
+
+    // 血月：低空暗云横切
+    if (key === 'bloodmoon') {
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = mix(th.sky[0], '#000000', 0.35);
+      for (let i = 0; i < 3; i++) {
+        const yy = y - r * 0.35 + i * r * 0.45;
+        ctx.beginPath();
+        ctx.ellipse(x + (i - 1) * r * 0.5, yy, r * 1.35, r * 0.13, -0.04, 0, TAU);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  // 雾气贴天体的底部（晨雾 / 云遮）
+  if (key === 'sun' || th === THEMES.lake) {
+    glow(ctx, x, y + r * 0.9, r * 2.8, r * 0.55, th.haze, 0.16, false);
+  }
+
+  ctx.restore();
+}
+
+function drawCloudBands(ctx, th, cam, t) {
+  const count = th.clouds | 0;
+  if (count <= 0) return;
+  const col = th.cloud;
+  for (let i = 0; i < count; i++) {
+    const hy = hash1(i * 211 + 31);
+    const hs = hash1(i * 97 + 3);
+    const baseX = hash1(i * 313 + 7) * 1700;
+    const drift = t * (5 + hy * 9) + i * 113;
+    const span = 1760;
+    let x = (baseX + drift - cam.x * 0.025) % span;
+    if (x < 0) x += span;
+    x -= 140;
+    const y = 70 + hy * 250;
+    // 横长的薄云：三层错位叠加，边缘由渐变自然柔化
+    const w = 300 + hs * 420;
+    const h = 9 + hy * 13;
+    glow(ctx, x, y, w, h, col, 0.05 + hs * 0.045, false);
+    glow(ctx, x + w * 0.3, y - 4, w * 0.5, h * 0.8, col, 0.035, false);
+    glow(ctx, x + w * 0.58, y + 3, w * 0.34, h * 0.7, col, 0.03, false);
+  }
+}
+
+function drawSky(ctx, theme, cam, t) {
+  if (!ctx) return;
+  const th = themeOf(theme);
+  const c = camOf(cam);
+  const time = typeof t === 'number' ? t : 0;
+
+  ctx.save();
+
+  // 天空渐变（微微随相机纵向偏移，产生"抬头 / 低头"感）
+  const shift = clamp(c.y * 0.06, -40, 40);
+  const g = ctx.createLinearGradient(0, -shift, 0, VIEW_H + shift);
+  g.addColorStop(0, th.sky[0]);
+  g.addColorStop(0.56, th.sky[1]);
+  g.addColorStop(1, th.sky[2]);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+  // 夜空的稀疏银河（用一条很淡的斜向柔光表示）
+  if (th.stars >= 80) {
+    glow(ctx, 700, 210, 760, 150, th.haze, 0.07, false);
+  }
+
+  drawStars(ctx, th, c, time);
+  drawCelestial(ctx, th, c, time);
+  drawCloudBands(ctx, th, c, time);
+
+  // 地平线霞光：把天空底部压暖 / 压冷，帮助远景衔接
+  const horizon = glowSprite(th.haze);
+  if (horizon) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.13;
+    ctx.drawImage(horizon, -160, VIEW_H - 330, VIEW_W + 320, 400);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+/* ------------------------------------------------------------------ */
+/* 视差剪影元素                                                        */
+/* ------------------------------------------------------------------ */
+
+function drawPine(ctx, x, baseY, h, w, color, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  for (let i = 0; i < 3; i++) {
+    const yy = baseY - i * h * 0.22;
+    const hh = h * (0.52 - i * 0.1);
+    const ww = w * (0.5 - i * 0.11);
+    ctx.moveTo(x, yy - hh);
+    ctx.lineTo(x - ww, yy);
+    ctx.lineTo(x + ww, yy);
+    ctx.closePath();
+  }
+  ctx.rect(x - 1.6, baseY - h * 0.26, 3.2, h * 0.26);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawCherry(ctx, x, baseY, h, seed, dark, rim) {
+  const r = mulberry32((seed * 1e9) | 0);
+  const trunkW = Math.max(3.5, h * 0.055);
+  const lean = (r() - 0.5) * h * 0.2;
+  const crownX = x + lean;
+  const crownY = baseY - h * 0.8;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // 主干：根部外扩，向上收细
+  ctx.fillStyle = dark;
+  ctx.beginPath();
+  ctx.moveTo(x - trunkW * 1.15, baseY + 2);
+  ctx.quadraticCurveTo(x - trunkW * 0.55 + lean * 0.4, baseY - h * 0.3, x + lean * 0.75 - trunkW * 0.4, baseY - h * 0.62);
+  ctx.lineTo(x + lean * 0.75 + trunkW * 0.36, baseY - h * 0.62);
+  ctx.quadraticCurveTo(x + trunkW * 0.6 + lean * 0.4, baseY - h * 0.3, x + trunkW * 1.2, baseY + 2);
+  ctx.closePath();
+  ctx.fill();
+
+  // 分枝：三股向花冠散开
+  ctx.strokeStyle = dark;
+  for (let i = 0; i < 3; i++) {
+    const dir = i === 1 ? 0 : i === 0 ? -1 : 1;
+    const spread = dir * h * (0.2 + r() * 0.1);
+    ctx.lineWidth = trunkW * (0.55 - i * 0.1);
+    ctx.beginPath();
+    ctx.moveTo(x + lean * 0.7, baseY - h * (0.5 + i * 0.05));
+    ctx.quadraticCurveTo(
+      x + lean * 0.85 + spread * 0.5,
+      baseY - h * 0.72,
+      crownX + spread,
+      crownY + h * (r() - 0.5) * 0.1
+    );
+    ctx.stroke();
+  }
+
+  // 花冠：两圈叠加的团块，外圈更小更碎，形成蓬松轮廓
+  const lobes = [
+    [0, 0, 0.3],
+    [-0.26, 0.045, 0.22],
+    [0.27, 0.035, 0.23],
+    [-0.13, -0.1, 0.2],
+    [0.14, -0.09, 0.19],
+    [-0.36, -0.03, 0.15],
+    [0.37, -0.02, 0.15],
+    [0, 0.09, 0.24],
+  ];
+  ctx.fillStyle = rim ? mix(dark, rim, 0.1) : dark;
+  ctx.beginPath();
+  for (const [ox, oy, rr] of lobes) {
+    const ex = crownX + ox * h * 1.02;
+    const ey = crownY + oy * h;
+    const er = h * rr;
+    ctx.moveTo(ex + er * 1.16, ey);
+    ctx.ellipse(ex, ey, er * 1.16, er * 0.78, (r() - 0.5) * 0.4, 0, TAU);
+  }
+  ctx.fill();
+
+  // 花冠上的碎花：让暗色团块读起来是"花"而不是"树"
+  if (rim) {
+    ctx.save();
+    ctx.fillStyle = rim;
+    ctx.globalAlpha = 0.34;
+    ctx.beginPath();
+    for (let i = 0; i < 30; i++) {
+      const a = r() * TAU;
+      const rad = Math.sqrt(r());
+      const ex = crownX + Math.cos(a) * rad * h * 0.36;
+      const ey = crownY + Math.sin(a) * rad * h * 0.2 - h * 0.02;
+      const rr = Math.max(1.3, h * 0.009 + r() * h * 0.008);
+      ctx.moveTo(ex + rr, ey);
+      ctx.arc(ex, ey, rr, 0, TAU);
+    }
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 花冠受光：沿花冠外缘的一圈粉色高光
+  if (rim) {
+    ctx.strokeStyle = rim;
+    ctx.globalAlpha = 0.3;
+    ctx.lineWidth = Math.max(1, h * 0.007);
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const [ox, oy, rr] = lobes[i];
+      const ex = crownX + ox * h * 1.02;
+      const ey = crownY + oy * h;
+      const er = h * rr;
+      ctx.moveTo(ex - er * 1.12, ey - er * 0.3);
+      ctx.ellipse(ex, ey, er * 1.16, er * 0.78, 0, Math.PI * 0.98, Math.PI * 1.94);
+    }
+    ctx.stroke();
+
+    // 花冠边缘的碎花点
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = rim;
+    ctx.beginPath();
+    for (let i = 0; i < 9; i++) {
+      const a = Math.PI * (1.04 + (i / 8) * 0.92);
+      const ex = crownX + Math.cos(a) * h * 0.34;
+      const ey = crownY + Math.sin(a) * h * 0.17;
+      const rr = Math.max(1.4, h * 0.012 + hash1(i * 13 + seed) * h * 0.008);
+      ctx.moveTo(ex + rr, ey);
+      ctx.arc(ex, ey, rr, 0, TAU);
+    }
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+function drawTorii(ctx, x, baseY, h, color, rim) {
+  const w = h * 0.66;
+  const top = baseY - h;
+  const postW = Math.max(2, w * 0.055);
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  // 左右两根内倾的柱子
+  for (let s = -1; s <= 1; s += 2) {
+    const bx = x + s * w * 0.34;
+    const tx = x + s * w * 0.27;
+    ctx.moveTo(bx - postW, baseY);
+    ctx.lineTo(bx + postW, baseY);
+    ctx.lineTo(tx + postW * 0.9, top + h * 0.3);
+    ctx.lineTo(tx - postW * 0.9, top + h * 0.3);
+    ctx.closePath();
+  }
+  // 笠木（顶部横梁，两端上翘）
+  ctx.moveTo(x - w * 0.56, top + h * 0.11);
+  ctx.quadraticCurveTo(x, top - h * 0.025, x + w * 0.56, top + h * 0.11);
+  ctx.lineTo(x + w * 0.5, top + h * 0.18);
+  ctx.quadraticCurveTo(x, top + h * 0.05, x - w * 0.5, top + h * 0.18);
+  ctx.closePath();
+  // 贯（第二道横梁）
+  ctx.rect(x - w * 0.45, top + h * 0.25, w * 0.9, h * 0.052);
+  // 额束
+  ctx.rect(x - w * 0.045, top + h * 0.18, w * 0.09, h * 0.1);
+  ctx.fill();
+
+  if (rim) {
+    ctx.strokeStyle = rim;
+    ctx.globalAlpha = 0.3;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x - w * 0.55, top + h * 0.115);
+    ctx.quadraticCurveTo(x, top - h * 0.018, x + w * 0.55, top + h * 0.115);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawPagoda(ctx, x, baseY, h, color, tiers, rim) {
+  const w = h * 0.52;
+  const n = tiers || 4;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const yy = baseY - (h * i) / n;
+    const k = 1 - i * 0.15;
+    const rw = w * k;
+    // 反翘的屋檐
+    ctx.moveTo(x - rw * 0.95, yy - h * 0.045);
+    ctx.quadraticCurveTo(x - rw * 0.5, yy - h * 0.14, x, yy - h * 0.155);
+    ctx.quadraticCurveTo(x + rw * 0.5, yy - h * 0.14, x + rw * 0.95, yy - h * 0.045);
+    ctx.lineTo(x + rw * 0.72, yy);
+    ctx.lineTo(x - rw * 0.72, yy);
+    ctx.closePath();
+    if (i < n - 1) ctx.rect(x - rw * 0.4, yy, rw * 0.8, h / n);
+  }
+  ctx.rect(x - 2, baseY - h - 13, 4, 15);
+  ctx.fill();
+
+  if (rim) {
+    ctx.strokeStyle = rim;
+    ctx.globalAlpha = 0.28;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const yy = baseY - (h * i) / n;
+      const rw = w * (1 - i * 0.15);
+      ctx.moveTo(x - rw * 0.92, yy - h * 0.05);
+      ctx.quadraticCurveTo(x - rw * 0.5, yy - h * 0.138, x, yy - h * 0.152);
+      ctx.quadraticCurveTo(x + rw * 0.5, yy - h * 0.138, x + rw * 0.92, yy - h * 0.05);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawBamboo(ctx, x, baseY, h, w, color, light, sway, seed) {
+  const r = mulberry32((seed * 1e9) | 0);
+  const topX = x + sway;
+  ctx.save();
+  ctx.lineCap = 'round';
+
+  // 竹竿：向上微微收细
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x - w * 0.5, baseY);
+  ctx.quadraticCurveTo(x - w * 0.44 + sway * 0.4, baseY - h * 0.52, topX - w * 0.28, baseY - h);
+  ctx.lineTo(topX + w * 0.28, baseY - h);
+  ctx.quadraticCurveTo(x + w * 0.44 + sway * 0.4, baseY - h * 0.52, x + w * 0.5, baseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // 圆柱体积：右半受光带 + 左缘暗边
+  ctx.strokeStyle = rgba(light, 0.2);
+  ctx.lineWidth = Math.max(2, w * 0.42);
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.16, baseY);
+  ctx.quadraticCurveTo(x + w * 0.14 + sway * 0.4, baseY - h * 0.52, topX + w * 0.1, baseY - h);
+  ctx.stroke();
+
+  ctx.strokeStyle = rgba('#000000', 0.22);
+  ctx.lineWidth = Math.max(1.4, w * 0.26);
+  ctx.beginPath();
+  ctx.moveTo(x - w * 0.34, baseY);
+  ctx.quadraticCurveTo(x - w * 0.3 + sway * 0.4, baseY - h * 0.52, topX - w * 0.2, baseY - h);
+  ctx.stroke();
+
+  // 竹节：暗环 + 亮环
+  ctx.strokeStyle = rgba('#000000', 0.24);
+  ctx.lineWidth = Math.max(1.2, w * 0.16);
+  ctx.beginPath();
+  for (let i = 1; i <= 6; i++) {
+    const u = i / 7;
+    const yy = baseY - h * u;
+    const xx = x + sway * u * u;
+    const ww = w * (0.46 - u * 0.14);
+    ctx.moveTo(xx - ww, yy);
+    ctx.lineTo(xx + ww, yy);
+  }
+  ctx.stroke();
+
+  ctx.strokeStyle = rgba(light, 0.4);
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let i = 1; i <= 6; i++) {
+    const u = i / 7;
+    const yy = baseY - h * u - 1.6;
+    const xx = x + sway * u * u;
+    const ww = w * (0.46 - u * 0.14);
+    ctx.moveTo(xx - ww * 0.9, yy);
+    ctx.lineTo(xx + ww * 0.9, yy);
+  }
+  ctx.stroke();
+
+  // 月光在竿右侧的受光边
+  ctx.strokeStyle = rgba(light, 0.62);
+  ctx.lineWidth = Math.max(1.2, w * 0.16);
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.44, baseY);
+  ctx.quadraticCurveTo(x + w * 0.4 + sway * 0.4, baseY - h * 0.52, topX + w * 0.25, baseY - h * 0.99);
+  ctx.stroke();
+
+  // 竹叶：只在顶部 1/3，三簇下垂的窄叶
+  ctx.fillStyle = light;
+  ctx.textAlign = 'left';
+  for (let c = 0; c < 3; c++) {
+    const u = 0.64 + c * 0.13;
+    const yy = baseY - h * u;
+    const xx = x + sway * u * u;
+    const dir = c % 2 ? 1 : -1;
+    ctx.globalAlpha = 0.4 + c * 0.08;
+    ctx.beginPath();
+    for (let k = 0; k < 5; k++) {
+      const L = (18 + r() * 22) * (1 - c * 0.1);
+      const droop = 0.2 + k * 0.075;
+      const by = yy - 5 + k * 3;
+      const bx = xx + dir * (2 + k * 2.2);
+      ctx.moveTo(bx, by);
+      ctx.quadraticCurveTo(
+        bx + dir * L * 0.5, by - L * 0.24,
+        bx + dir * L * 0.95, by + L * droop
+      );
+      ctx.quadraticCurveTo(
+        bx + dir * L * 0.46, by + L * (droop - 0.13),
+        bx, by
+      );
+      ctx.closePath();
+    }
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawDeadTree(ctx, x, baseY, h, seed, color) {
+  const r = mulberry32((seed * 1e9) | 0);
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  const grow = (bx, by, ang, len, wd, depth) => {
+    const ex = bx + Math.cos(ang) * len;
+    const ey = by + Math.sin(ang) * len;
+    ctx.lineWidth = Math.max(0.7, wd);
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.quadraticCurveTo(
+      bx + Math.cos(ang - 0.3) * len * 0.55,
+      by + Math.sin(ang - 0.3) * len * 0.55,
+      ex,
+      ey
+    );
+    ctx.stroke();
+    if (depth <= 0) return;
+    for (let i = 0; i < 2; i++) {
+      grow(
+        ex,
+        ey,
+        ang + (r() - 0.5) * 1.5,
+        len * (0.52 + r() * 0.18),
+        wd * 0.56,
+        depth - 1
+      );
+    }
+  };
+  grow(x, baseY, -Math.PI / 2 + (r() - 0.5) * 0.3, h * 0.44, Math.max(2, h * 0.055), 3);
+  ctx.restore();
+}
+
+function drawLantern(ctx, x, baseY, h, color, lightColor, t, phase) {
+  const w = h * 0.34;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.rect(x - w * 0.62, baseY - h * 0.1, w * 1.24, h * 0.1);
+  ctx.rect(x - w * 0.16, baseY - h * 0.5, w * 0.32, h * 0.42);
+  ctx.rect(x - w * 0.42, baseY - h * 0.78, w * 0.84, h * 0.29);
+  // 宝盖
+  ctx.moveTo(x - w * 0.78, baseY - h * 0.78);
+  ctx.lineTo(x, baseY - h);
+  ctx.lineTo(x + w * 0.78, baseY - h * 0.78);
+  ctx.lineTo(x + w * 0.52, baseY - h * 0.82);
+  ctx.lineTo(x - w * 0.52, baseY - h * 0.82);
+  ctx.closePath();
+  ctx.fill();
+
+  const flick = 0.78 + 0.22 * Math.sin(t * 5.2 + phase);
+  ctx.fillStyle = rgba(lightColor, 0.8 * flick);
+  ctx.fillRect(x - w * 0.26, baseY - h * 0.73, w * 0.52, h * 0.17);
+  glow(ctx, x, baseY - h * 0.65, w * 2.6, w * 2.2, lightColor, 0.28 * flick);
+  ctx.restore();
+}
+
+function drawReeds(ctx, x, baseY, h, color, headColor, t, phase) {
+  ctx.save();
+  const n = 7;
+  // 根部一小丛暗影，避免草茎从地面"插"出来
+  ctx.fillStyle = rgba(mix(color, '#000000', 0.35), 0.55);
+  ctx.beginPath();
+  ctx.ellipse(x, baseY - 2, h * 0.17, h * 0.045, 0, 0, TAU);
+  ctx.fill();
+
+  for (let i = 0; i < n; i++) {
+    const spread = (i / (n - 1) - 0.5) * h * 0.34 + (hash1(i * 31 + 7) - 0.5) * 5;
+    const bx = x + spread;
+    const bh = h * (0.52 + hash1(i * 41 + 3) * 0.62);
+    const sway = Math.sin(t * 0.7 + phase + i * 0.9) * (5 + i * 0.6);
+    const tipX = bx + sway + spread * 0.5;
+    const dark = i % 3 === 0;
+    ctx.strokeStyle = dark ? mix(color, '#000000', 0.34) : color;
+    ctx.lineWidth = 1.3 + hash1(i * 7 + 1) * 1.1;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(bx, baseY);
+    ctx.quadraticCurveTo(bx + sway * 0.35 + spread * 0.4, baseY - bh * 0.55, tipX, baseY - bh);
+    ctx.stroke();
+    // 芦苇穗
+    if (i % 2 === 0) {
+      ctx.fillStyle = headColor;
+      ctx.beginPath();
+      ctx.ellipse(tipX, baseY - bh - 2, 1.7 + i * 0.14, 5.5 + hash1(i * 13) * 3, sway * 0.02, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  // 几片弯垂的芦苇叶
+  ctx.strokeStyle = rgba(color, 0.85);
+  ctx.lineWidth = 1.6;
+  for (let k = 0; k < 3; k++) {
+    const side = k === 1 ? 0 : k === 0 ? -1 : 1;
+    const lx = x + side * h * 0.08;
+    const ly = baseY - h * (0.12 + hash1(k * 17) * 0.2);
+    ctx.beginPath();
+    ctx.moveTo(lx, ly);
+    ctx.quadraticCurveTo(
+      lx + side * h * 0.22, ly - h * 0.14,
+      lx + side * h * 0.3, ly + h * 0.02
+    );
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawCrystal(ctx, x, baseY, h, w, color, light) {
+  ctx.save();
+  const tipX = x + w * 0.06;
+  const tipY = baseY - h;
+
+  // 整体轮廓
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x - w * 0.5, baseY);
+  ctx.lineTo(x - w * 0.34, baseY - h * 0.42);
+  ctx.lineTo(tipX, tipY);
+  ctx.lineTo(x + w * 0.4, baseY - h * 0.36);
+  ctx.lineTo(x + w * 0.5, baseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // 背光面
+  ctx.fillStyle = mix(color, '#000000', 0.28);
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(x - w * 0.34, baseY - h * 0.42);
+  ctx.lineTo(x - w * 0.5, baseY);
+  ctx.lineTo(x + w * 0.02, baseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // 受光面
+  ctx.fillStyle = mix(color, light, 0.5);
+  ctx.globalAlpha = 0.55;
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(x + w * 0.4, baseY - h * 0.36);
+  ctx.lineTo(x + w * 0.5, baseY);
+  ctx.lineTo(x + w * 0.02, baseY);
+  ctx.closePath();
+  ctx.fill();
+
+  // 内部裂纹与尖端高光
+  ctx.globalAlpha = 0.4;
+  ctx.strokeStyle = light;
+  ctx.lineWidth = Math.max(0.7, w * 0.035);
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY + h * 0.08);
+  ctx.lineTo(x + w * 0.02, baseY - h * 0.01);
+  ctx.stroke();
+  ctx.globalAlpha = 0.75;
+  ctx.beginPath();
+  ctx.moveTo(tipX - w * 0.05, tipY + h * 0.12);
+  ctx.lineTo(tipX + w * 0.02, tipY + h * 0.03);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawRock(ctx, x, baseY, w, h, color) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x - w * 0.5, baseY);
+  ctx.quadraticCurveTo(x - w * 0.46, baseY - h * 0.75, x - w * 0.12, baseY - h);
+  ctx.quadraticCurveTo(x + w * 0.3, baseY - h * 0.9, x + w * 0.5, baseY - h * 0.3);
+  ctx.lineTo(x + w * 0.46, baseY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawFence(ctx, x, y, w, h, color, tipColor) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const bx = x + (i + 0.5) * (w / 6);
+    ctx.moveTo(bx, y);
+    ctx.lineTo(bx, y + h);
+    ctx.moveTo(bx, y);
+    ctx.lineTo(bx, y - h * 0.16);
+  }
+  ctx.stroke();
+  // 矛尖
+  ctx.fillStyle = tipColor;
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const bx = x + (i + 0.5) * (w / 6);
+    ctx.moveTo(bx, y - h * 0.3);
+    ctx.lineTo(bx - 3, y - h * 0.14);
+    ctx.lineTo(bx + 3, y - h * 0.14);
+    ctx.closePath();
+  }
+  ctx.fill();
+  // 横杆
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x, y + h * 0.18);
+  ctx.lineTo(x + w, y + h * 0.18);
+  ctx.moveTo(x, y + h * 0.72);
+  ctx.lineTo(x + w, y + h * 0.72);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** 中国 / 和风的宽檐殿宇（永远亭） */
+function drawShrineBuilding(ctx, x, baseY, h, color, rim, windowColor, t) {
+  const w = h * 1.9;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  // 殿身
+  ctx.rect(x - w * 0.42, baseY - h * 0.55, w * 0.84, h * 0.55);
+  // 二层屋檐
+  ctx.moveTo(x - w * 0.56, baseY - h * 0.56);
+  ctx.quadraticCurveTo(x - w * 0.3, baseY - h * 0.72, x, baseY - h * 0.75);
+  ctx.quadraticCurveTo(x + w * 0.3, baseY - h * 0.72, x + w * 0.56, baseY - h * 0.56);
+  ctx.lineTo(x + w * 0.46, baseY - h * 0.5);
+  ctx.lineTo(x - w * 0.46, baseY - h * 0.5);
+  ctx.closePath();
+  // 顶层大屋顶
+  ctx.moveTo(x - w * 0.62, baseY - h * 0.78);
+  ctx.quadraticCurveTo(x - w * 0.26, baseY - h * 0.98, x, baseY - h * 1.0);
+  ctx.quadraticCurveTo(x + w * 0.26, baseY - h * 0.98, x + w * 0.62, baseY - h * 0.78);
+  ctx.lineTo(x + w * 0.5, baseY - h * 0.7);
+  ctx.lineTo(x - w * 0.5, baseY - h * 0.7);
+  ctx.closePath();
+  ctx.fill();
+
+  if (rim) {
+    ctx.strokeStyle = rim;
+    ctx.globalAlpha = 0.3;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(x - w * 0.6, baseY - h * 0.785);
+    ctx.quadraticCurveTo(x - w * 0.26, baseY - h * 0.965, x, baseY - h * 1.0);
+    ctx.quadraticCurveTo(x + w * 0.26, baseY - h * 0.965, x + w * 0.6, baseY - h * 0.785);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  if (windowColor) {
+    const flick = 0.72 + 0.28 * Math.sin(t * 0.8);
+    ctx.fillStyle = rgba(windowColor, 0.55 * flick);
+    for (let i = 0; i < 4; i++) {
+      ctx.fillRect(x - w * 0.3 + i * w * 0.17, baseY - h * 0.4, w * 0.075, h * 0.16);
+    }
+  }
+  ctx.restore();
+}
+
+/** 哥特式宅邸（红魔馆） */
+function drawGothicMansion(ctx, x, baseY, h, color, rim, windowColor, t) {
+  const w = h * 1.05;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  // 主体
+  ctx.rect(x - w * 0.5, baseY - h * 0.52, w, h * 0.52);
+  // 中央高塔
+  ctx.moveTo(x - w * 0.15, baseY - h * 0.52);
+  ctx.lineTo(x - w * 0.15, baseY - h * 0.88);
+  ctx.lineTo(x, baseY - h * 1.06);
+  ctx.lineTo(x + w * 0.15, baseY - h * 0.88);
+  ctx.lineTo(x + w * 0.15, baseY - h * 0.52);
+  ctx.closePath();
+  // 两侧尖塔
+  for (let s = -1; s <= 1; s += 2) {
+    const tx = x + s * w * 0.36;
+    ctx.rect(tx - w * 0.08, baseY - h * 0.76, w * 0.16, h * 0.76);
+    ctx.moveTo(tx - w * 0.11, baseY - h * 0.76);
+    ctx.lineTo(tx, baseY - h * 1.0);
+    ctx.lineTo(tx + w * 0.11, baseY - h * 0.76);
+    ctx.closePath();
+  }
+  // 城垛
+  for (let i = 0; i < 5; i++) {
+    ctx.rect(x - w * 0.46 + i * w * 0.225, baseY - h * 0.6, w * 0.1, h * 0.08);
+  }
+  ctx.fill();
+
+  if (rim) {
+    ctx.strokeStyle = rim;
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x - w * 0.14, baseY - h * 0.88);
+    ctx.lineTo(x, baseY - h * 1.06);
+    ctx.lineTo(x + w * 0.14, baseY - h * 0.88);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  if (windowColor) {
+    const pulse = 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(t * 1.4));
+    ctx.fillStyle = rgba(windowColor, 0.6 * pulse);
+    for (let i = 0; i < 3; i++) {
+      const wx = x - w * 0.26 + i * w * 0.26;
+      ctx.beginPath();
+      ctx.moveTo(wx, baseY - h * 0.44);
+      ctx.lineTo(wx, baseY - h * 0.24);
+      ctx.lineTo(wx + w * 0.07, baseY - h * 0.24);
+      ctx.lineTo(wx + w * 0.07, baseY - h * 0.44);
+      ctx.closePath();
+      ctx.fill();
+    }
+    for (let s = -1; s <= 1; s += 2) {
+      const tx = x + s * w * 0.36;
+      ctx.fillRect(tx - w * 0.025, baseY - h * 0.66, w * 0.05, h * 0.07);
+    }
+    glow(ctx, x, baseY - h * 0.34, w * 0.9, h * 0.4, windowColor, 0.14 * pulse);
+  }
+  ctx.restore();
+}
+
+/** 前景草叶剪影带（沿着天际线随机长出） */
+function drawGrassSilhouette(ctx, pts, color, seed, count, maxH) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < count; i++) {
+    const u = hash1(seed + i * 31 + 7);
+    const idx = Math.min(pts.length - 1, Math.floor(u * (pts.length - 1)));
+    const a = pts[idx];
+    const b = pts[Math.min(pts.length - 1, idx + 1)];
+    const uu = u * (pts.length - 1) - idx;
+    const x = lerp(a[0], b[0], uu) + (hash1(seed + i * 17 + 3) - 0.5) * 18;
+    const y = lerp(a[1], b[1], uu) + 4;
+    const hh = 8 + hash1(seed + i * 53 + 11) * maxH;
+    const lean = (hash1(seed + i * 11 + 5) - 0.5) * 12;
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + lean * 0.4, y - hh * 0.6, x + lean, y - hh);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** 彼岸花剪影：细长花茎 + 反卷花瓣 + 长花丝 */
+function drawSpiderLily(ctx, x, baseY, h, petalCol, stemCol, t, phase) {
+  const sway = Math.sin(t * 0.8 + phase) * 3;
+  const tipX = x + sway;
+  const tipY = baseY - h;
+  const headR = Math.max(11, h * 0.2);
+
+  ctx.save();
+  ctx.lineCap = 'round';
+
+  // 花茎
+  ctx.strokeStyle = stemCol;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(x, baseY);
+  ctx.quadraticCurveTo(x + sway * 0.4, baseY - h * 0.55, tipX, tipY);
+  ctx.stroke();
+
+  // 花瓣（六枚反卷）
+  ctx.fillStyle = petalCol;
+  for (let i = 0; i < 6; i++) {
+    const a = (TAU * i) / 6 + phase * 0.3 + Math.sin(t * 0.7 + i) * 0.05;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.quadraticCurveTo(
+      tipX + ca * headR * 0.85,
+      tipY + sa * headR * 0.5,
+      tipX + ca * headR * 1.05,
+      tipY + sa * headR * 0.55 - headR * 0.35
+    );
+    ctx.quadraticCurveTo(
+      tipX + ca * headR * 0.5,
+      tipY + sa * headR * 0.24 + 1.5,
+      tipX,
+      tipY
+    );
+    ctx.fill();
+  }
+
+  // 花丝
+  ctx.strokeStyle = rgba(petalCol, 0.85);
+  ctx.lineWidth = 0.9;
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (TAU * i) / 6 + 0.42 + phase * 0.28;
+    ctx.moveTo(tipX, tipY);
+    ctx.quadraticCurveTo(
+      tipX + Math.cos(a) * headR * 0.9,
+      tipY + Math.sin(a) * headR * 0.45,
+      tipX + Math.cos(a) * headR * 1.55,
+      tipY + Math.sin(a) * headR * 0.75 + headR * 0.55
+    );
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ------------------------------------------------------------------ */
+/* 七套主题的三层视差                                                   */
+/* ------------------------------------------------------------------ */
+
+const PERIOD_FAR = 2400;
+const PERIOD_MID = 2000;
+const PERIOD_NEAR = 1600;
+
+const PARALLAX = {
+  shrine: {
+    far(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_FAR, ox, (x0) => {
+        // 最远一层：淡色起伏山脊
+        const farPts = [];
+        for (let i = 0; i <= 16; i++) {
+          const u = i / 16;
+          farPts.push([
+            x0 + u * PERIOD_FAR,
+            402 + oy - 74 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 0.6)) - 18 * Math.sin(TAU * 5 * u + 2.1),
+          ]);
+        }
+        fillSkylineGrad(
+          ctx, farPts, 300, 770,
+          mix(th.far, th.sky[2], 0.46),
+          mix(th.far, th.sky[2], 0.08)
+        );
+
+        // 稍近一层
+        const midPts = [];
+        for (let i = 0; i <= 16; i++) {
+          const u = i / 16;
+          midPts.push([
+            x0 + u * PERIOD_FAR,
+            452 + oy - 36 * (0.5 + 0.5 * Math.sin(TAU * 3 * u + 1.7)) - 12 * Math.sin(TAU * 7 * u + 0.4),
+          ]);
+        }
+        fillSkylineGrad(
+          ctx, midPts, 390, 770,
+          mix(th.far, th.sky[2], 0.2),
+          mix(th.far, '#000000', 0.12)
+        );
+
+        // 山脊上的小神社 + 鸟居剪影
+        const shrineCol = mix(th.far, '#000000', 0.3);
+        drawTorii(ctx, x0 + 430, 466 + oy, 46, shrineCol);
+        drawPagoda(ctx, x0 + 1480, 492 + oy, 58, shrineCol, 3);
+        drawTorii(ctx, x0 + 1870, 484 + oy, 38, shrineCol);
+        drawPine(ctx, x0 + 1010, 470 + oy, 50, 30, shrineCol);
+        drawPine(ctx, x0 + 1050, 474 + oy, 36, 22, shrineCol);
+
+        // 归鸟
+        ctx.save();
+        ctx.strokeStyle = rgba(mix(th.far, '#000000', 0.2), 0.5);
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        for (let i = 0; i < 4; i++) {
+          const bx = x0 + 260 + i * 52 + Math.sin(t * 0.5 + i) * 16;
+          const by = 216 + i * 13 + Math.cos(t * 0.42 + i * 1.7) * 7;
+          const s = 5 + (i % 2) * 2;
+          ctx.moveTo(bx - s, by);
+          ctx.quadraticCurveTo(bx - s * 0.45, by - s * 0.55, bx, by - s * 0.15);
+          ctx.quadraticCurveTo(bx + s * 0.45, by - s * 0.55, bx + s, by);
+        }
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      glow(ctx, 640, 458 + oy, 780, 130, th.haze, 0.12, false);
+    },
+
+    mid(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_MID, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 14; i++) {
+          const u = i / 14;
+          pts.push([
+            x0 + u * PERIOD_MID,
+            548 + oy - 32 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 0.9)) - 10 * Math.sin(TAU * 6 * u),
+          ]);
+        }
+        fillSkylineGrad(
+          ctx, pts, 470, 770,
+          mix(th.mid, th.sky[2], 0.13),
+          mix(th.mid, '#000000', 0.3)
+        );
+
+        // 樱树林
+        for (let i = 0; i < 7; i++) {
+          const px = x0 + 110 + i * 288 + hash1(i * 19 + 5) * 70;
+          const hh = 128 + hash1(i * 29 + 7) * 82;
+          drawCherry(
+            ctx, px, 566 + oy, hh, i * 3 + 1,
+            mix(th.mid, '#000000', 0.22),
+            mix(th.mid, th.accent, 0.3)
+          );
+        }
+
+        // 大鸟居
+        drawTorii(ctx, x0 + 1040, 594 + oy, 196, mix(th.mid, '#000000', 0.44), th.accent);
+
+        // 石灯笼
+        drawLantern(ctx, x0 + 420, 596 + oy, 90, mix(th.mid, '#000000', 0.5), th.glow, t, 0.4);
+        drawLantern(ctx, x0 + 1560, 600 + oy, 72, mix(th.mid, '#000000', 0.5), th.glow, t, 2.1);
+      });
+      glow(ctx, 320, 620 + oy, 560, 110, th.haze, 0.1, false);
+    },
+
+    near(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_NEAR, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 12; i++) {
+          const u = i / 12;
+          pts.push([
+            x0 + u * PERIOD_NEAR,
+            664 + oy - 20 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 2.2)) - 8 * Math.sin(TAU * 5 * u + 1),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 630, 780, mix(th.near, th.sky[2], 0.05), th.near);
+        drawGrassSilhouette(ctx, pts, th.near, 7, 26, 26);
+
+        // 从画面顶端垂下的樱花枝
+        const nearDark = mix(th.near, '#000000', 0.25);
+        ctx.save();
+        ctx.strokeStyle = nearDark;
+        ctx.lineCap = 'round';
+        ctx.lineWidth = 9;
+        ctx.beginPath();
+        ctx.moveTo(x0 + 20, -30);
+        ctx.quadraticCurveTo(x0 + 180, 40, x0 + 430, 108);
+        ctx.stroke();
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(x0 + 300, 62);
+        ctx.quadraticCurveTo(x0 + 360, 104, x0 + 420, 132);
+        ctx.moveTo(x0 + 190, 26);
+        ctx.quadraticCurveTo(x0 + 230, 62, x0 + 236, 100);
+        ctx.stroke();
+
+        // 花团：沿枝条挂下的几簇小花，每簇由多个圆瓣组成
+        const tuffBase = mix(th.near, th.accent, 0.3);
+        const tuffLit = mix(th.accent, '#ffffff', 0.25);
+        for (let c = 0; c < 5; c++) {
+          const u = 0.36 + c * 0.145;
+          const iu = 1 - u;
+          const bx = iu * iu * 20 + 2 * u * iu * 180 + u * u * 430;
+          const by = iu * iu * -30 + 2 * u * iu * 40 + u * u * 108;
+          const cx0 = x0 + bx;
+          const cy0 = by + 8 + hash1(c * 31 + 9) * 18;
+          ctx.save();
+          ctx.fillStyle = tuffBase;
+          ctx.beginPath();
+          for (let k = 0; k < 6; k++) {
+            const a = (k / 6) * TAU + c;
+            const rr = 5.5 + hash1(c * 17 + k * 23 + 1) * 4.5;
+            const ex = cx0 + Math.cos(a) * (7 + hash1(c * 7 + k) * 6);
+            const ey = cy0 + Math.sin(a) * (5 + hash1(c * 11 + k) * 4);
+            ctx.moveTo(ex + rr, ey);
+            ctx.arc(ex, ey, rr, 0, TAU);
+          }
+          ctx.fill();
+          // 受光的小亮点
+          ctx.fillStyle = tuffLit;
+          ctx.globalAlpha = 0.5;
+          ctx.beginPath();
+          for (let k = 0; k < 3; k++) {
+            const ex = cx0 - 6 + hash1(c * 41 + k * 13) * 16;
+            const ey = cy0 - 6 + hash1(c * 19 + k * 7) * 10;
+            const rr = 1.6 + hash1(c * 5 + k * 3) * 1.6;
+            ctx.moveTo(ex + rr, ey);
+            ctx.arc(ex, ey, rr, 0, TAU);
+          }
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.restore();
+
+        // 近景石灯笼
+        drawLantern(ctx, x0 + 1330, 716 + oy, 186, mix(th.near, '#000000', 0.3), th.glow, t, 1.3);
+      });
+    },
+  },
+
+  forest: {
+    far(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_FAR, ox, (x0) => {
+        // 针叶林山脊：一条贝塞尔天际线 + 连续小三角树
+        const pts = [];
+        for (let i = 0; i <= 18; i++) {
+          const u = i / 18;
+          pts.push([
+            x0 + u * PERIOD_FAR,
+            420 + oy - 40 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 1.2)) - 14 * Math.sin(TAU * 6 * u),
+          ]);
+        }
+        fillSkylineGrad(
+          ctx, pts, 340, 780,
+          mix(th.far, th.sky[2], 0.3),
+          mix(th.far, '#000000', 0.3)
+        );
+
+        // 树尖
+        ctx.save();
+        ctx.fillStyle = mix(th.far, th.sky[2], 0.12);
+        ctx.beginPath();
+        for (let i = 0; i < 46; i++) {
+          const bx = x0 + (i + 0.5) * (PERIOD_FAR / 46);
+          const bh = 26 + hash1(i * 37 + 9) * 66;
+          const bw = 11 + hash1(i * 19 + 3) * 14;
+          const by = 420 + oy - 4 - hash1(i * 71 + 5) * 26;
+          ctx.moveTo(bx, by - bh);
+          ctx.lineTo(bx - bw, by);
+          ctx.lineTo(bx + bw, by);
+          ctx.closePath();
+        }
+        ctx.fill();
+        ctx.restore();
+
+        // 极淡的月光树隙
+        glow(ctx, x0 + 620, 330 + oy, 180, 240, th.haze, 0.05);
+      });
+
+      glow(ctx, 640, 452 + oy, 820, 120, th.haze, 0.1, false);
+    },
+
+    mid(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_MID, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 14; i++) {
+          const u = i / 14;
+          pts.push([
+            x0 + u * PERIOD_MID,
+            572 + oy - 24 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 0.3)) - 8 * Math.sin(TAU * 5 * u),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 520, 780, mix(th.mid, th.sky[2], 0.1), mix(th.mid, '#000000', 0.35));
+
+        // 密林树干
+        for (let i = 0; i < 12; i++) {
+          const px = x0 + 60 + i * 168 + hash1(i * 23 + 3) * 40;
+          const hh = 300 + hash1(i * 41 + 7) * 180;
+          const lean = (hash1(i * 13 + 9) - 0.5) * 50;
+          const wd = 15 + hash1(i * 17 + 1) * 16;
+          const col = mix(th.mid, '#000000', 0.15 + (i % 3) * 0.06);
+          ctx.save();
+          ctx.fillStyle = col;
+          ctx.beginPath();
+          // 根部外扩、向上收细的树干
+          ctx.moveTo(px - wd * 1.25, 646 + oy);
+          ctx.quadraticCurveTo(px - wd * 0.75 + lean * 0.35, 520 + oy, px + lean - wd * 0.34, 150 + oy);
+          ctx.lineTo(px + lean + wd * 0.4, 150 + oy);
+          ctx.quadraticCurveTo(px + wd * 0.8 + lean * 0.35, 520 + oy, px + wd * 1.15, 646 + oy);
+          ctx.closePath();
+          ctx.fill();
+
+          // 板根
+          ctx.beginPath();
+          ctx.moveTo(px - wd * 1.25, 646 + oy);
+          ctx.lineTo(px - wd * 2.6, 648 + oy);
+          ctx.quadraticCurveTo(px - wd * 1.6, 620 + oy, px - wd * 0.9, 612 + oy);
+          ctx.closePath();
+          ctx.moveTo(px + wd * 1.15, 646 + oy);
+          ctx.lineTo(px + wd * 2.5, 649 + oy);
+          ctx.quadraticCurveTo(px + wd * 1.7, 620 + oy, px + wd * 1.0, 612 + oy);
+          ctx.closePath();
+          ctx.fill();
+
+          // 侧枝
+          ctx.strokeStyle = col;
+          ctx.lineCap = 'round';
+          for (let b = 0; b < 2; b++) {
+            const brY = 300 + hash1(i * 31 + b * 17 + 5) * 150 + oy;
+            const dir = (i + b) % 2 ? 1 : -1;
+            ctx.lineWidth = wd * (0.32 - b * 0.08);
+            ctx.beginPath();
+            ctx.moveTo(px + lean * 0.6, brY);
+            ctx.quadraticCurveTo(px + dir * 56, brY - 22, px + dir * 96, brY - 58);
+            ctx.stroke();
+          }
+          ctx.restore();
+
+          // 树冠
+          ctx.save();
+          ctx.fillStyle = rgba(mix(th.mid, '#000000', 0.28), 0.9);
+          ctx.beginPath();
+          const cy = 168 + oy + hash1(i * 29 + 7) * 76;
+          for (let k = 0; k < 4; k++) {
+            const ex = px + lean * 0.8 + (hash1(i * 7 + k * 13) - 0.5) * 150;
+            const ey = cy + (hash1(i * 11 + k * 17) - 0.5) * 60;
+            const er = 34 + hash1(i * 5 + k * 23) * 40;
+            ctx.moveTo(ex + er, ey);
+            ctx.ellipse(ex, ey, er * 1.15, er * 0.6, 0, 0, TAU);
+          }
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // 悬垂的藤蔓
+        ctx.save();
+        ctx.strokeStyle = mix(th.mid, th.accent, 0.12);
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        for (let i = 0; i < 8; i++) {
+          const px = x0 + 90 + i * 240 + hash1(i * 31 + 13) * 60;
+          const len = 80 + hash1(i * 19 + 5) * 130;
+          ctx.moveTo(px, 120 + oy);
+          ctx.quadraticCurveTo(px + 18, 120 + len * 0.55 + oy, px + 6, 120 + len + oy);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 发光小蘑菇
+        for (let i = 0; i < 4; i++) {
+          const px = x0 + 220 + i * 430;
+          const py = 604 + oy;
+          ctx.save();
+          ctx.fillStyle = rgba(th.accent, 0.5);
+          ctx.beginPath();
+          ctx.ellipse(px, py, 9, 4.5, 0, Math.PI, TAU);
+          ctx.fill();
+          glow(ctx, px, py - 2, 34, 26, th.accent, 0.3);
+          ctx.restore();
+        }
+      });
+
+      for (let i = 0; i < 3; i++) {
+        const fx = ((i * 640 + 200 - (ox * 0.35)) % (VIEW_W + 400)) - 200;
+        glow(ctx, fx, 600 + oy, 360, 90, th.haze, 0.1, false);
+      }
+    },
+
+    near(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_NEAR, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 12; i++) {
+          const u = i / 12;
+          pts.push([
+            x0 + u * PERIOD_NEAR,
+            676 + oy - 18 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 1.4)) - 9 * Math.sin(TAU * 5 * u),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 640, 780, mix(th.near, th.sky[2], 0.03), th.near);
+        drawGrassSilhouette(ctx, pts, th.near, 11, 30, 24);
+
+        // 左右两根巨大前景树干
+        const col = mix(th.near, '#000000', 0.35);
+        for (let s = 0; s < 2; s++) {
+          const px = x0 + (s === 0 ? 90 : 1470);
+          const wd = 44 + s * 12;
+          ctx.save();
+          ctx.fillStyle = col;
+          ctx.beginPath();
+          ctx.moveTo(px - wd * 0.5, 760);
+          ctx.quadraticCurveTo(px - wd * 0.7, 520 + oy, px - wd * 0.4, 220 + oy);
+          ctx.lineTo(px + wd * 0.35, 220 + oy);
+          ctx.quadraticCurveTo(px + wd * 0.62, 520 + oy, px + wd * 0.55, 760);
+          ctx.closePath();
+          ctx.fill();
+          // 树根
+          ctx.beginPath();
+          ctx.moveTo(px - wd * 0.5, 760);
+          ctx.quadraticCurveTo(px - wd * 1.6, 704, px - wd * 2.2, 760);
+          ctx.lineTo(px - wd * 0.4, 760);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // 蕨类 / 灌木
+        const fernCol = mix(th.near, '#000000', 0.2);
+        ctx.save();
+        ctx.strokeStyle = fernCol;
+        ctx.lineWidth = 2.2;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        for (let i = 0; i < 16; i++) {
+          const bx = x0 + 200 + i * 82 + hash1(i * 27 + 5) * 30;
+          const by = 700 + oy;
+          const hh = 30 + hash1(i * 41 + 11) * 50;
+          const dir = i % 2 ? 1 : -1;
+          ctx.moveTo(bx, by);
+          ctx.quadraticCurveTo(bx + dir * hh * 0.5, by - hh * 0.7, bx + dir * hh * 0.8, by - hh);
+          ctx.moveTo(bx, by);
+          ctx.quadraticCurveTo(bx - dir * hh * 0.4, by - hh * 0.6, bx - dir * hh * 0.6, by - hh * 0.95);
+        }
+        ctx.stroke();
+        ctx.restore();
+      });
+    },
+  },
+
+  lake: {
+    far(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_FAR, ox, (x0) => {
+        // 低缓的湖岸丘陵
+        const pts = [];
+        for (let i = 0; i <= 16; i++) {
+          const u = i / 16;
+          pts.push([
+            x0 + u * PERIOD_FAR,
+            430 + oy - 46 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 2.6)) - 14 * Math.sin(TAU * 4 * u + 0.8),
+          ]);
+        }
+        fillSkylineGrad(
+          ctx, pts, 360, 780,
+          mix(th.far, th.sky[2], 0.52),
+          mix(th.far, th.sky[2], 0.16)
+        );
+
+        // 更近一脉冷色丘陵
+        const pts2 = [];
+        for (let i = 0; i <= 16; i++) {
+          const u = i / 16;
+          pts2.push([
+            x0 + u * PERIOD_FAR,
+            470 + oy - 22 * (0.5 + 0.5 * Math.sin(TAU * 3 * u + 0.4)) - 8 * Math.sin(TAU * 7 * u),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts2, 430, 780, mix(th.far, th.sky[2], 0.24), mix(th.far, '#000000', 0.1));
+
+        // 湖心小岛与鸟居
+        const island = mix(th.far, '#000000', 0.22);
+        drawRock(ctx, x0 + 1160, 470 + oy, 150, 34, island);
+        drawTorii(ctx, x0 + 1150, 460 + oy, 58, island);
+
+        // 远处冷杉
+        for (let i = 0; i < 6; i++) {
+          const px = x0 + 260 + i * 360 + hash1(i * 13 + 3) * 90;
+          drawPine(ctx, px, 466 + oy, 54 + hash1(i * 7 + 1) * 34, 30, mix(th.far, '#000000', 0.16));
+        }
+      });
+
+      // 水面之上的晨雾
+      glow(ctx, 700, 470 + oy, 820, 90, th.haze, 0.14, false);
+    },
+
+    mid(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_MID, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 14; i++) {
+          const u = i / 14;
+          pts.push([
+            x0 + u * PERIOD_MID,
+            560 + oy - 20 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 1.1)) - 7 * Math.sin(TAU * 6 * u),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 510, 780, mix(th.mid, th.sky[2], 0.14), mix(th.mid, '#000000', 0.28));
+
+        // 岸边芦苇丛
+        for (let i = 0; i < 16; i++) {
+          const px = x0 + 40 + i * 124 + hash1(i * 31 + 5) * 40;
+          drawReeds(ctx, px, 590 + oy, 74 + hash1(i * 11 + 7) * 40, th.mid, mix(th.mid, th.accent, 0.4), t, i * 0.7);
+        }
+
+        // 冰蓝色的小树
+        for (let i = 0; i < 6; i++) {
+          const px = x0 + 170 + i * 330;
+          drawPine(ctx, px, 592 + oy, 92 + hash1(i * 17 + 9) * 60, 42, mix(th.mid, '#000000', 0.2));
+        }
+
+        // 漂在雾里的薄冰
+        ctx.save();
+        ctx.fillStyle = rgba(th.accent, 0.12);
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const px = x0 + 130 + i * 320;
+          const py = 618 + oy + Math.sin(t * 0.4 + i) * 2;
+          ctx.moveTo(px + 26, py);
+          ctx.ellipse(px, py, 26, 4.5, 0, 0, TAU);
+        }
+        ctx.fill();
+        ctx.restore();
+      });
+
+      // 缓慢漂移的雾带
+      for (let i = 0; i < 3; i++) {
+        const fx = ((i * 520 + 160 + t * (7 + i * 3) - ox * 0.4) % (VIEW_W + 500)) - 250;
+        glow(ctx, fx, 590 + oy, 400, 70, th.haze, 0.13, false);
+      }
+    },
+
+    near(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_NEAR, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 12; i++) {
+          const u = i / 12;
+          pts.push([
+            x0 + u * PERIOD_NEAR,
+            668 + oy - 24 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 0.2)) - 10 * Math.sin(TAU * 5 * u + 2),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 630, 780, mix(th.near, th.sky[2], 0.06), th.near);
+        drawGrassSilhouette(ctx, pts, th.near, 13, 24, 20);
+
+        // 前景冰岩
+        for (let i = 0; i < 5; i++) {
+          const px = x0 + 90 + i * 330 + hash1(i * 19 + 7) * 70;
+          drawRock(ctx, px, 716 + oy, 120 + hash1(i * 29 + 3) * 90, 60 + hash1(i * 7 + 5) * 50, mix(th.near, '#000000', 0.24));
+          // 冰棱高光
+          ctx.save();
+          ctx.fillStyle = rgba(th.accent, 0.22);
+          ctx.beginPath();
+          ctx.moveTo(px - 18, 700 + oy);
+          ctx.lineTo(px - 6, 660 + oy);
+          ctx.lineTo(px + 5, 700 + oy);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // 左下方近景芦苇
+        for (let i = 0; i < 5; i++) {
+          drawReeds(ctx, x0 + 90 + i * 26, 748, 90 + hash1(i * 13 + 3) * 40, th.near, mix(th.near, th.accent, 0.3), t, i);
+        }
+      });
+    },
+  },
+
+  mountain: {
+    far(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_FAR, ox, (x0) => {
+        const baseBack = 508 + oy;
+        const baseFront = 534 + oy;
+
+        const gBack = ctx.createLinearGradient(0, 150 + oy, 0, baseBack);
+        gBack.addColorStop(0, mix(th.far, th.sky[2], 0.7));
+        gBack.addColorStop(1, mix(th.far, th.sky[2], 0.34));
+        const gFront = ctx.createLinearGradient(0, 120 + oy, 0, baseFront);
+        gFront.addColorStop(0, mix(th.far, th.sky[2], 0.44));
+        gFront.addColorStop(1, mix(th.far, '#000000', 0.2));
+
+        const peakPts = (px, baseY, topY, halfW, seed) => {
+          const H = baseY - topY;
+          const jx = (k) => (hash1(seed * 31 + k * 7) - 0.5) * halfW * 0.05;
+          const jy = (k) => (hash1(seed * 17 + k * 11) - 0.5) * H * 0.035;
+          const left = [
+            [px - halfW, baseY],
+            [px - halfW * 0.74 + jx(1), topY + H * 0.74 + jy(1)],
+            [px - halfW * 0.47 + jx(2), topY + H * 0.47 + jy(2)],
+            [px - halfW * 0.22 + jx(3), topY + H * 0.22 + jy(3)],
+          ];
+          const right = [
+            [px + halfW * 0.24 + jx(4), topY + H * 0.24 + jy(4)],
+            [px + halfW * 0.5 + jx(5), topY + H * 0.5 + jy(5)],
+            [px + halfW * 0.78 + jx(6), topY + H * 0.78 + jy(6)],
+            [px + halfW, baseY],
+          ];
+          return { left, right, tip: [px + jx(7) * 0.4, topY], halfW, topY, H };
+        };
+
+        const drawPeak = (s, grad, snowAlpha) => {
+          ctx.save();
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.moveTo(s.left[0][0], s.left[0][1]);
+          for (let i = 1; i < s.left.length; i++) ctx.lineTo(s.left[i][0], s.left[i][1]);
+          ctx.lineTo(s.tip[0], s.tip[1]);
+          for (const p of s.right) ctx.lineTo(p[0], p[1]);
+          ctx.closePath();
+          ctx.fill();
+
+          // 背光面：右侧山体压暗，制造体积感
+          ctx.beginPath();
+          ctx.moveTo(s.tip[0], s.tip[1]);
+          for (const p of s.right) ctx.lineTo(p[0], p[1]);
+          ctx.lineTo(s.tip[0] + s.halfW * 0.06, s.left[0][1]);
+          ctx.closePath();
+          ctx.fillStyle = rgba('#04080e', snowAlpha > 0.6 ? 0.26 : 0.18);
+          ctx.fill();
+
+          // 迎光棱线
+          ctx.beginPath();
+          ctx.moveTo(s.tip[0], s.tip[1]);
+          for (let i = s.left.length - 1; i >= 1; i--) ctx.lineTo(s.left[i][0], s.left[i][1]);
+          ctx.strokeStyle = rgba('#eaf6ff', 0.16);
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          if (snowAlpha > 0) {
+            const tx = s.tip[0];
+            const ty = s.tip[1];
+            const H = s.H;
+            const cw = s.halfW * 0.36;
+            ctx.globalAlpha = snowAlpha;
+            ctx.fillStyle = mix(th.far, '#eef8fb', 0.62);
+            ctx.beginPath();
+            ctx.moveTo(tx, ty);
+            ctx.lineTo(tx + cw * 0.55, ty + H * 0.2);
+            ctx.lineTo(tx + cw, ty + H * 0.36);
+            ctx.lineTo(tx + cw * 0.58, ty + H * 0.32);
+            ctx.lineTo(tx + cw * 0.22, ty + H * 0.4);
+            ctx.lineTo(tx - cw * 0.16, ty + H * 0.31);
+            ctx.lineTo(tx - cw * 0.6, ty + H * 0.39);
+            ctx.lineTo(tx - cw, ty + H * 0.34);
+            ctx.lineTo(tx - cw * 0.55, ty + H * 0.19);
+            ctx.closePath();
+            ctx.fill();
+          }
+          ctx.restore();
+        };
+
+        const backPeaks = [
+          [0.02, 300, 175, 11], [0.16, 210, 250, 13], [0.3, 360, 190, 15],
+          [0.46, 250, 270, 17], [0.62, 330, 200, 19], [0.78, 230, 250, 21],
+          [0.92, 300, 180, 23],
+        ];
+        for (const p of backPeaks) {
+          drawPeak(peakPts(x0 + p[0] * PERIOD_FAR, baseBack, baseBack - p[1], p[2], p[3]), gBack, 0.4);
+        }
+
+        const frontPeaks = [
+          [0.07, 330, 260, 12], [0.28, 400, 300, 16], [0.52, 360, 280, 20],
+          [0.74, 300, 250, 24], [0.9, 260, 230, 26],
+        ];
+        for (const p of frontPeaks) {
+          drawPeak(peakPts(x0 + p[0] * PERIOD_FAR, baseFront, baseFront - p[1], p[2], p[3]), gFront, 0.92);
+        }
+
+        // 山腰云带
+        for (let i = 0; i < 4; i++) {
+          const cx0 = x0 + 180 + i * 560 + Math.sin(t * 0.12 + i) * 30;
+          glow(ctx, cx0, 400 + oy + i * 26, 300, 42, th.cloud, 0.16, false);
+        }
+      });
+    },
+
+    mid(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_MID, ox, (x0) => {
+        // 崖壁
+        const pts = [];
+        for (let i = 0; i <= 16; i++) {
+          const u = i / 16;
+          pts.push([
+            x0 + u * PERIOD_MID,
+            566 + oy - 26 * (0.5 + 0.5 * Math.sin(TAU * 3 * u + 0.7)) - 10 * Math.sin(TAU * 9 * u),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 500, 780, mix(th.mid, th.sky[2], 0.12), mix(th.mid, '#000000', 0.3));
+
+        // 崖壁纹理
+        ctx.save();
+        ctx.strokeStyle = rgba(mix(th.mid, '#000000', 0.4), 0.5);
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const px = x0 + i * 200 + 40;
+          ctx.moveTo(px, 590 + oy);
+          ctx.quadraticCurveTo(px + 20, 630 + oy, px - 4, 700 + oy);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 瀑布：从崖顶尖缺口垂落，越往下越宽、越碎
+        const wx = x0 + 1180;
+        const wy0 = 544 + oy;
+        const wy1 = 644 + oy;
+        const wTop = 18;
+        const wBot = 50;
+        const fallH = wy1 - wy0;
+        ctx.save();
+        ctx.lineCap = 'round';
+
+        // 崖壁缺口：上缘淡出，避免出现"画框"
+        const ng = ctx.createLinearGradient(0, wy0 - 70, 0, wy0 + 80);
+        ng.addColorStop(0, rgba('#08131a', 0));
+        ng.addColorStop(0.45, rgba('#08131a', 0.42));
+        ng.addColorStop(1, rgba('#08131a', 0.55));
+        ctx.fillStyle = ng;
+        ctx.beginPath();
+        ctx.moveTo(wx - wTop - 8, wy0 - 70);
+        ctx.lineTo(wx + wTop + 8, wy0 - 70);
+        ctx.quadraticCurveTo(wx + wBot + 20, wy0 + fallH * 0.55, wx + wBot + 10, wy1 + 4);
+        ctx.lineTo(wx - wBot - 10, wy1 + 4);
+        ctx.quadraticCurveTo(wx - wBot - 20, wy0 + fallH * 0.55, wx - wTop - 8, wy0 - 70);
+        ctx.closePath();
+        ctx.fill();
+
+        // 水幕：三层同形不同宽，形成纵向水流带；边缘带波浪抖动
+        const fallPath = (k) => {
+          const edge = (side, u) => {
+            const w = (wTop + (wBot - wTop) * u * u) * k;
+            const wob =
+              Math.sin(u * 7.4 + side * 1.9 + t * 0.9) * 2.4 * k +
+              Math.sin(u * 17.3 + side * 2.7) * 1.3 * k;
+            return [wx + side * (w + wob), wy0 + fallH * u];
+          };
+          ctx.beginPath();
+          ctx.moveTo(...edge(-1, 0));
+          for (let i = 1; i <= 8; i++) ctx.lineTo(...edge(-1, i / 8));
+          for (let i = 8; i >= 0; i--) ctx.lineTo(...edge(1, i / 8));
+          ctx.closePath();
+        };
+        const vg = ctx.createLinearGradient(0, wy0, 0, wy1);
+        vg.addColorStop(0, rgba('#ffffff', 0.08));
+        vg.addColorStop(0.08, rgba(th.accent, 0.5));
+        vg.addColorStop(0.6, rgba(th.accent, 0.36));
+        vg.addColorStop(1, rgba('#ffffff', 0.12));
+        ctx.fillStyle = vg;
+        fallPath(1);
+        ctx.fill();
+
+        ctx.fillStyle = rgba(th.accent, 0.2);
+        fallPath(0.72);
+        ctx.fill();
+
+        ctx.fillStyle = rgba('#ffffff', 0.16);
+        fallPath(0.4);
+        ctx.fill();
+
+        // 下落的水线：明确向下运动
+        ctx.strokeStyle = rgba('#ffffff', 0.46);
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        for (let i = 0; i < 16; i++) {
+          const sp = 0.5 + hash1(i * 19 + 5) * 0.34;
+          const u = (t * sp + hash1(i * 11 + 3)) % 1;
+          const w = wTop + (wBot - wTop) * u * u;
+          const px = wx + (hash1(i * 7 + 13) - 0.5) * w * 1.6;
+          const py = wy0 + u * fallH;
+          const len = 10 + hash1(i * 23 + 7) * 18;
+          const tilt = (hash1(i * 31 + 9) - 0.5) * 2.2;
+          ctx.moveTo(px, py);
+          ctx.quadraticCurveTo(px + tilt, py + len * 0.5, px + tilt * 1.4, py + len);
+        }
+        ctx.stroke();
+
+        // 落点：水花与雾
+        ctx.fillStyle = rgba('#ffffff', 0.32);
+        ctx.beginPath();
+        ctx.ellipse(wx, wy1 - 2, wBot * 0.95, 7, 0, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = rgba('#ffffff', 0.24);
+        ctx.beginPath();
+        ctx.ellipse(wx - wBot * 0.5, wy1 - 3, wBot * 0.42, 4.6, -0.18, 0, TAU);
+        ctx.ellipse(wx + wBot * 0.52, wy1 - 3, wBot * 0.4, 4.2, 0.2, 0, TAU);
+        ctx.fill();
+        // 溅起的小水珠
+        ctx.fillStyle = rgba('#ffffff', 0.6);
+        ctx.beginPath();
+        for (let i = 0; i < 9; i++) {
+          const ph = t * 2.1 + i * 1.7;
+          const bx = wx + (hash1(i * 29 + 1) - 0.5) * wBot * 1.7;
+          const by = wy1 - Math.abs(Math.sin(ph)) * (6 + hash1(i * 5) * 12);
+          ctx.moveTo(bx + 1.4, by);
+          ctx.arc(bx, by, 1.4, 0, TAU);
+        }
+        ctx.fill();
+        glow(ctx, wx, wy1 - 12, 140, 74, '#ffffff', 0.2);
+        glow(ctx, wx, wy1 - 34, 70, 52, th.accent, 0.22);
+        glow(ctx, wx, wy0 + 8, 46, 14, '#ffffff', 0.14);
+        ctx.restore();
+
+        // 崖上松树
+        for (let i = 0; i < 8; i++) {
+          const px = x0 + 90 + i * 240 + hash1(i * 31 + 3) * 80;
+          drawPine(ctx, px, 578 + oy, 60 + hash1(i * 13 + 7) * 60, 34, mix(th.mid, '#000000', 0.3));
+        }
+      });
+
+      // 谷底水汽
+      glow(ctx, 500, 680 + oy, 620, 90, th.haze, 0.13, false);
+      glow(ctx, 1120, 690 + oy, 480, 80, th.haze, 0.11, false);
+    },
+
+    near(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_NEAR, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 12; i++) {
+          const u = i / 12;
+          pts.push([
+            x0 + u * PERIOD_NEAR,
+            672 + oy - 30 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 2.8)) - 12 * Math.sin(TAU * 6 * u),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 620, 780, mix(th.near, th.sky[2], 0.04), th.near);
+        drawGrassSilhouette(ctx, pts, th.near, 17, 34, 28);
+
+        // 前景巨石
+        drawRock(ctx, x0 + 190, 748, 230, 90, mix(th.near, '#000000', 0.3));
+        drawRock(ctx, x0 + 1360, 752, 280, 110, mix(th.near, '#000000', 0.28));
+
+        // 左下角松枝
+        const col = mix(th.near, '#000000', 0.3);
+        ctx.save();
+        ctx.strokeStyle = col;
+        ctx.lineCap = 'round';
+        ctx.lineWidth = 10;
+        ctx.beginPath();
+        ctx.moveTo(x0 - 20, 60);
+        ctx.quadraticCurveTo(x0 + 140, 60, x0 + 300, 130);
+        ctx.stroke();
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const bx = x0 + 40 + i * 44;
+          const by = 66 + i * 11;
+          ctx.moveTo(bx, by);
+          ctx.lineTo(bx + 34, by + 16);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 松针团
+        ctx.save();
+        ctx.fillStyle = col;
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const bx = x0 + 90 + i * 52;
+          const by = 74 + i * 14;
+          ctx.moveTo(bx + 30, by);
+          ctx.ellipse(bx, by, 34, 12, -0.2, 0, TAU);
+        }
+        ctx.fill();
+        ctx.restore();
+      });
+    },
+  },
+
+  nether: {
+    far(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_FAR, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 16; i++) {
+          const u = i / 16;
+          pts.push([
+            x0 + u * PERIOD_FAR,
+            448 + oy - 42 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 0.2)) - 16 * Math.sin(TAU * 5 * u + 1.6),
+          ]);
+        }
+        fillSkylineGrad(
+          ctx, pts, 380, 780,
+          mix(th.far, th.sky[2], 0.34),
+          mix(th.far, '#000000', 0.22)
+        );
+
+        // 白玉楼：层叠的殿宇与五重塔
+        const col = mix(th.far, '#000000', 0.28);
+        drawShrineBuilding(ctx, x0 + 700, 486 + oy, 150, col, th.glow, th.glow, t);
+        drawPagoda(ctx, x0 + 1240, 488 + oy, 120, col, 4, th.glow);
+        drawTorii(ctx, x0 + 240, 474 + oy, 74, col);
+        drawDeadTree(ctx, x0 + 1600, 480 + oy, 130, 4, col);
+
+        // 飘浮的灵体光点
+        for (let i = 0; i < 5; i++) {
+          const px = x0 + 180 + i * 440 + Math.sin(t * 0.4 + i * 1.7) * 24;
+          const py = 300 + oy + hash1(i * 17 + 3) * 120 + Math.cos(t * 0.33 + i) * 12;
+          glow(ctx, px, py, 26, 26, th.glow, 0.24);
+          ctx.save();
+          ctx.fillStyle = rgba(th.glow, 0.5);
+          ctx.beginPath();
+          ctx.arc(px, py, 2.4, 0, TAU);
+          ctx.fill();
+          ctx.restore();
+        }
+      });
+
+      glow(ctx, 640, 470 + oy, 820, 110, th.haze, 0.12, false);
+    },
+
+    mid(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_MID, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 14; i++) {
+          const u = i / 14;
+          pts.push([
+            x0 + u * PERIOD_MID,
+            576 + oy - 24 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 1.9)) - 9 * Math.sin(TAU * 6 * u),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 520, 780, mix(th.mid, th.sky[2], 0.12), mix(th.mid, '#000000', 0.3));
+
+        // 枯树
+        for (let i = 0; i < 6; i++) {
+          const px = x0 + 120 + i * 340 + hash1(i * 31 + 5) * 90;
+          drawDeadTree(ctx, px, 600 + oy, 150 + hash1(i * 13 + 3) * 90, i * 7 + 2, mix(th.mid, '#000000', 0.24));
+        }
+
+        // 鸟居
+        drawTorii(ctx, x0 + 880, 610 + oy, 168, mix(th.mid, '#000000', 0.38), th.accent);
+
+        // 墓碑
+        ctx.save();
+        ctx.fillStyle = mix(th.mid, '#000000', 0.4);
+        ctx.beginPath();
+        for (let i = 0; i < 7; i++) {
+          const px = x0 + 400 + i * 150 + hash1(i * 17 + 9) * 40;
+          const hh = 20 + hash1(i * 11 + 5) * 18;
+          ctx.moveTo(px - 7, 604 + oy);
+          ctx.lineTo(px - 7, 604 + oy - hh);
+          ctx.quadraticCurveTo(px, 604 + oy - hh - 9, px + 7, 604 + oy - hh);
+          ctx.lineTo(px + 7, 604 + oy);
+          ctx.closePath();
+        }
+        ctx.fill();
+        ctx.restore();
+
+        // 地面薄雾
+        for (let i = 0; i < 3; i++) {
+          const fx = ((i * 700 + 200 + t * 5 - ox * 0.35) % (VIEW_W + 500)) - 250;
+          glow(ctx, fx, 620 + oy, 420, 70, th.haze, 0.12, false);
+        }
+      });
+    },
+
+    near(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_NEAR, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 12; i++) {
+          const u = i / 12;
+          pts.push([
+            x0 + u * PERIOD_NEAR,
+            682 + oy - 22 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 0.5)) - 9 * Math.sin(TAU * 5 * u + 2.4),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 650, 780, mix(th.near, th.sky[2], 0.02), th.near);
+        drawGrassSilhouette(ctx, pts, th.near, 23, 30, 22);
+
+        // 前景彼岸花
+        const petalCol = mix(th.accent, '#ffd0d8', 0.2);
+        const stemCol = mix(th.near, '#000000', 0.2);
+        for (let i = 0; i < 9; i++) {
+          const px = x0 + 80 + i * 180 + hash1(i * 37 + 7) * 50;
+          drawSpiderLily(ctx, px, 742 + oy, 90 + hash1(i * 19 + 3) * 50, petalCol, stemCol, t, i * 1.3);
+        }
+        // 花瓣的微光
+        glow(ctx, 500, 700 + oy, 420, 60, th.accent, 0.08);
+      });
+    },
+  },
+
+  moon: {
+    far(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_FAR, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 16; i++) {
+          const u = i / 16;
+          pts.push([
+            x0 + u * PERIOD_FAR,
+            456 + oy - 34 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 1.5)) - 12 * Math.sin(TAU * 4 * u + 0.3),
+          ]);
+        }
+        fillSkylineGrad(
+          ctx, pts, 390, 780,
+          mix(th.far, th.sky[2], 0.4),
+          mix(th.far, '#000000', 0.16)
+        );
+
+        // 永远亭：长殿 + 二层檐
+        drawShrineBuilding(ctx, x0 + 900, 480 + oy, 120, mix(th.far, '#000000', 0.22), th.accent, th.accent, t);
+        drawPagoda(ctx, x0 + 1720, 476 + oy, 70, mix(th.far, '#000000', 0.22), 3);
+        drawTorii(ctx, x0 + 320, 464 + oy, 60, mix(th.far, '#000000', 0.22));
+
+        // 远处的竹影
+        for (let i = 0; i < 12; i++) {
+          const px = x0 + 60 + i * 200 + hash1(i * 13 + 5) * 60;
+          drawBamboo(
+            ctx, px, 470 + oy, 90 + hash1(i * 7 + 3) * 70, 4,
+            mix(th.far, '#000000', 0.18), mix(th.far, th.accent, 0.2),
+            Math.sin(t * 0.35 + i) * 2, i * 3 + 1
+          );
+        }
+      });
+
+      // 月光薄雾
+      glow(ctx, 700, 470 + oy, 900, 100, th.haze, 0.1, false);
+    },
+
+    mid(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_MID, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 14; i++) {
+          const u = i / 14;
+          pts.push([
+            x0 + u * PERIOD_MID,
+            584 + oy - 20 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 2.4)) - 7 * Math.sin(TAU * 5 * u),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 540, 780, mix(th.mid, th.sky[2], 0.1), mix(th.mid, '#000000', 0.32));
+
+        // 竹林：成簇生长，避免排成栅栏
+        for (let i = 0; i < 9; i++) {
+          const px = x0 + 40 + i * 215 + hash1(i * 31 + 7) * 60;
+          const hh = 290 + hash1(i * 23 + 3) * 180;
+          const sway = Math.sin(t * 0.45 + i * 0.8) * (4 + hash1(i * 17 + 9) * 4);
+          const colA = i % 3 ? mix(th.mid, th.sky[2], 0.3) : mix(th.mid, th.sky[2], 0.42);
+          drawBamboo(
+            ctx, px, 620 + oy, hh, 7 + hash1(i * 11 + 1) * 4,
+            colA, mix(th.accent, '#ffffff', 0.35), sway, i * 5 + 3
+          );
+          if (i % 2 === 0) {
+            drawBamboo(
+              ctx, px + 16 + hash1(i * 7) * 14, 620 + oy, hh * 0.82, 5.2,
+              mix(th.mid, th.sky[2], 0.18), mix(th.accent, th.mid, 0.4),
+              sway * 0.7, i * 5 + 8
+            );
+          }
+        }
+      });
+
+      // 竹根处的微光
+      glow(ctx, 400, 630 + oy, 500, 70, th.haze, 0.08, false);
+      glow(ctx, 1000, 636 + oy, 460, 60, th.haze, 0.07, false);
+    },
+
+    near(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_NEAR, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 12; i++) {
+          const u = i / 12;
+          pts.push([
+            x0 + u * PERIOD_NEAR,
+            686 + oy - 18 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 1.2)) - 8 * Math.sin(TAU * 4 * u + 2),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 656, 780, mix(th.near, th.sky[2], 0.02), th.near);
+        drawGrassSilhouette(ctx, pts, th.near, 29, 26, 18);
+
+        // 前景粗竹（两三竿，做画框）
+        const col = mix(th.near, '#000000', 0.3);
+        const frame = [[120, 600, 17], [1420, 640, 13], [760, 560, 7]];
+        for (let i = 0; i < frame.length; i++) {
+          const [fx, fh, fw] = frame[i];
+          drawBamboo(
+            ctx, x0 + fx, 780, fh, fw, col, mix(th.near, th.accent, 0.3),
+            Math.sin(t * 0.35 + i * 2) * 3, i * 11 + 5
+          );
+        }
+
+        // 垂下来的竹叶（画面顶部）
+        ctx.save();
+        ctx.fillStyle = mix(th.near, th.accent, 0.1);
+        ctx.beginPath();
+        for (let i = 0; i < 8; i++) {
+          const bx = x0 + 60 + i * 90 + hash1(i * 13 + 3) * 40;
+          const by = -4 + hash1(i * 7 + 5) * 30;
+          const len = 46 + hash1(i * 17 + 9) * 60;
+          const dir = i % 2 ? 1 : -1;
+          ctx.moveTo(bx, by);
+          ctx.quadraticCurveTo(bx + dir * len * 0.6, by + 18, bx + dir * len, by + 30);
+          ctx.quadraticCurveTo(bx + dir * len * 0.5, by + 6, bx, by + 4);
+          ctx.closePath();
+        }
+        ctx.fill();
+        ctx.restore();
+      });
+    },
+  },
+
+  mansion: {
+    far(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_FAR, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 16; i++) {
+          const u = i / 16;
+          pts.push([
+            x0 + u * PERIOD_FAR,
+            462 + oy - 30 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 0.8)) - 12 * Math.sin(TAU * 5 * u + 1.2),
+          ]);
+        }
+        fillSkylineGrad(
+          ctx, pts, 390, 780,
+          mix(th.far, th.sky[2], 0.28),
+          mix(th.far, '#000000', 0.24)
+        );
+
+        // 红魔馆的尖塔群
+        const col = mix(th.far, '#000000', 0.3);
+        drawGothicMansion(ctx, x0 + 780, 486 + oy, 220, col, th.accent, th.accent, t);
+        drawGothicMansion(ctx, x0 + 1690, 492 + oy, 140, col, th.accent, th.accent, t + 1);
+        // 远处的尖塔
+        ctx.save();
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const px = x0 + 120 + i * 180;
+          const hh = 60 + hash1(i * 13 + 7) * 70;
+          ctx.moveTo(px, 466 + oy - hh);
+          ctx.lineTo(px - 14, 466 + oy);
+          ctx.lineTo(px + 14, 466 + oy);
+          ctx.closePath();
+        }
+        ctx.fill();
+        ctx.restore();
+
+        // 血月照在雾上的红光
+        glow(ctx, x0 + 780, 470 + oy, 380, 90, th.accent, 0.1);
+      });
+
+      glow(ctx, 640, 470 + oy, 820, 100, th.haze, 0.12, false);
+    },
+
+    mid(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_MID, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 16; i++) {
+          const u = i / 16;
+          pts.push([
+            x0 + u * PERIOD_MID,
+            586 + oy - 30 * (0.5 + 0.5 * Math.sin(TAU * 3 * u + 0.4)) - 12 * Math.sin(TAU * 8 * u + 1.8),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 520, 780, mix(th.mid, th.sky[2], 0.1), mix(th.mid, '#000000', 0.34));
+
+        // 水晶簇
+        for (let i = 0; i < 7; i++) {
+          const px = x0 + 130 + i * 290 + hash1(i * 19 + 3) * 70;
+          const hh = 70 + hash1(i * 31 + 5) * 130;
+          drawCrystal(
+            ctx, px, 606 + oy, hh, hh * 0.34,
+            mix(th.mid, '#7fe6e0', 0.22), mix(th.mid, '#c8fff8', 0.5)
+          );
+          // 水晶内芯的冷光
+          glow(ctx, px, 606 + oy - hh * 0.55, hh * 0.5, hh * 0.55, '#7fe6e0', 0.1);
+        }
+
+        // 铁栅栏
+        drawFence(ctx, x0 + 120, 640 + oy, 620, 54, mix(th.mid, '#000000', 0.35), mix(th.mid, th.accent, 0.3));
+        drawFence(ctx, x0 + 1180, 644 + oy, 500, 50, mix(th.mid, '#000000', 0.35), mix(th.mid, th.accent, 0.3));
+
+        // 地面红雾
+        for (let i = 0; i < 3; i++) {
+          const fx = ((i * 720 + 220 + t * 4 - ox * 0.35) % (VIEW_W + 500)) - 250;
+          glow(ctx, fx, 640 + oy, 420, 80, th.haze, 0.13, false);
+        }
+      });
+    },
+
+    near(ctx, th, ox, oy, t) {
+      repeatX(PERIOD_NEAR, ox, (x0) => {
+        const pts = [];
+        for (let i = 0; i <= 12; i++) {
+          const u = i / 12;
+          pts.push([
+            x0 + u * PERIOD_NEAR,
+            678 + oy - 26 * (0.5 + 0.5 * Math.sin(TAU * 2 * u + 0.9)) - 11 * Math.sin(TAU * 5 * u + 2.6),
+          ]);
+        }
+        fillSkylineGrad(ctx, pts, 640, 780, mix(th.near, th.sky[2], 0.03), th.near);
+
+        // 前景水晶巨簇
+        drawCrystal(ctx, x0 + 160, 760, 260, 86, mix(th.near, '#5a2a6a', 0.4), mix(th.near, '#7fe6e0', 0.35));
+        drawCrystal(ctx, x0 + 240, 768, 170, 62, mix(th.near, '#4a1a48', 0.4), mix(th.near, '#7fe6e0', 0.25));
+        drawCrystal(ctx, x0 + 1370, 768, 300, 96, mix(th.near, '#5a2a6a', 0.4), mix(th.near, '#7fe6e0', 0.35));
+
+        // 铁栅栏近景
+        drawFence(ctx, x0 + 520, 730, 480, 80, mix(th.near, '#000000', 0.4), mix(th.near, th.accent, 0.35));
+
+        // 地面残光
+        glow(ctx, x0 + 760, 740, 520, 60, th.accent, 0.08);
+        glow(ctx, x0 + 170, 700, 220, 220, '#7fe6e0', 0.06);
+      });
+    },
+  },
+};
+
+function drawParallax(ctx, theme, cam, t) {
+  if (!ctx) return;
+  const key = themeKey(theme);
+  const th = THEMES[key];
+  const c = camOf(cam);
+  const time = typeof t === 'number' ? t : 0;
+  const build = PARALLAX[key] || PARALLAX[DEFAULT_THEME];
+  if (!build) return;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const oxF = -((c.x * 0.08) % PERIOD_FAR);
+  const oxM = -((c.x * 0.22) % PERIOD_MID);
+  const oxN = -((c.x * 0.45) % PERIOD_NEAR);
+
+  build.far(ctx, th, oxF, -c.y * 0.03, time);
+  build.mid(ctx, th, oxM, -c.y * 0.06, time);
+  build.near(ctx, th, oxN, -c.y * 0.12, time);
+
+  ctx.restore();
+}
+
+/* ------------------------------------------------------------------ */
+/* 地形瓦片                                                            */
+/* ------------------------------------------------------------------ */
+
+function isSolidType(v) {
+  return v === SOLID || v === GRASS || v === BRICK || v === ICE || v === MUSHROOM || v === VINE;
+}
+
+function drawSoilBase(ctx, x, y, pal, cx, cy) {
+  // 底色由 drawTiles 的底色合并 pass 统一铺，这里只画纹理
+  // 分层纹理：两道随列相位错开的深色横纹
+  ctx.strokeStyle = pal.soilDark;
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < 2; i++) {
+    const yy = y + 11 + i * 11 + (hash1(cy * 17 + 3) - 0.5) * 3;
+    const ph = cx * 0.42 + i * 1.7;
+    ctx.moveTo(x, yy);
+    ctx.quadraticCurveTo(x + 9, yy - 2.5 + Math.sin(ph) * 1.6, x + 19, yy + 1);
+    ctx.quadraticCurveTo(x + 27, yy + 2.4, x + T, yy - 1.2);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // 小石子 / 暗块
+  const n = 2 + ((cx + cy) & 1);
+  for (let i = 0; i < n; i++) {
+    const hx = hash1(cx * 73 + cy * 151 + i * 37);
+    const hy = hash1(cx * 191 + cy * 41 + i * 83);
+    const px = x + 5 + hx * (T - 10);
+    const py = y + 6 + hy * (T - 12);
+    const rr = (i === 0 ? 2.2 : 1.5) + hash1(i * 11 + cx) * 1.6;
+    ctx.fillStyle = i === 0 ? rgba(pal.pebble, 0.45) : rgba(pal.soilLight, 0.55);
+    ctx.beginPath();
+    ctx.arc(px, py, rr, 0, TAU);
+    ctx.fill();
+  }
+}
+
+function drawGrass(ctx, x, y, pal, level, cx, cy, th) {
+  const above = level.tileAt(cx, cy - 1);
+  const openTop = !isSolidType(above);
+
+  drawSoilBase(ctx, x, y, pal, cx, cy);
+
+  if (!openTop) return;
+
+  // 草皮盖：上缘平齐瓦片顶，下缘不规则地压进泥土
+  ctx.fillStyle = pal.grass;
+  ctx.beginPath();
+  ctx.moveTo(x - 0.6, y + 9.5);
+  ctx.quadraticCurveTo(x + 7, y + 6.5, x + 15, y + 8.5);
+  ctx.quadraticCurveTo(x + 24, y + 10.5, x + T + 0.6, y + 7.5);
+  ctx.lineTo(x + T + 0.6, y - 2.5);
+  ctx.lineTo(x - 0.6, y - 2.5);
+  ctx.closePath();
+  ctx.fill();
+
+  // 顶部受光亮边
+  ctx.fillStyle = pal.grassLight;
+  ctx.beginPath();
+  ctx.moveTo(x - 0.6, y - 2.5);
+  ctx.lineTo(x + T + 0.6, y - 2.5);
+  ctx.lineTo(x + T + 0.6, y + 1.4);
+  ctx.quadraticCurveTo(x + 22, y + 3.4, x + 14, y + 2.2);
+  ctx.quadraticCurveTo(x + 7, y + 1.2, x - 0.6, y + 2.6);
+  ctx.closePath();
+  ctx.fill();
+
+  // 草叶：一条路径画 4 根，省路径操作
+  ctx.strokeStyle = pal.grassLight;
+  ctx.lineWidth = 1.6;
+  ctx.globalAlpha = 0.95;
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const bx = x + 3 + i * 7.6 + hash1(cx * 13 + i * 7) * 2.6;
+    const hh = 5 + hash1(cy * 7 + i * 11 + cx) * 8;
+    const lean = (hash1(cx * 5 + i * 3 + cy) - 0.5) * 7;
+    ctx.moveTo(bx, y + 1);
+    ctx.quadraticCurveTo(bx + lean * 0.35, y - hh * 0.62, bx + lean, y - hh);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // 草尖：更亮的短叶
+  ctx.strokeStyle = pal.grassTip;
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  for (let i = 0; i < 3; i++) {
+    const bx = x + 7 + i * 9 + hash1(cx * 11 + i * 13) * 3;
+    const hh = 3 + hash1(cy * 5 + i * 3) * 4;
+    const lean = (hash1(cx * 3 + i * 17) - 0.5) * 4;
+    ctx.moveTo(bx, y + 0.8);
+    ctx.quadraticCurveTo(bx + lean * 0.4, y - hh * 0.6, bx + lean, y - hh);
+  }
+  ctx.stroke();
+
+  // 主题小点缀
+  const accent = th.accent;
+  const g = th.ground;
+  ctx.globalAlpha = 0.7;
+  if (g === 'petal') {
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.ellipse(x + 9 + hash1(cx * 7) * 12, y + 2.4, 1.9, 1.1, -0.5, 0, TAU);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(x + 20 + hash1(cy * 9) * 6, y + 3.6, 1.6, 0.9, 0.4, 0, TAU);
+    ctx.fill();
+  } else if (g === 'frost') {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x + 6 + hash1(cx * 5) * 8, y + 1.2, 1.6, 1.2);
+    ctx.fillRect(x + 21 + hash1(cy * 7) * 6, y + 2.6, 1.3, 1);
+  } else if (g === 'soul') {
+    ctx.fillStyle = mix(accent, '#ffffff', 0.3);
+    ctx.beginPath();
+    ctx.arc(x + 12 + hash1(cx * 9) * 10, y + 1.6, 1.5, 0, TAU);
+    ctx.fill();
+  } else if (g === 'ember') {
+    ctx.fillStyle = accent;
+    ctx.fillRect(x + 8 + hash1(cx * 3) * 10, y + 2, 1.6, 1.6);
+    ctx.fillRect(x + 22 + hash1(cy * 5) * 5, y + 3.2, 1.3, 1.3);
+  } else if (g === 'spore') {
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(x + 10 + hash1(cx * 7) * 12, y + 2.6, 1.2, 0, TAU);
+    ctx.fill();
+  } else if (g === 'dew') {
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(x + 17 + hash1(cx * 11) * 9, y + 2.8, 1.1, 0, TAU);
+    ctx.fill();
+  } else if (g === 'moss') {
+    ctx.fillStyle = mix(pal.grass, '#ffffff', 0.18);
+    ctx.fillRect(x + 7 + hash1(cx * 5) * 9, y + 2.2, 2.4, 1.4);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBrick(ctx, x, y, pal, cx, cy, level) {
+  ctx.fillStyle = pal.brickDark;
+  ctx.fillRect(x, y, T, T);
+
+  const rowH = 8;
+  for (let r = 0; r < 4; r++) {
+    const yy = y + r * rowH;
+    const off = (r & 1) ? -8 : 0;
+    for (let c = 0; c < 3; c++) {
+      const bx = x + off + c * 16 + 1;
+      const bw = 14;
+      if (bx + bw < x || bx > x + T) continue;
+      const left = Math.max(bx, x + 1);
+      const right = Math.min(bx + bw, x + T - 1);
+      if (right - left < 2) continue;
+      ctx.fillStyle = pal.brick;
+      ctx.fillRect(left, yy + 1, right - left, rowH - 2);
+      // 顶部高光
+      ctx.fillStyle = rgba(pal.brickLight, 0.35);
+      ctx.fillRect(left, yy + 1, right - left, 1);
+    }
+  }
+
+  // 顶部若暴露在空气里，加一条更亮的口沿
+  if (!isSolidType(level.tileAt(cx, cy - 1))) {
+    ctx.fillStyle = rgba(pal.brickLight, 0.5);
+    ctx.fillRect(x, y, T, 2);
+  }
+
+  // 偶尔一道裂纹
+  if (hash1(cx * 71 + cy * 37) > 0.62) {
+    ctx.strokeStyle = rgba(pal.brickDark, 0.7);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const sx = x + 6 + hash1(cx * 13 + cy) * 20;
+    ctx.moveTo(sx, y);
+    ctx.lineTo(sx + 3, y + 8);
+    ctx.lineTo(sx - 1, y + 15);
+    ctx.stroke();
+  }
+}
+
+function drawPlatform(ctx, x, y, pal, cx, cy) {
+  // 薄板只占上半部分，下面留空
+  ctx.fillStyle = pal.wood;
+  ctx.fillRect(x, y + 1, T, 9);
+  // 顶面高光
+  ctx.fillStyle = pal.woodLight;
+  ctx.fillRect(x, y + 1, T, 2.2);
+  // 底部投影
+  ctx.fillStyle = rgba(pal.woodDark, 0.75);
+  ctx.fillRect(x, y + 8.4, T, 2.2);
+
+  // 木纹
+  ctx.strokeStyle = rgba(pal.woodDark, 0.6);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i < 2; i++) {
+    const yy = y + 4.4 + i * 2.4;
+    const ph = (cx * 1.3 + i * 2 + cy) % 8;
+    ctx.moveTo(x, yy);
+    ctx.quadraticCurveTo(x + 8 + ph, yy - 1.2, x + 18, yy + 0.6);
+    ctx.quadraticCurveTo(x + 26, yy + 1.4, x + T, yy - 0.4);
+  }
+  ctx.stroke();
+
+  // 两端暗头 + 铆钉
+  ctx.fillStyle = rgba(pal.woodDark, 0.9);
+  ctx.fillRect(x, y + 1, 2.4, 9);
+  ctx.fillRect(x + T - 2.4, y + 1, 2.4, 9);
+  ctx.fillStyle = rgba(pal.woodLight, 0.55);
+  ctx.fillRect(x + 5, y + 5.2, 1.6, 1.6);
+  ctx.fillRect(x + T - 6.6, y + 5.2, 1.6, 1.6);
+}
+
+function drawSpike(ctx, x, y, pal, cx) {
+  const baseY = y + T - 2;
+  const n = 3;
+  const w = T / n;
+  ctx.save();
+  for (let i = 0; i < n; i++) {
+    const sx = x + i * w;
+    const tipX = sx + w * 0.5;
+    const hh = 18 + hash1(cx * 17 + i * 7) * 10;
+    // 暗面
+    ctx.fillStyle = pal.spikeDark;
+    ctx.beginPath();
+    ctx.moveTo(tipX, baseY - hh);
+    ctx.lineTo(sx + w * 0.86, baseY);
+    ctx.lineTo(tipX, baseY);
+    ctx.closePath();
+    ctx.fill();
+    // 亮面
+    ctx.fillStyle = pal.spike;
+    ctx.beginPath();
+    ctx.moveTo(tipX, baseY - hh);
+    ctx.lineTo(sx + w * 0.08, baseY);
+    ctx.lineTo(tipX, baseY);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // 底部阴影
+  ctx.fillStyle = rgba(pal.spikeDark, 0.55);
+  ctx.fillRect(x, y + T - 2.5, T, 2.5);
+  ctx.restore();
+}
+
+function drawIce(ctx, x, y, pal, cx, cy, t, level) {
+  ctx.save();
+  const above = level ? level.tileAt(cx, cy - 1) : 0;
+  const below = level ? level.tileAt(cx, cy + 1) : 0;
+  const left = level ? level.tileAt(cx - 1, cy) : 0;
+  const right = level ? level.tileAt(cx + 1, cy) : 0;
+
+  // 冰体：半透明底 + 上下明暗，营造厚度
+  ctx.fillStyle = rgba(pal.ice, 0.86);
+  ctx.fillRect(x, y, T, T);
+  ctx.fillStyle = rgba(pal.iceLight, 0.14);
+  ctx.fillRect(x, y, T, T * 0.42);
+  ctx.fillStyle = rgba(pal.iceDark, 0.24);
+  ctx.fillRect(x, y + T * 0.58, T, T * 0.42);
+
+  // 冰体内部：半透明斜向条带
+  ctx.fillStyle = rgba(pal.iceLight, 0.22);
+  ctx.beginPath();
+  ctx.moveTo(x + 3, y + T);
+  ctx.lineTo(x + 13, y);
+  ctx.lineTo(x + 20, y);
+  ctx.lineTo(x + 8, y + T);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x + 19, y + T);
+  ctx.lineTo(x + 29, y);
+  ctx.lineTo(x + 34, y);
+  ctx.lineTo(x + 24, y + T);
+  ctx.closePath();
+  ctx.fill();
+
+  // 表面高光条纹 + 裂纹
+  ctx.strokeStyle = rgba('#ffffff', 0.42);
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  const ph = cx * 1.7 + cy * 0.6;
+  ctx.moveTo(x + 5, y + 8 + Math.sin(ph) * 2);
+  ctx.lineTo(x + 13, y + 2);
+  ctx.moveTo(x + 18, y + 14);
+  ctx.lineTo(x + 27, y + 4);
+  ctx.stroke();
+
+  ctx.strokeStyle = rgba(pal.iceDark, 0.4);
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  ctx.moveTo(x + 24, y + 9);
+  ctx.lineTo(x + 20, y + 17);
+  ctx.lineTo(x + 26, y + 24);
+  ctx.stroke();
+
+  // 只描外轮廓：相邻冰砖之间不留缝，整片读成一块冰面
+  if (above !== ICE) {
+    ctx.fillStyle = rgba('#ffffff', 0.55);
+    ctx.fillRect(x, y, T, 2);
+  }
+  if (below !== ICE) {
+    ctx.fillStyle = rgba(pal.iceDark, 0.5);
+    ctx.fillRect(x, y + T - 3, T, 3);
+  }
+  if (left !== ICE) {
+    ctx.fillStyle = rgba('#ffffff', 0.24);
+    ctx.fillRect(x, y, 2, T);
+  }
+  if (right !== ICE) {
+    ctx.fillStyle = rgba(pal.iceDark, 0.34);
+    ctx.fillRect(x + T - 2, y, 2, T);
+  }
+  ctx.restore();
+}
+
+function drawMushroom(ctx, x, y, pal, cx, cy, t) {
+  const squash = Math.sin(t * 3 + cx * 0.9 + cy * 0.4) * 0.9;
+  const capY = y + 13 + squash;
+  ctx.save();
+  // 茎
+  ctx.fillStyle = pal.stem;
+  ctx.beginPath();
+  ctx.moveTo(x + 11, y + T);
+  ctx.lineTo(x + 12.5, capY);
+  ctx.lineTo(x + 19.5, capY);
+  ctx.lineTo(x + 21, y + T);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = rgba(pal.capDark, 0.35);
+  ctx.fillRect(x + 12, y + T - 4, 8, 4);
+
+  // 伞盖
+  ctx.fillStyle = pal.cap;
+  ctx.beginPath();
+  ctx.moveTo(x + 2.5, capY + 2);
+  ctx.quadraticCurveTo(x + 4, capY - 11, x + 16, capY - 12.5);
+  ctx.quadraticCurveTo(x + 28, capY - 11, x + 29.5, capY + 2);
+  ctx.quadraticCurveTo(x + 16, capY + 6.5, x + 2.5, capY + 2);
+  ctx.closePath();
+  ctx.fill();
+
+  // 伞底暗边
+  ctx.fillStyle = rgba(pal.capDark, 0.85);
+  ctx.beginPath();
+  ctx.moveTo(x + 2.5, capY + 2);
+  ctx.quadraticCurveTo(x + 16, capY + 6.5, x + 29.5, capY + 2);
+  ctx.quadraticCurveTo(x + 16, capY + 8.5, x + 2.5, capY + 2);
+  ctx.closePath();
+  ctx.fill();
+
+  // 白斑点
+  ctx.fillStyle = rgba('#fff6ec', 0.95);
+  ctx.beginPath();
+  ctx.arc(x + 10, capY - 4.5, 2.1, 0, TAU);
+  ctx.moveTo(x + 21, capY - 1.5);
+  ctx.arc(x + 19.5, capY - 2, 1.6, 0, TAU);
+  ctx.moveTo(x + 25.5, capY - 3.5);
+  ctx.arc(x + 24.5, capY - 4, 1.2, 0, TAU);
+  ctx.fill();
+
+  // 顶部亮边
+  ctx.strokeStyle = rgba('#ffffff', 0.35);
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(x + 6, capY - 5.5);
+  ctx.quadraticCurveTo(x + 13, capY - 10.5, x + 20, capY - 9);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawWater(ctx, x, y, pal, level, cx, cy, t) {
+  ctx.save();
+  ctx.fillStyle = rgba(pal.water, 0.78);
+  ctx.fillRect(x, y, T, T);
+
+  // 水底暗色
+  ctx.fillStyle = rgba(pal.waterDark, 0.22);
+  ctx.fillRect(x, y + T * 0.55, T, T * 0.45);
+
+  const surface = level.tileAt(cx, cy - 1) !== WATER;
+  const phase = t * 1.6 + cx * 0.9 + cy * 0.6;
+
+  // 波纹：两层错相的正弦曲线
+  ctx.strokeStyle = rgba(pal.waterLight, 0.55);
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  for (let i = 0; i < 2; i++) {
+    const yy = y + (surface ? 7 : 9) + i * 10 + Math.sin(phase + i * 2.1) * 1.8;
+    ctx.moveTo(x - 1, yy);
+    ctx.quadraticCurveTo(x + 8, yy - 2.6, x + 16, yy + 0.4);
+    ctx.quadraticCurveTo(x + 24, yy + 2.8, x + T + 1, yy - 1);
+  }
+  ctx.stroke();
+
+  ctx.strokeStyle = rgba(pal.waterLight, 0.26);
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let i = 0; i < 2; i++) {
+    const yy = y + 14 + i * 9 + Math.cos(phase * 0.8 + i) * 2;
+    ctx.moveTo(x + 2, yy);
+    ctx.quadraticCurveTo(x + 12, yy + 2.2, x + 23, yy - 1);
+  }
+  ctx.stroke();
+
+  // 水面亮边
+  if (surface) {
+    ctx.strokeStyle = rgba(pal.waterLight, 0.85);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const wy = y + 2.2 + Math.sin(phase) * 0.8;
+    ctx.moveTo(x - 1, wy);
+    ctx.quadraticCurveTo(x + 8, wy - 2, x + 16, wy);
+    ctx.quadraticCurveTo(x + 25, wy + 2, x + T + 1, wy - 0.6);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawVine(ctx, x, y, pal, cx, cy, t) {
+  ctx.save();
+  ctx.fillStyle = pal.vine;
+  ctx.fillRect(x, y, T, T);
+
+  // 暗色底纹
+  ctx.fillStyle = rgba(pal.soilDark, 0.35);
+  ctx.fillRect(x, y, T, T);
+
+  // 悬垂藤蔓：三条波浪线
+  ctx.strokeStyle = pal.leaf;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  for (let i = 0; i < 3; i++) {
+    const bx = x + 6 + i * 10;
+    const sway = Math.sin(t * 0.9 + cx * 0.8 + i * 1.9) * 1.6;
+    ctx.moveTo(bx + sway, y - 1);
+    ctx.quadraticCurveTo(bx - 3 + sway, y + 12, bx + 2 + sway, y + 24);
+    ctx.quadraticCurveTo(bx + 5 + sway, y + 30, bx + 1 + sway, y + T + 1);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // 叶子
+  ctx.fillStyle = pal.leaf;
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const bx = x + 5 + i * 7.5;
+    const by = y + 6 + hash1(cx * 13 + cy * 7 + i) * 20;
+    const dir = i % 2 ? 1 : -1;
+    ctx.moveTo(bx, by);
+    ctx.quadraticCurveTo(bx + dir * 7, by - 4, bx + dir * 10, by + 1);
+    ctx.quadraticCurveTo(bx + dir * 6, by + 3, bx, by);
+    ctx.closePath();
+  }
+  ctx.fill();
+  ctx.restore();
+}
+
+/** 给暴露在空气中的泥土边缘补一点环境光遮蔽 */
+function drawSoilEdges(ctx, x, y, pal, level, cx, cy) {
+  const above = level.tileAt(cx, cy - 1);
+  const below = level.tileAt(cx, cy + 1);
+  const left = level.tileAt(cx - 1, cy);
+  const right = level.tileAt(cx + 1, cy);
+  if (!isSolidType(above)) {
+    ctx.fillStyle = rgba(pal.soilLight, 0.4);
+    ctx.fillRect(x, y, T, 2);
+  }
+  if (!isSolidType(below)) {
+    ctx.fillStyle = rgba(pal.soilDark, 0.6);
+    ctx.fillRect(x, y + T - 3, T, 3);
+  }
+  if (!isSolidType(left)) {
+    ctx.fillStyle = rgba(pal.soilDark, 0.35);
+    ctx.fillRect(x, y, 2, T);
+  }
+  if (!isSolidType(right)) {
+    ctx.fillStyle = rgba(pal.soilDark, 0.35);
+    ctx.fillRect(x + T - 2, y, 2, T);
+  }
+}
+
+function drawTiles(ctx, level, cam, t) {
+  if (!ctx || !level) return;
+  const th = themeOf(level.theme);
+  const pal = th.tile;
+  const c = camOf(cam);
+  const time = typeof t === 'number' ? t : 0;
+  const cols = level.cols | 0;
+  const rows = level.rows | 0;
+
+  const cx0 = Math.floor(c.x / T) - 1;
+  const cx1 = Math.floor((c.x + VIEW_W) / T) + 1;
+  const cy0 = Math.floor(c.y / T) - 1;
+  const cy1 = Math.floor((c.y + VIEW_H) / T) + 1;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const cxA = Math.max(0, cx0);
+  const cxB = Math.min(cols - 1, cx1);
+  const cyA = Math.max(0, cy0);
+  const cyB = Math.min(rows - 1, cy1);
+
+  // 底色 pass：同一行连续的土壤合并成一次 fillRect，省掉上千次调用
+  ctx.fillStyle = pal.soil;
+  for (let cy = cyA; cy <= cyB; cy++) {
+    let run = -1;
+    for (let cx = cxA; cx <= cxB + 1; cx++) {
+      const tt = cx <= cxB ? level.tileAt(cx, cy) : -1;
+      const soil = tt === SOLID || tt === GRASS;
+      if (soil && run < 0) run = cx;
+      else if (!soil && run >= 0) {
+        ctx.fillRect(run * T, cy * T, (cx - run) * T, T);
+        run = -1;
+      }
+    }
+  }
+
+  for (let cy = cyA; cy <= cyB; cy++) {
+    for (let cx = cxA; cx <= cxB; cx++) {
+      const type = level.tileAt(cx, cy);
+      if (type === EMPTY) continue;
+      // ctx 已被相机平移，这里直接使用世界坐标
+      const x = cx * T;
+      const y = cy * T;
+      // 四面被包住的瓦片看不见，跳过纹理
+      const buried =
+        isSolidType(level.tileAt(cx - 1, cy)) &&
+        isSolidType(level.tileAt(cx + 1, cy)) &&
+        isSolidType(level.tileAt(cx, cy - 1)) &&
+        isSolidType(level.tileAt(cx, cy + 1));
+
+      switch (type) {
+        case SOLID:
+          if (!buried) {
+            drawSoilBase(ctx, x, y, pal, cx, cy);
+            drawSoilEdges(ctx, x, y, pal, level, cx, cy);
+          }
+          break;
+        case GRASS:
+          if (!buried) drawGrass(ctx, x, y, pal, level, cx, cy, th);
+          break;
+        case BRICK:
+          drawBrick(ctx, x, y, pal, cx, cy, level);
+          break;
+        case PLATFORM:
+          drawPlatform(ctx, x, y, pal, cx, cy);
+          break;
+        case SPIKE:
+          drawSpike(ctx, x, y, pal, cx);
+          break;
+        case ICE:
+          drawIce(ctx, x, y, pal, cx, cy, time, level);
+          break;
+        case MUSHROOM:
+          drawMushroom(ctx, x, y, pal, cx, cy, time);
+          break;
+        case WATER:
+          drawWater(ctx, x, y, pal, level, cx, cy, time);
+          break;
+        case VINE:
+          drawVine(ctx, x, y, pal, cx, cy, time);
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
+/* ------------------------------------------------------------------ */
+/* 环境粒子                                                            */
+/* ------------------------------------------------------------------ */
+
+/** 飘落的花瓣 */
+function drawPetalShape(ctx, x, y, size, rot, color, alpha) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.quadraticCurveTo(size * 0.95, -size * 0.4, 0, size);
+  ctx.quadraticCurveTo(-size * 0.95, -size * 0.4, 0, -size);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function ambientPetals(ctx, th, cam, t) {
+  const col = mix(th.accent, '#ffffff', 0.15);
+  const col2 = mix(th.accent, '#c04070', 0.3);
+  for (let i = 0; i < 46; i++) {
+    const s1 = hash1(i * 71 + 13);
+    const s2 = hash1(i * 137 + 29);
+    const s3 = hash1(i * 53 + 7);
+    const speed = 16 + s1 * 34;
+    const spanX = VIEW_W + 260;
+    const spanY = VIEW_H + 200;
+    let x = (s2 * spanX + t * speed - cam.x * 0.3) % spanX;
+    if (x < 0) x += spanX;
+    x -= 130;
+    let y = (s3 * spanY + t * (12 + s1 * 22) - cam.y * 0.18) % spanY;
+    if (y < 0) y += spanY;
+    y -= 100;
+    const s = 2.6 + s1 * 3.4;
+    const sway = Math.sin(t * 0.9 + s2 * TAU) * 26;
+    drawPetalShape(
+      ctx, x + sway, y + Math.cos(t * 0.7 + s3 * TAU) * 8,
+      s, t * (0.6 + s1) + i, s3 > 0.75 ? col2 : col,
+      0.45 + s2 * 0.45
+    );
+  }
+}
+
+/** 萤火虫 */
+function ambientFireflies(ctx, th, cam, t) {
+  for (let i = 0; i < 30; i++) {
+    const s1 = hash1(i * 97 + 17);
+    const s2 = hash1(i * 43 + 5);
+    const s3 = hash1(i * 191 + 11);
+    const spanX = VIEW_W + 200;
+    let x = (s1 * spanX + Math.sin(t * 0.26 + i) * 46 - cam.x * 0.24) % spanX;
+    if (x < 0) x += spanX;
+    x -= 100;
+    const y = 150 + s2 * 480 + Math.cos(t * 0.21 + i * 1.7) * 34 - cam.y * 0.15;
+    const pulse = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * (1.1 + s3) + i * 2.3));
+    glow(ctx, x, y, 20 + s3 * 12, 20 + s3 * 12, th.accent, 0.24 * pulse);
+    ctx.save();
+    ctx.globalAlpha = 0.55 + pulse * 0.45;
+    ctx.fillStyle = mix('#ffffff', th.accent, 0.35);
+    ctx.beginPath();
+    ctx.arc(x, y, 1.3 + s3 * 1.1, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+  // 飘浮的孢子
+  ctx.save();
+  ctx.fillStyle = rgba(th.accent, 0.2);
+  ctx.beginPath();
+  for (let i = 0; i < 26; i++) {
+    const s = hash1(i * 17 + 9);
+    let x = (s * 1400 + t * (6 + s * 10) - cam.x * 0.3) % 1400;
+    if (x < 0) x += 1400;
+    const y = 80 + hash1(i * 31 + 3) * 620 + Math.sin(t * 0.5 + i) * 14;
+    ctx.moveTo(x, y);
+    ctx.arc(x, y, 1.2, 0, TAU);
+  }
+  ctx.fill();
+  ctx.restore();
+}
+
+/** 冰晶 / 雪花 */
+function ambientSnow(ctx, th, cam, t) {
+  for (let i = 0; i < 68; i++) {
+    const s1 = hash1(i * 61 + 23);
+    const s2 = hash1(i * 113 + 7);
+    const s3 = hash1(i * 37 + 11);
+    const spanX = VIEW_W + 160;
+    const spanY = VIEW_H + 140;
+    let x = (s2 * spanX + Math.sin(t * 0.7 + i) * 20 - cam.x * 0.2) % spanX;
+    if (x < 0) x += spanX;
+    x -= 80;
+    let y = (s3 * spanY + t * (10 + s1 * 16) - cam.y * 0.1) % spanY;
+    if (y < 0) y += spanY;
+    y -= 70;
+    const s = 0.8 + s1 * 1.6;
+    ctx.globalAlpha = 0.25 + s2 * 0.5;
+    ctx.fillStyle = s1 > 0.9 ? th.accent : '#ffffff';
+    ctx.beginPath();
+    ctx.arc(x, y, s, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // 较大的六角冰晶
+  for (let i = 0; i < 5; i++) {
+    const s1 = hash1(i * 79 + 3);
+    const x = (s1 * 1400 + t * (5 + s1 * 5) - cam.x * 0.14) % 1400;
+    const y = 60 + hash1(i * 29 + 7) * 560 + Math.sin(t * 0.5 + i) * 18;
+    const r = 4 + s1 * 4;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(t * 0.2 + i);
+    ctx.strokeStyle = rgba('#ffffff', 0.35);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let k = 0; k < 3; k++) {
+      const a = (k / 3) * Math.PI;
+      ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      ctx.lineTo(-Math.cos(a) * r, -Math.sin(a) * r);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/** 瀑布水沫（山） */
+function ambientSpray(ctx, th, cam, t) {
+  for (let i = 0; i < 44; i++) {
+    const s1 = hash1(i * 73 + 19);
+    const s2 = hash1(i * 29 + 5);
+    const s3 = hash1(i * 151 + 13);
+    const spanX = VIEW_W + 160;
+    let x = (s2 * spanX + Math.sin(t * 0.9 + i * 1.3) * 22 - cam.x * 0.32) % spanX;
+    if (x < 0) x += spanX;
+    x -= 80;
+    // 从底部向上飘升
+    let y = VIEW_H + 60 - ((s3 * 900 + t * (16 + s1 * 26)) % 900);
+    y -= cam.y * 0.12;
+    const r = 0.8 + s1 * 1.8;
+    ctx.globalAlpha = 0.16 + (y / VIEW_H) * 0.3;
+    ctx.fillStyle = mix(th.accent, '#ffffff', 0.4);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // 谷底水汽
+  for (let i = 0; i < 4; i++) {
+    const fx = ((i * 430 + 180 + t * (6 + i * 2) - cam.x * 0.3) % (VIEW_W + 500)) - 250;
+    glow(ctx, fx, VIEW_H - 60, 360, 80, th.haze, 0.11, false);
+  }
+}
+
+/** 彼岸花屑 + 灵魂光点（冥界） */
+function ambientNether(ctx, th, cam, t) {
+  const petalCol = mix(th.accent, '#ffd0d8', 0.2);
+  for (let i = 0; i < 34; i++) {
+    const s1 = hash1(i * 83 + 7);
+    const s2 = hash1(i * 47 + 29);
+    const s3 = hash1(i * 173 + 3);
+    const spanX = VIEW_W + 220;
+    const spanY = VIEW_H + 200;
+    let x = (s2 * spanX + t * (10 + s1 * 20) - cam.x * 0.26) % spanX;
+    if (x < 0) x += spanX;
+    x -= 110;
+    // 缓缓上升的花屑
+    let y = (s3 * spanY - t * (12 + s1 * 18) - cam.y * 0.14) % spanY;
+    if (y < 0) y += spanY;
+    y -= 100;
+    const s = 2.2 + s1 * 2.8;
+    const sway = Math.sin(t * 0.8 + s2 * TAU) * 22;
+    drawPetalShape(ctx, x + sway, y, s, t * (0.5 + s1) + i, petalCol, 0.35 + s2 * 0.4);
+  }
+  // 灵魂光点
+  for (let i = 0; i < 9; i++) {
+    const s1 = hash1(i * 101 + 31);
+    const s2 = hash1(i * 59 + 17);
+    const spanX = VIEW_W + 200;
+    let x = (s1 * spanX + Math.sin(t * 0.22 + i * 1.4) * 40 - cam.x * 0.2) % spanX;
+    if (x < 0) x += spanX;
+    x -= 100;
+    const y = 120 + s2 * 520 - ((t * 8 + i * 70) % 640);
+    const pulse = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t * 0.9 + i * 2.1));
+    glow(ctx, x, y, 26, 26, th.glow, 0.2 * pulse);
+    ctx.save();
+    ctx.globalAlpha = 0.4 * pulse;
+    ctx.fillStyle = mix('#ffffff', th.glow, 0.4);
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/** 月尘（月都） */
+function ambientDust(ctx, th, cam, t) {
+  for (let i = 0; i < 80; i++) {
+    const s1 = hash1(i * 67 + 13);
+    const s2 = hash1(i * 127 + 5);
+    const s3 = hash1(i * 41 + 23);
+    const spanX = VIEW_W + 180;
+    const spanY = VIEW_H + 160;
+    let x = (s2 * spanX + Math.sin(t * 0.22 + i) * 30 - cam.x * 0.16) % spanX;
+    if (x < 0) x += spanX;
+    x -= 90;
+    let y = (s3 * spanY - t * (3 + s1 * 8) - cam.y * 0.08) % spanY;
+    if (y < 0) y += spanY;
+    y -= 80;
+    const tw = 0.15 + 0.6 * (0.5 + 0.5 * Math.sin(t * (0.4 + s1 * 0.9) + s2 * TAU));
+    const r = 0.7 + s3 * 1.3;
+    ctx.globalAlpha = tw;
+    ctx.fillStyle = s2 > 0.85 ? th.accent : mix('#ffffff', th.accent, 0.3);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // 极远的星尘光带
+  glow(ctx, 420, 260, 420, 220, th.haze, 0.05);
+  glow(ctx, 980, 400, 500, 240, th.haze, 0.04);
+}
+
+/** 血雾 + 火星（红魔馆） */
+function ambientBloodMist(ctx, th, cam, t) {
+  // 大团缓慢翻滚的红雾
+  for (let i = 0; i < 7; i++) {
+    const s1 = hash1(i * 89 + 7);
+    const s2 = hash1(i * 43 + 21);
+    const spanX = VIEW_W + 500;
+    let x = (s1 * spanX + t * (4 + s2 * 7) - cam.x * 0.22) % spanX;
+    if (x < 0) x += spanX;
+    x -= 250;
+    const y = 140 + s2 * 500 - cam.y * 0.1;
+    const pulse = 0.6 + 0.4 * Math.sin(t * 0.5 + i);
+    glow(ctx, x, y, 300 + s1 * 180, 90 + s2 * 60, th.haze, 0.07 * pulse, false);
+  }
+  // 上升的火星
+  for (let i = 0; i < 32; i++) {
+    const s1 = hash1(i * 71 + 17);
+    const s2 = hash1(i * 31 + 3);
+    const spanX = VIEW_W + 160;
+    let x = (s2 * spanX + Math.sin(t * 0.6 + i) * 14 - cam.x * 0.28) % spanX;
+    if (x < 0) x += spanX;
+    x -= 80;
+    let y = VIEW_H + 40 - ((s1 * 820 + t * (10 + s2 * 18)) % 820);
+    y -= cam.y * 0.1;
+    const flick = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * 2.4 + i * 3.1));
+    ctx.globalAlpha = flick * 0.65;
+    ctx.fillStyle = i % 4 === 0 ? '#ffb060' : th.accent;
+    ctx.fillRect(x, y, 1.4, 1.4);
+  }
+  ctx.globalAlpha = 1;
+  // 底部的血色辉光
+  glow(ctx, 640, VIEW_H + 30, 760, 220, th.accent, 0.07, false);
+}
+
+function drawAmbient(ctx, theme, cam, t) {
+  if (!ctx) return;
+  const key = themeKey(theme);
+  const th = THEMES[key];
+  const c = camOf(cam);
+  const time = typeof t === 'number' ? t : 0;
+
+  ctx.save();
+  switch (key) {
+    case 'shrine':
+      ambientPetals(ctx, th, c, time);
+      break;
+    case 'forest':
+      ambientFireflies(ctx, th, c, time);
+      break;
+    case 'lake':
+      ambientSnow(ctx, th, c, time);
+      break;
+    case 'mountain':
+      ambientSpray(ctx, th, c, time);
+      break;
+    case 'nether':
+      ambientNether(ctx, th, c, time);
+      break;
+    case 'moon':
+      ambientDust(ctx, th, c, time);
+      break;
+    case 'mansion':
+      ambientBloodMist(ctx, th, c, time);
+      break;
+    default:
+      ambientPetals(ctx, th, c, time);
+      break;
+  }
+  ctx.restore();
+}
+
+/* ------------------------------------------------------------------ */
+/* 导出                                                                */
+/* ------------------------------------------------------------------ */
+
+
+
+/* ================================================================= */
+/*  预览页逻辑                                                        */
+/* ================================================================= */
+(function () {
+  'use strict';
+
+  var canvas = document.getElementById('sheet');
+  var ctx = canvas.getContext('2d');
+  var zcanvas = document.getElementById('zoom');
+  var zctx = zcanvas.getContext('2d');
+  var zoomWrap = document.getElementById('zoomWrap');
+  var zoomIdx = -1;
+  var CW = 640, CH = 360;          // 单个画格
+  var COLS = 3, ROWS = 3;          // 3x3 网格
+  var keys = ['shrine', 'forest', 'lake', 'mountain', 'nether', 'moon', 'mansion'];
+  var labels = {
+    shrine: '博丽神社 · 黄昏樱',
+    forest: '魔法森林 · 萤火夜雾',
+    lake: '雾之湖 · 冰蓝晨曦',
+    mountain: '妖怪之山 · 瀑布溪谷',
+    nether: '白玉楼 · 冥界花海',
+    moon: '月都 · 永远亭',
+    mansion: '红魔馆地下 · 血月水晶'
+  };
+
+  /* ---- 预览用假关卡（几何形状固定，只换主题） ---- */
+  function makeLevel(theme) {
+    var cols = 80, rows = 22;
+    var grid = new Uint8Array(cols * rows);
+    function set(cx, cy, v) {
+      if (cx >= 0 && cx < cols && cy >= 0 && cy < rows) grid[cy * cols + cx] = v;
+    }
+    var heights = new Array(cols);
+    for (var cx = 0; cx < cols; cx++) {
+      var h = 18 + Math.round(Math.sin(cx * 0.22) * 1.2);
+      if (cx >= 2 && cx <= 12) h = 15;
+      if (cx >= 26 && cx <= 30) h = 99;   // 深渊
+      if (cx >= 44 && cx <= 51) h = 20;   // 水池
+      if (cx >= 62 && cx <= 72) h = 16;   // 高台
+      heights[cx] = h;
+    }
+    for (var cx2 = 0; cx2 < cols; cx2++) {
+      var top = heights[cx2];
+      if (top > rows) continue;
+      for (var cy = top; cy < rows; cy++) set(cx2, cy, cy === top ? 2 : 1);
+    }
+    // 水池
+    for (var wx = 44; wx <= 51; wx++) {
+      for (var wy = 20; wy <= 21; wy++) set(wx, wy, wy === 21 ? 1 : 8);
+    }
+    // 尖刺
+    [14, 15, 58].forEach(function (sx) {
+      var hh = heights[sx];
+      if (hh < 22) set(sx, hh, 5);
+    });
+    // 蘑菇
+    set(22, heights[22], 7);
+    // 冰面
+    for (var ix = 36; ix <= 40; ix++) set(ix, heights[ix], 6);
+    // 藤蔓墙
+    for (var vx = 73; vx <= 75; vx++) {
+      for (var vy = 13; vy < heights[vx]; vy++) set(vx, vy, 9);
+    }
+    // 砖块结构
+    for (var bx = 66; bx <= 70; bx++) {
+      for (var by = 10; by <= 12; by++) set(bx, by, 3);
+    }
+    // 单向平台
+    for (var px = 20; px <= 24; px++) set(px, 12, 4);
+    for (var px2 = 27; px2 <= 29; px2++) set(px2, 13, 4);
+    for (var px3 = 33; px3 <= 37; px3++) set(px3, 11, 4);
+    for (var px4 = 54; px4 <= 58; px4++) set(px4, 13, 4);
+    // 漂浮冰砖
+    for (var fx = 31; fx <= 32; fx++) set(fx, 15, 6);
+    // 起点附近的小砖台
+    for (var sx2 = 8; sx2 <= 10; sx2++) set(sx2, 10, 3);
+
+    return {
+      theme: theme,
+      cols: cols,
+      rows: rows,
+      w: cols * 32,
+      h: rows * 32,
+      grid: grid,
+      tileAt: function (tx, ty) {
+        if (tx < 0 || tx >= cols) return 1;
+        if (ty < 0 || ty >= rows) return 0;
+        return grid[ty * cols + tx];
+      }
+    };
+  }
+
+  var levels = keys.map(makeLevel);
+
+  /* ---- 状态 ---- */
+  var paused = false;
+  var slow = false;
+  var t = 0;
+  var last = performance.now();
+  var frames = 0;
+  var fpsAcc = 0;
+  var fps = 0;
+
+  /* ---- 绘制 ---- */
+  function drawCell(i, theme, cam, time) {
+    var px = (i % COLS) * CW;
+    var py = Math.floor(i / COLS) * CH;
+    var level = levels[i];
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(px, py, CW, CH);
+    ctx.clip();
+    ctx.translate(px, py);
+    ctx.scale(0.5, 0.5);
+    drawSky(ctx, theme, cam, time);
+    drawParallax(ctx, theme, cam, time);
+    drawTiles(ctx, level, cam, time);
+    drawAmbient(ctx, theme, cam, time);
+    ctx.restore();
+
+    // 画格内描边
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px + 0.5, py + 0.5, CW - 1, CH - 1);
+    ctx.restore();
+
+    // 主题标签
+    var th = THEMES[theme];
+    ctx.save();
+    var bx2 = px + 14, by2 = py + CH - 44;
+    ctx.fillStyle = 'rgba(8,6,14,0.55)';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(bx2, by2, 224, 32, 8);
+    else ctx.rect(bx2, by2, 224, 32);
+    ctx.fill();
+    ctx.font = '600 15px "PingFang SC","Microsoft YaHei",system-ui,sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(labels[theme], bx2 + 12, by2 + 17);
+    // 调色板点
+    ctx.fillStyle = th.accent;
+    ctx.beginPath();
+    ctx.arc(bx2 + 200, by2 + 16, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = th.far;
+    ctx.beginPath();
+    ctx.arc(bx2 + 212, by2 + 16, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function render(time) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (var i = 0; i < keys.length; i++) {
+      var cam = {
+        x: 300 + Math.sin(time * 0.10 + i * 0.65) * 130,
+        y: 0
+      };
+      drawCell(i, keys[i], cam, time);
+    }
+
+    // 第八格：标题/图例
+    var px = (7 % COLS) * CW, py = Math.floor(7 / COLS) * CH;
+    ctx.save();
+    ctx.translate(px, py);
+    var g = ctx.createLinearGradient(0, 0, CW, CH);
+    g.addColorStop(0, '#0b0812');
+    g.addColorStop(1, '#151024');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, CW, CH);
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    for (var gy = 0; gy < CH; gy += 24) {
+      ctx.fillRect(0, gy, CW, 1);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    for (var gx = 0; gx < CW; gx += 24) {
+      ctx.fillRect(gx, 0, 1, CH);
+    }
+
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.font = '600 22px "PingFang SC","Microsoft YaHei",system-ui,sans-serif';
+    ctx.fillText('场景绘制说明', 28, 46);
+    ctx.font = '13.5px "PingFang SC","Microsoft YaHei",system-ui,sans-serif';
+    ctx.fillStyle = 'rgba(205,196,224,0.85)';
+    var lines = [
+      '· 天空：三元渐变 + 确定性星空 + 天体辉光 + 云带',
+      '· 视差：远 0.08 / 中 0.22 / 近 0.45，纵向轻微视差',
+      '· 地形：泥土分层纹理、草叶、砖缝、冰棱、水波',
+      '· 粒子：樱瓣 / 萤火 / 霜雪 / 水沫 / 花屑 / 月尘 / 血雾',
+      '· 全部程序化矢量，无图片、无 Math.random 抖动',
+      '· drawTiles 仅遍历可见范围（约 42×24 tile）'
+    ];
+    for (var li = 0; li < lines.length; li++) {
+      ctx.fillText(lines[li], 28, 84 + li * 27);
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.strokeRect(0.5, 0.5, CW - 1, CH - 1);
+    ctx.restore();
+  }
+
+  function renderZoom(time) {
+    var theme = keys[zoomIdx];
+    var cam = { x: 380 + Math.sin(time * 0.06) * 420, y: 0 };
+    zctx.clearRect(0, 0, 1280, 720);
+    // 与引擎一致：天空 / 视差是屏幕坐标，地形是“已被相机平移”的世界坐标
+    drawSky(zctx, theme, { x: 0, y: 0 }, time);
+    drawParallax(zctx, theme, cam, time);
+    zctx.save();
+    zctx.translate(-Math.round(cam.x), -Math.round(cam.y));
+    drawTiles(zctx, levels[zoomIdx], cam, time);
+    zctx.restore();
+    drawAmbient(zctx, theme, cam, time);
+
+    zctx.save();
+    var th = THEMES[theme];
+    zctx.fillStyle = 'rgba(6,4,12,0.5)';
+    zctx.fillRect(18, 18, 268, 44);
+    zctx.font = '600 19px "PingFang SC","Microsoft YaHei",system-ui,sans-serif';
+    zctx.fillStyle = 'rgba(255,255,255,0.95)';
+    zctx.textBaseline = 'middle';
+    zctx.fillText(labels[theme], 32, 41);
+    zctx.fillStyle = th.accent;
+    zctx.beginPath();
+    zctx.arc(258, 40, 6, 0, Math.PI * 2);
+    zctx.fill();
+    zctx.restore();
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    var dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+
+    frames++;
+    fpsAcc += dt;
+    if (fpsAcc >= 0.5) {
+      fps = frames / fpsAcc;
+      frames = 0;
+      fpsAcc = 0;
+      document.getElementById('fps').textContent = fps.toFixed(0) + ' fps';
+    }
+
+    if (!paused) t += dt * (slow ? 0.18 : 1);
+    // 预览限帧到 30fps，保证多画格下依旧顺滑
+    if (!frame._next || now >= frame._next) {
+      frame._next = now + 32;
+      if (zoomIdx >= 0) renderZoom(t);
+      else render(t);
+    }
+  }
+
+  canvas.addEventListener('click', function (e) {
+    var r = canvas.getBoundingClientRect();
+    var bx = (e.clientX - r.left) * canvas.width / r.width;
+    var by = (e.clientY - r.top) * canvas.height / r.height;
+    var idx = Math.floor(by / CH) * COLS + Math.floor(bx / CW);
+    if (idx >= 0 && idx < keys.length) {
+      zoomIdx = idx;
+      zoomWrap.classList.add('on');
+    }
+  });
+  zoomWrap.addEventListener('click', function () {
+    zoomIdx = -1;
+    zoomWrap.classList.remove('on');
+  });
+
+  document.getElementById('pause').addEventListener('click', function () {
+    paused = !paused;
+    this.textContent = paused ? '继续' : '暂停';
+  });
+  document.getElementById('slow').addEventListener('click', function () {
+    slow = !slow;
+    this.textContent = slow ? '正常速度' : '慢动作';
+  });
+
+  // #forest 之类的 hash 可直接放大对应主题
+  var hi = keys.indexOf(decodeURIComponent(location.hash.replace(/^#/, '')));
+  if (hi >= 0) {
+    zoomIdx = hi;
+    zoomWrap.classList.add('on');
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
