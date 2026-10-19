@@ -428,6 +428,9 @@ await step('暂停退出与重开无残留', async () => {
   await R.shot('E1_pause');
 
   await T.key('KeyQ', 22);
+  const quitConfirm = await L.drive(T, `document.getElementById('title').textContent === '退出到标题'`, { timeout: 20000, label: '退出确认页', press: false });
+  R.chk(quitConfirm.title === '退出到标题', '暂停 Q 先弹退出确认（不直接丢局）', quitConfirm.title);
+  await T.key('KeyQ', 22);
   const title = await L.drive(T, `s.state === 'menu' && s.st === null`, { timeout: 30000, label: '暂停退出到标题', press: false });
   R.chk(title.title === '東方新紀行' && title.overlayHidden === false, '暂停→退出到标题成功', `${title.state}/${title.title}`);
   R.chk((await elHidden(T, 'hud')) === true, '退出后 HUD 重新隐藏', '');

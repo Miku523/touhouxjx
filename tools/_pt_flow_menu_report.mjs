@@ -12,7 +12,7 @@ const readPart = (name, sub = '') => {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) { return { badjson: String(e) }; }
 };
 
-const PART_NAMES = ['part_menu', 'part_music', 'part_binds', 'part_settings', 'part_helpquit', 'part_repro', 'part_gameover_real', 'part_fixes'];
+const PART_NAMES = ['part_menu', 'part_music', 'part_binds', 'part_settings', 'part_helpquit', 'part_repro', 'part_gameover_real', 'part_fixes', 'part_extra_retry'];
 const parts = Object.fromEntries(PART_NAMES.map((n) => [n, readPart(`${n}.json`)]));
 const baseline = Object.fromEntries(PART_NAMES.map((n) => [n, readPart(`${n}.json`, 'baseline_prefix')]));
 
@@ -32,7 +32,8 @@ const fixtureDiff = PART_NAMES.map((n) => ({
         : n === 'part_menu' ? '新增 FM-3 修复回归断言（74 项）'
           : n === 'part_settings' ? '新增 FM-4「X hotkey」回归断言（61 项）'
             : n === 'part_fixes' ? '新增 FM-5 鼠标路径回归（22 项，修前会因点播放重开弹框而失败）'
-              : '无行为变化（回归保持全 PASS）',
+              : n === 'part_extra_retry' ? '新增 FC-1 回归（47 项：EXTRA 中途/终盘失败按钮文案与 3:00/6:00 检查点恢复一致，键盘+鼠标两轮互换；另含 1280/960 文案与 ENTER 键帽宽度 gap 断言。修前按钮写「重新挑战本关」会与行为不符但不会 FAIL，因旧脚本未断言该文案）'
+                : '无行为变化（回归保持全 PASS）',
 }));
 
 const findings = [
@@ -157,6 +158,33 @@ const findings = [
     ],
     console: '无异常。',
   },
+  {
+    id: 'FC-1',
+    title: 'EXTRA 内 Boss 战失败时 GameOver 按钮写「重新挑战本关」，实际却从 3:00 / 6:00 检查点接上（lead / flow-chain 立案，本分区修复）',
+    severity: 'minor',
+    status: 'fixed',
+    page: '游戏结束（EXTRA）',
+    steps: [
+      '伪造 hks.progress.v1={extraUnlocked:true,extraChar:"reimu"} 解锁 EXTRA，标题按 E → advanceToPlay 进入 play。',
+      '用 stage.beginBoss("remilia",{midboss:true}) 构造中途 Boss 战，残机压到 1 触发真实死亡 → gameover。',
+      '读取按钮文案：修复前为「重新挑战本关」，但按 Enter 后 _retryStage 的 inExtra 分支按 stage.bossStarted 判定 resumeFrom="midboss"，_startExtraStage → stage.resumeExtra("midboss") 把 extraT 拨到 180（3:00）并从雷米莉亚战接上。',
+      '同理 stage.midbossDone 后（终盘）失败：文案仍是「重新挑战本关」，实际从 extraT=360（6:00）芙兰战接上。',
+      '对照组：非 EXTRA 的 atBoss 失败仍显示「再战 Boss」，与平台关检查点恢复一致，不受影响。',
+    ],
+    expect: 'EXTRA 内失败后的按钮文案应说明真实恢复点：中途失败「从雷米莉亚战继续」、终盘失败「从芙兰战继续」（检查点细节 3:00 / 6:00 与 Boss 名放在脚注），且不得与右侧 ENTER 键帽重叠。',
+    actual: '修复前 _onGameOver 只用 atBoss = _canResumeBoss()（inExtra 恒 false）决定文案，永远落到「重新挑战本关」；而 _retryStage 的 inExtra 分支会实际回到 3:00/6:00 的 Boss 战，文案与行为不符（flow-chain 立案 FC-1）。',
+    fix: 'src/main.js:1142-1170 _onGameOver 新增与 _retryStage 相同的 extraResume 判定（stage.midbossDone → "final"，stage.bossStarted → "midboss"），按钮文案 retryLabel 与脚注 extraFoot 按恢复点给出；非 EXTRA 路径的「再战 Boss」/「重新挑战本关」不变。',
+    verification: 'tools/_pt_flow_menu_extra_retry.mjs：两轮互换键盘/鼠标路径——中途失败按钮「从雷米莉亚战继续」+ 脚注 3:00，再战后 extraT=180、boss=remilia、midbossDone=false、power=12；终盘失败按钮「从芙兰战继续」+ 脚注 6:00，再战后 extraT=360、boss=flandre、midbossDone=true；再死 Esc / 鼠标「返回标题」正常。另用 getBoundingClientRect 断言文案与 ENTER 键帽的 gap：1280 下 5.1px、960 下 3.6px（均不重叠；更长的「从雷米莉亚战的检查点继续」实测 1280 重叠 21.9px、960 重叠 16.4px，故缩短文案）（47/0）。',
+    evidence: [
+      '_pt/flow_menu/96-1-extra-mid-gameover.png', '_pt/flow_menu/96-1-extra-mid-retry.png',
+      '_pt/flow_menu/97-1-extra-final-gameover.png', '_pt/flow_menu/97-1-extra-final-retry.png',
+      '_pt/flow_menu/96-2-extra-mid-gameover.png', '_pt/flow_menu/97-2-extra-final-gameover.png',
+      '_pt/flow_menu/96-1-extra-mid-gameover-960.png', '_pt/flow_menu/97-2-extra-final-gameover-960.png',
+      '_pt/flow_menu/part_extra_retry.json（47/0）',
+    ],
+    console: '无异常。',
+    source: 'flow-chain / lead 立案（FC-1）',
+  },
 ];
 
 const report = {
@@ -179,6 +207,7 @@ const report = {
     { id: 'FM-3', file: 'src/main.js', line: '300-303 / 389-406 / 585-592', change: 'locked EXTRA 保留视觉但可点+KeyE 提示、noSelect 不抢默认位、feedback 内联 pointer-events' },
     { id: 'FM-4', file: 'src/main.js', line: '1470-1476', change: '设置页「重置进度」补 hotkey KeyX' },
     { id: 'FM-5', file: 'src/game/musicRoom.js', line: '632-645', change: 'warnPlay 鼠标点击直接 _play/_startPreview，不再 _requestPlay 死循环' },
+    { id: 'FC-1', file: 'src/main.js', line: '1142-1170', change: 'EXTRA 内 GameOver 按钮/脚注按实际恢复点给出（3:00 雷米莉亚 / 6:00 芙兰）；文案精简为「从雷米莉亚战继续 / 从芙兰战继续」以避开 ENTER 键帽重叠（检查点细节放脚注）' },
   ],
   coverage: [
     { no: 1, item: '标题→难度→选人→开始游戏 + 每页 Esc 返回链（键盘/鼠标两条路径）', status: 'PASS', evidence: '_pt/flow_menu/01~16*.png / part_menu.json（74/0）' },
@@ -190,6 +219,7 @@ const report = {
     { no: 7, item: '未解锁 EXTRA：KeyE/点击给出解锁提示且不导航；两轮复现', status: 'PASS（FM-3 已修）', evidence: '_pt/flow_menu/85~87*.png、06-extra-locked.png / part_repro.json（14/0）' },
     { no: 8, item: '全程 JS 异常/console error/warning/404/布局溢出', status: 'PASS（仅 window.close 预期警告；无 404）', evidence: '_pt/flow_menu/81-resource-scan.png / part_helpquit.json' },
     { no: 9, item: '结局/游戏结束页：ending 播完回标题、gameover 键盘连通性（普通关 + EXTRA）', status: 'PASS（FM-1 已修）', evidence: '_pt/flow_menu/79*.png、90-*.png / part_helpquit.json（51/0）、part_gameover_real.json（14/0）' },
+    { no: 10, item: 'EXTRA 内失败：GameOver 按钮文案与 3:00/6:00 检查点恢复一致（midboss/final，键盘+鼠标两轮），且文案不与 ENTER 键帽重叠（1280/960）', status: 'PASS（FC-1 已修）', evidence: '_pt/flow_menu/96-*.png、97-*.png（含 960） / part_extra_retry.json（47/0）' },
   ],
   notes: [
     `PASS/FAIL 为各分脚本检查项累计：${totalPass} pass / ${totalFail} fail（修复后全绿）。`,
@@ -199,10 +229,12 @@ const report = {
     '布局：1280x720 与 960x540 下均无按钮出视口/被裁切；帮助页 .set-group scrollHeight 211>193 系装饰性溢出（overflow:hidden，放大截图 72c-help-move-zoom.png 确认文字/键帽未裁切），不立案。',
     '测试口径修正（非游戏问题）：hint/subtitle 的全角空格会被页面 normalize 为半角，断言按归一后文本；键盘流程前需把鼠标移到中立位置，否则 DOM 重建时 pointerenter 会改变菜单选中项（曾导致 Enter 误点「取消」）。',
     'FM-5 鼠标路径修复后有一个非缺陷现象：点确认框按钮后指针落点会 hover 到列表某行并改变右侧选中曲目（播放的仍是按钮对应的曲目，audio.currentSong 与 heard 均正确），属 hover 选择语义，不立案。',
+    'FC-1（EXTRA 失败文案）为 flow-chain 立案：普通关 atBoss 的「再战 Boss」不受影响；extra_retry 用 stage.beginBoss / stage 字段构造与真实战斗相同的状态，但 _onGameOver → 按钮 → _retryStage → _startExtraStage(resumeFrom) → resumeExtra → beginBoss 全走真实代码路径。按钮文案改为「从雷米莉亚战继续 / 从芙兰战继续」是为了避免旧面板的 ENTER 键帽压字（长文案「从雷米莉亚战的检查点继续」实测 1280 重叠 21.9px、960 重叠 16.4px），检查点细节保留在脚注。',
   ],
   externalFindings: [
     { id: 'LEAD-MUSICROOM-WARN-CLICK', severity: 'major', note: '音乐回忆室未遇曲目确认框鼠标点击死循环（lead 立案，本分区已修复为 FM-5）', status: 'fixed' },
     { id: 'LEAD-RESET-X-HOTKEY', severity: 'minor', note: '设置页「重置进度」行显示 X 但无 hotkey（lead 立案，本分区已修复为 FM-4）', status: 'fixed' },
+    { id: 'LEAD-FC-1', severity: 'minor', note: 'EXTRA 内 GameOver 按钮文案与 3:00/6:00 检查点恢复不符（flow-chain 立案，本分区已修复为 FC-1）', status: 'fixed' },
   ],
 };
 

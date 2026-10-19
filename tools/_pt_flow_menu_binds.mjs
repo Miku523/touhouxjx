@@ -266,13 +266,16 @@ try {
   const psSpace = await playerSnap();
   chk(psSpace.onGround === true && !(psSpace.vy < -1), 'G8 旧跳跃键 Space 不再触发跳跃（已互换为射击）', psSpace);
 
-  // Esc → 暂停 → Q 回标题
+  // Esc → 暂停 → Q（退出确认）→ Q（确认）回标题
   await T.key('Escape'); await sleep(420);
   const pausePage = await pageInfo(T);
   chk(pausePage.title === '暂停', 'G9 play 中 Esc 进入暂停', pausePage.title);
+  await T.key('KeyQ'); await sleep(420);
+  const quitConfirm = await pageInfo(T);
+  chk(quitConfirm.title === '退出到标题', 'G9b 暂停菜单 Q 弹出退出确认', quitConfirm.title);
   await T.key('KeyQ'); await sleep(450);
   const titleAgain = await pageInfo(T);
-  chk(titleAgain.title === '東方新紀行', 'G10 暂停菜单 Q 回标题', titleAgain.title);
+  chk(titleAgain.title === '東方新紀行', 'G10 确认后 Q 回标题', titleAgain.title);
 
   // ---------- H. 页面 Del 键恢复默认 + 返回链 ----------
   kb = await enterKeybinds();

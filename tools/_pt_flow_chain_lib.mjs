@@ -122,14 +122,36 @@ export async function poll(T, expr) {
 }
 
 export async function openGame({ port = PORT, query = SEED_QUERY, clearStorage = false, reload = false } = {}) {
-  const T = await launch({ port, width: 1280, height: 720 });
-  if (clearStorage) {
-    await T.nav('http://127.0.0.1:8138/index.html');
-    await T.waitFor('!!window.__game', 30000);
-    await T.eval(`(() => { ['hks.progress.v1','hks.music.v1','hks.settings.v1','hks.keybinds.v1'].forEach((k) => localStorage.removeItem(k)); return 1; })()`);
+  // Edge headless 偶发启动/握手不稳（socket error、CDP 超时）：同一端口最多重试 3 次。
+  // 每次失败后关掉可能残留的浏览器、等 4s 让上一次的渲染进程与端口彻底释放。
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    let T = null;
+    try {
+      // 若端口上还有上一次残留的 Edge（例如上一个脚本崩了还没收尸），先等它释放，
+      // 否则本次 spawn 的 Edge 抢不到 debugging 端口，CDP 会连到旧实例上，随后被旧实例关闭拖死。
+      for (let i = 0; i < 30; i++) {
+        const busy = await fetch(`http://127.0.0.1:${port}/json/version`).then(() => true).catch(() => false);
+        if (!busy) break;
+        console.log(`[lib] 端口 ${port} 仍被占用，等待释放…(${i + 1}/30)`);
+        await sleep(1000);
+      }
+      T = await launch({ port, width: 1280, height: 720 });
+      if (clearStorage) {
+        await T.nav('http://127.0.0.1:8138/index.html');
+        await T.waitFor('!!window.__game', 30000);
+        await T.eval(`(() => { ['hks.progress.v1','hks.music.v1','hks.settings.v1','hks.keybinds.v1'].forEach((k) => localStorage.removeItem(k)); return 1; })()`);
+      }
+      await T.boot({ query });
+      return T;
+    } catch (e) {
+      lastErr = e;
+      console.log(`[lib] openGame 第 ${attempt}/3 次启动失败（port=${port}）: ${e && e.message}`);
+      try { if (T) await T.close(); } catch (x) {}
+      if (attempt < 3) await sleep(4000);
+    }
   }
-  await T.boot({ query });
-  return T;
+  throw lastErr;
 }
 
 /** 清存档并 reload，之后停在标题页 */
@@ -166,9 +188,17 @@ export async function mashDialogue(T, { maxPress = 400 } = {}) {
 export async function drive(T, expr, { timeout = 180000, label = '', press = true, pollMs = 130, onTick = null } = {}) {
   const t0 = Date.now();
   let s = null;
+  let lastHb = 0;
   while (Date.now() - t0 < timeout) {
     s = await poll(T, expr);
     if (onTick) { try { onTick(s); } catch (e) { /* 记录器自身错误不影响流程 */ } }
+    // 心跳：每 5s 落一条当前状态，便于区分「游戏真卡死」与「headless 环境掉线」
+    if (Date.now() - lastHb >= 5000) {
+      lastHb = Date.now();
+      try {
+        console.log(`[hb] ${label} state=${s.state} level=${s.level} stage=${s.st && s.st.state} time=${s.st && s.st.time != null ? Number(s.st.time).toFixed(1) : '-'} fps=${s.fps} stepMs=${s.stepMs} dlg=${s.dlg}`);
+      } catch (e) {}
+    }
     if (s.ok) {
       // 稳定确认：立绘预加载期间 state 会短暂停在 play，随后才进 dialogue。
       // 多等一小段再确认一次，避免把「即将开对话」误判成已自由行动。
@@ -344,6 +374,9 @@ export async function startRun(T, { diff = 'KeyE', char = 'Digit1' } = {}) {
 export async function quitToTitle(T) {
   await T.key('Escape', 22);
   await drive(T, `s.state === 'paused'`, { timeout: 15000, label: '暂停面板', press: false });
+  await T.key('KeyQ', 22);
+  // 暂停 → 退出到标题有二次确认：确认页再按一次 Q 才真正回标题
+  await drive(T, `document.getElementById('title').textContent === '退出到标题'`, { timeout: 15000, label: '退出确认页', press: false });
   await T.key('KeyQ', 22);
   return drive(T, `s.state === 'menu' && s.st === null`, { timeout: 20000, label: '退出到标题', press: false });
 }

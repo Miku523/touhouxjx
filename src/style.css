@@ -736,32 +736,61 @@ body {
 #ui.hurt::after { opacity: 1; }
 
 /* ---------- 触摸控制 ---------- */
+/* 触摸板不跟画布缩放：手机竖屏时画布只有 390x219，若按 --s 缩放按钮会小到 19px。
+   改为固定在视口底部 + vmin/clamp 尺寸，保证手指可点（最小 46px），并让出安全区。 */
 .touch {
-  position: absolute;
+  --tb: clamp(46px, 7.6vmin, 64px);
+  --tb-s: clamp(42px, 6.6vmin, 54px);
+  --tgap: clamp(6px, 1.5vmin, 12px);
+  position: fixed;
   left: 0; right: 0; bottom: 0;
-  height: calc(var(--s) * 150px);
+  height: calc(var(--tb) + max(20px, 3vmin));
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  padding: calc(var(--s) * 16px) calc(var(--s) * 22px);
+  padding: max(8px, 2vmin) max(14px, 3vmin);
+  padding-bottom: calc(max(8px, 2vmin) + env(safe-area-inset-bottom, 0px));
   pointer-events: none;
+  z-index: 30;
 }
-.tpad { display: flex; gap: calc(var(--s) * 10px); pointer-events: auto; }
+.tpad { display: flex; gap: var(--tgap); pointer-events: auto; }
 .tbtn {
-  width: calc(var(--s) * 62px);
-  height: calc(var(--s) * 62px);
+  width: var(--tb);
+  height: var(--tb);
   border-radius: 50%;
   border: 1px solid rgba(242, 233, 216, .3);
   background: rgba(255, 255, 255, .07);
   color: var(--text);
-  font-size: calc(var(--s) * 20px);
+  font-size: clamp(16px, 2.6vmin, 20px);
   font-family: var(--serif);
   pointer-events: auto;
   touch-action: none;
   transition: background .1s;
 }
-.tbtn.small { width: calc(var(--s) * 52px); height: calc(var(--s) * 52px); font-size: calc(var(--s) * 15px); }
+.tbtn.small { width: var(--tb-s); height: var(--tb-s); font-size: clamp(13px, 2.2vmin, 15px); }
 .tbtn:active { background: rgba(232, 54, 79, .32); }
+
+/* 竖屏提示：只在触摸设备的竖屏出现，不挡操作（pointer-events:none） */
+.rotate-hint {
+  display: none;
+  position: fixed;
+  left: 50%;
+  top: calc(max(10px, 2vmin) + env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(242, 210, 75, .32);
+  background: rgba(5, 3, 10, .72);
+  color: var(--gold);
+  font-size: clamp(11px, 2.2vmin, 14px);
+  letter-spacing: .08em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate-hint { display: block; }
+}
 
 /* ============================================================
    标题画面 · 东方风（仅 .overlay.title-mode）

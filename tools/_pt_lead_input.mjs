@@ -302,13 +302,23 @@ async function scenarioPauseMenu() {
   const levelBefore = await G('g.levelIndex');
   mk('before Q state=' + (await G('g.state')));
   await T.tap('KeyQ');
-  await sleep(600);
-  const afterQ = await G(`({ state: g.state, stage: !!g.stage, title: document.getElementById('title').textContent })`);
+  await sleep(500);
+  const afterQ = await G(`({ state: g.state, stage: !!g.stage, title: document.getElementById('title').textContent, sel: g.menuIndex })`);
   C.chk(
-    afterQ.state === 'menu' && !afterQ.stage,
-    'C13 [误触风险] 暂停菜单按 Q 立刻丢局回标题，没有任何二次确认',
-    `level=${levelBefore} → state=${afterQ.state} stage=${afterQ.stage} title=${afterQ.title}`
+    afterQ.state === 'paused' && !!afterQ.stage && afterQ.title === '退出到标题' && afterQ.sel === 0,
+    'C13 暂停菜单按 Q 弹出退出确认，默认高亮「继续游戏」不丢局',
+    `state=${afterQ.state} stage=${afterQ.stage} title=${afterQ.title} sel=${afterQ.sel}`
   );
+  await T.tap('Enter');
+  await sleep(400);
+  const afterCancel = await G(`({ state: g.state, title: document.getElementById('title').textContent })`);
+  C.chk(afterCancel.state === 'paused' && afterCancel.title === '暂停', 'C14 确认页 Enter 取消回到暂停菜单', `${afterCancel.state}/${afterCancel.title}`);
+  await T.tap('KeyQ');
+  await sleep(400);
+  await T.tap('KeyQ');
+  await sleep(600);
+  const afterQuit = await G(`({ state: g.state, stage: !!g.stage, title: document.getElementById('title').textContent })`);
+  C.chk(afterQuit.state === 'menu' && !afterQuit.stage, 'C15 确认页再按 Q 才真正退出到标题', `state=${afterQuit.state} stage=${afterQuit.stage}`);
   await T.shot(`${OUT}/c-after-q.png`);
   mk('done');
 }

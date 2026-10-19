@@ -36,10 +36,10 @@ const vis = (sel) => T.eval(`(() => { const e = document.querySelector(${JSON.st
   const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
   return !!(r.width && r.height) && cs.display !== 'none' && cs.visibility !== 'hidden' && !e.classList.contains('hidden'); })()`);
 const text = (sel) => T.eval(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); return e ? e.textContent.replace(/\\s+/g, ' ').trim() : null; })()`);
-const panelTitle = () => text('#overlay .panel-title') || text('#overlay h2') || '';
+const panelTitle = () => text('#title') || '';
 const menuState = () => G(`(() => ({ state: g.state, page: g._page || '', idx: g.menuIndex,
-  hint: document.querySelector('#overlay .panel-hint')?.textContent.trim() || '',
-  title: document.querySelector('#overlay .panel-title')?.textContent.trim() || '' }))()`);
+  hint: document.querySelector('#hint')?.textContent.trim() || '',
+  title: document.querySelector('#title')?.textContent.trim() || '' }))()`);
 
 async function startRun(diffKey = 'KeyE', charKey = 'Digit1') {
   await T.tap('Enter'); await sleep(300);
@@ -91,7 +91,7 @@ try {
   const locked2 = await T.eval(`(() => { const rows = [...document.querySelectorAll('#musicRoom .mr-row.is-locked')];
     if (!rows.length) return null; return [...document.querySelectorAll('#musicRoom .mr-row')].indexOf(rows[0]); })()`);
   if (locked2 != null) {
-    await G(`g.musicRoom.index = ${locked2}; g.musicRoom._paint(); g.musicRoom._paintList(); g.musicRoom._reveal?.(); true`);
+    await T.eval(`(() => { const mr = window.__game.musicRoom; mr.index = ${locked2}; mr._paint(); mr._paintList(); mr._reveal?.(); return true; })()`);
     await sleep(150);
     await T.tap('Enter');            // _requestPlay → warn
     await sleep(300);
@@ -198,7 +198,7 @@ try {
     return { frames: g.length, avg: g.length ? +(g.reduce((a,b)=>a+b,0)/g.length).toFixed(1) : null,
       p50: q(0.5), p95: q(0.95), worst: g.length ? +Math.max(...g).toFixed(1) : null,
       renderer: window.__rendererInfo || null,
-      canvas: [document.querySelector('#game canvas')?.width, document.querySelector('#game canvas')?.height] }; })()`);
+      canvas: (() => { const c = document.querySelector('#game') || document.querySelector('canvas'); return c ? [c.width, c.height] : null; })() }; })()`);
   notes.push('软光栅帧探针(修复后): ' + JSON.stringify(probe));
   C.chk(probe.frames >= 30, 'R7 帧探针有数据', JSON.stringify(probe));
   C.chk(probe.avg != null && probe.avg < 100, 'R7 软光栅平均帧间隔 < 100ms（优化前 144ms）', `avg=${probe.avg}ms p95=${probe.p95} worst=${probe.worst} renderer=${JSON.stringify(probe.renderer)}`);
@@ -215,12 +215,12 @@ try {
     if (/设置/.test(cur.title) && cur.idx != null && key === 'F') { await T.tap('Enter'); break; }
     await T.tap('ArrowDown'); await sleep(90);
   }
-  const fc = await G(`g.frameCap`);
+  const fc = await G(`g.loop.frameCap`);
   notes.push('切换后 frameCap=' + fc);
   await T.tap('Escape'); await sleep(250);
   await T.tap('Escape'); await sleep(300);
   await T.reload(); await sleep(900);
-  const fc2 = await G(`g.frameCap`);
+  const fc2 = await G(`g.loop.frameCap`);
   C.eq(fc2, fc, 'R8 frameCap 刷新后保持', JSON.stringify({ fc, fc2 }));
   await T.tap('Escape');
 } catch (e) {

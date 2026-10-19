@@ -98,8 +98,14 @@ try {
     R.chk(back.title === '東方新紀行' && back.st === null, '结局结束返回标题', `${back.title}/${back.st}`);
     R.chk(back.unlockedExtra === false && back.prog == null, 'E/魔理沙通关后仍无 EXTRA 解锁', `unlocked=${back.unlockedExtra}`);
     const eb = (back.buttons || []).find((b) => /禁忌的祭典/.test(b.t));
-    R.chk(!!eb && eb.disabled === true, '标题「禁忌的祭典」仍 disabled', JSON.stringify(eb));
-    R.snap('E4_title_locked', back);
+    R.chk(!!eb && /locked/.test(eb.cls || '') && eb.disabled === false, '标题「禁忌的祭典」锁定样式（修后行为：可点击但给提示）', JSON.stringify(eb));
+    await T.key('KeyE', 24);
+    await sleep(400);
+    const esc = await L.read(T);
+    const hintText = String(await T.eval(`document.getElementById('hint').textContent`));
+    R.chk(esc.state === 'menu' && esc.inExtra === false, '按 E 不进 EXTRA（锁定反馈）', `${esc.state}/${esc.inExtra}`);
+    R.chk(/EXTRA 尚未解锁/.test(hintText), '未解锁时给出「EXTRA 尚未解锁」提示', hintText.trim());
+    R.snap('E4_title_locked', esc);
     await R.shot('E4_title_locked');
 
     await T.reload();
@@ -107,6 +113,8 @@ try {
     await sleep(500);
     const r = await L.drive(T, `s.state === 'menu' && !s.overlayHidden`, { timeout: 40000, label: 'reload 标题', press: false });
     R.chk(r.unlockedExtra === false && r.prog == null, 'reload 后仍不解锁（未写盘）', `unlocked=${r.unlockedExtra} prog=${JSON.stringify(r.prog)}`);
+    const rb = (r.buttons || []).find((b) => /禁忌的祭典/.test(b.t));
+    R.chk(!!rb && /locked/.test(rb.cls || '') && rb.disabled === false, 'reload 后仍为锁定样式', JSON.stringify(rb));
     R.snap('E5_reload_locked', r);
     await R.shot('E5_reload_locked');
   });

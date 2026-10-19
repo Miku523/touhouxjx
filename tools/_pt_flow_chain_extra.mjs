@@ -115,6 +115,8 @@ try {
     R.snap('X4_extra_pause', pause);
     await R.shot('X4_extra_pause');
     await T.key('KeyQ', 22);
+    await L.drive(T, `document.getElementById('title').textContent === '退出到标题'`, { timeout: 20000, label: '退出确认页', press: false });
+    await T.key('KeyQ', 22);
     const title = await L.drive(T, `s.state === 'menu' && s.st === null`, { timeout: 30000, label: 'EXTRA 退出到标题', press: false });
     R.chk(title.inExtra === false && title.st === null, 'EXTRA 退出到标题：inExtra=false、stage=null', `inExtra=${title.inExtra} stage=${title.st}`);
     R.chk((await T.eval(`document.getElementById('hud').classList.contains('hidden')`)) === true, '退出 EXTRA 后 HUD 隐藏', '');
