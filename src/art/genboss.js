@@ -159,6 +159,15 @@ preloadWhenIdle(() => {
 });
 
 /**
+ * 立绘是否已就绪（供 boss.js 决定出场前要不要等图）。
+ * 未就绪时 boss.js 会暂缓淡入，避免玩家先看到占位再被立绘顶替。
+ */
+export function bossArtReady(key) {
+  const h = IMGS[key];
+  return !!(h && h.art);
+}
+
+/**
  * @param {CanvasRenderingContext2D} ctx 已 translate 到 Boss 脚底中心
  * @returns {boolean}
  */

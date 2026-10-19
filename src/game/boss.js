@@ -19,7 +19,7 @@
  */
 
 import { BOSS_INFO } from '../art/bosses.js';
-import { drawGenBoss, ensureBossArt, bossArtHeight } from '../art/genboss.js';
+import { drawGenBoss, ensureBossArt, bossArtHeight, bossArtReady } from '../art/genboss.js';
 import { getDifficulty, bossPhasesFor, scaleBossHp, stageDensityOf } from './difficulty.js';
 import { scalePlayerDamage } from './balance.js';
 
@@ -985,6 +985,7 @@ export class Boss {
     this.t = 0;
     this.state = 'intro'; // intro | battle | defeat | dead
     this.introT = 0;
+    this.artWaitT = 0;    // 出场前等立绘就绪的累计时间
     this.defeatT = 0;
     this.alpha = 0;
 
@@ -1370,6 +1371,12 @@ export class Boss {
     this.hurtCd = Math.max(0, this.hurtCd - dt);
 
     if (this.state === 'intro') {
+      // 立绘未就绪时暂缓出场：宁可晚半秒现身，也不要让玩家先看到占位图形再被立绘顶替。
+      // 3 秒兜底，防止素材缺失导致 Boss 永远不出现（届时只画一团柔光，见 drawBossPlaceholder）。
+      if (!bossArtReady(this.key)) {
+        this.artWaitT += dt;
+        if (this.artWaitT < 3.0) { this.alpha = 0; return; }
+      }
       this.introT += dt;
       this.alpha = Math.min(1, this.introT / 0.8);
       this.y = this.baseY + (1 - this.alpha) * 40;
@@ -1809,56 +1816,28 @@ export class Boss {
 }
 
 /**
- * AI 立绘未就绪时的占位：柔光 + 无细节剪影。
- * 不用程序化小人（画风与 AI 立绘差距太大），只保证玩家能看见 Boss 的位置。
+ * AI 立绘未就绪时的占位：只画一团缓慢脉动的柔光。
+ * 刻意不画人物轮廓——任何剪影都会被看成「色块小人」，与 AI 立绘的画风断层更刺眼。
+ * 正常流程下根本看不到这里（Boss 出场前会等立绘就绪，见 update 的 intro 分支）。
  */
 function drawBossPlaceholder(ctx, o, accent = '#ffffff') {
   const t = o.t || 0;
   const alpha = (o.alpha == null ? 1 : o.alpha) * 0.92;
-  const bob = Math.sin(t * 1.6) * 4;
+  const pulse = 0.9 + Math.sin(t * 2.2) * 0.1;
 
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.translate(0, bob);
-
-  // 背光
   ctx.globalCompositeOperation = 'lighter';
-  const glow = ctx.createRadialGradient(0, -140, 6, 0, -140, 190);
-  glow.addColorStop(0, `${accent}30`);
+
+  const cy = -130;
+  const glow = ctx.createRadialGradient(0, cy, 6, 0, cy, 160);
+  glow.addColorStop(0, `${accent}4d`);
+  glow.addColorStop(0.5, `${accent}1f`);
   glow.addColorStop(1, `${accent}00`);
   ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(0, -140, 190, 0, Math.PI * 2);
+  ctx.ellipse(0, cy, 86 * pulse, 148 * pulse, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.globalCompositeOperation = 'source-over';
 
-  // 剪影：头 + 长发 + 斗篷下摆
-  const g = ctx.createLinearGradient(0, -230, 0, 10);
-  g.addColorStop(0, 'rgba(46,34,64,0.9)');
-  g.addColorStop(0.55, 'rgba(26,18,40,0.94)');
-  g.addColorStop(1, 'rgba(12,8,20,0.97)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.moveTo(-46, -6);
-  ctx.bezierCurveTo(-68, -60, -64, -132, -34, -176);
-  ctx.bezierCurveTo(-22, -192, -18, -206, -20, -222);
-  ctx.bezierCurveTo(-14, -238, 14, -238, 20, -222);
-  ctx.bezierCurveTo(18, -206, 22, -192, 34, -176);
-  ctx.bezierCurveTo(64, -132, 68, -60, 46, -6);
-  ctx.quadraticCurveTo(0, 8, -46, -6);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = `${accent}55`;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // 眼睛微光（让剪影一眼能认出是 Boss）
-  const blink = 0.55 + Math.sin(t * 2.1) * 0.25;
-  ctx.fillStyle = `rgba(255,120,120,${0.65 * blink})`;
-  for (const s of [-1, 1]) {
-    ctx.beginPath();
-    ctx.arc(s * 9, -205, 2.6, 0, Math.PI * 2);
-    ctx.fill();
-  }
   ctx.restore();
 }
