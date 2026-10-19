@@ -210,7 +210,7 @@ startStage() 同步耗时   46.5 ms   ← 关卡生成很快，不是瓶颈
 
 | 项 | 实测 | 结论 |
 |---|---|---|
-| 未交互时 AudioContext | 不存在（`unlock()` 才创建） | ✅ 符合设计，不触发 autoplay 警告 |
+| 未交互时 AudioContext | 启动期已创建（`suspended`，只预置音量） | ✅ **有意预热**：实测 `new AudioContext()` 要 **95.9ms**，放在启动幕盖屏期间付掉，首次按键不再卡一下 |
 | 真实手势（CDP 点击）后 unlock | `ctx.state = running` | ✅ 解锁正常 |
 | 21 个音效 | 全部播放成功，0 错误 | ✅ |
 | 连打 40 发 `shotHit` | 无爆音、无异常 | ✅ 高频触发安全 |
@@ -226,6 +226,13 @@ dash / menu / select / bounce`。
 
 切后台兜底正确：`loop.js` 同时有 `maxDelta` 钳制、`maxSteps` 限制、
 `visibilitychange` 重置三重保护，属于这类游戏的正确做法。
+
+> 关于「未交互时就有 AudioContext」：这是 2026-10-19 修首帧卡顿时的有意取舍。
+> 原来 `unlock()` 里才 `new AudioContext()`，实测建上下文本身就要 95.9ms，
+> 正好砸在玩家第一次按键上（打开「选择难度」一次性 100~130ms 长任务）。
+> 现在启动时创建（浏览器策略下是 `suspended`），真实手势后只 `resume()`，
+> 代价是控制台可能多一条 autoplay 警告——玩家不可见，换取首次交互不顿。
+> 验证：`tools/_pt_fix34_verify.mjs` V5（首次按键无 ≥50ms 长任务）。
 
 ---
 
