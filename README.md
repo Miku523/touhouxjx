@@ -2,6 +2,12 @@
 
 一款以《东方 Project》世界观为背景的同人动作游戏。纯原生 JavaScript + Canvas2D 实现，**零依赖、零构建**，用浏览器打开 `index.html` 就能玩。
 
+## 在线游玩
+
+打开 **<https://mikuascendlog.com/touhouxjx/>** 直接开玩，不用下载、不用安装、不用起本地服务器。
+
+旧地址 <https://miku523.github.io/touhouxjx/> 会 301 跳到同一站点（GitHub Pages 自定义域名）。线上版本由 `main` 分支推送后自动重建；入口 CSS / JS 带 `?v=` 版本串，静态资源另有约 10 分钟 CDN 缓存，部署后仍看到旧界面时强刷一次（`Ctrl` + `Shift` + `R`）即可。
+
 ---
 
 ## 内容概览
@@ -233,6 +239,23 @@ python -m http.server 8137
 > 直接双击 `index.html` 可能因浏览器的 ES Module 同源策略而失败，建议用上面的方式起一个静态服务器（或使用 VS Code 的 Live Server）。
 >
 > 想复现某一场 Boss 弹幕，可在地址后加 `?seed=数字`，例如 `http://127.0.0.1:8137/index.html?seed=12345`。加了这个参数后全局随机数会换成由 seed 决定的确定性序列，并在每关开局、Boss 开战那一刻拨回起点，方便录像复盘或调试；会追踪玩家位置的弹幕仍随走位变化，所以复现的前提是操作也一致。不带参数时行为和以前一样。
+
+## 部署
+
+线上就是 GitHub Pages 托管的仓库根目录（`main` 分支 → `/`，无构建步骤）：
+
+```bash
+git push origin main   # 推送后 Pages 自动重建，约 1 分钟生效
+```
+
+- 只上传 `index.html` + `src/`（`.nojekyll` 关闭 Jekyll 处理，避免下划线开头的目录被吞）。
+- 改动 `src/style.css` / `src/main.js` 后，把 `index.html` 里两处 `?v=` 版本串同步递增：入口文件自身也有 10 分钟 CDN 缓存，版本串能让旧访客立刻拿到新代码，不会出现「新 HTML + 旧 JS」的错配。
+- 线上响应头是 `Cache-Control: max-age=600`；核对线上是否已是新版本，可直接对比哈希：
+
+```bash
+curl -s https://mikuascendlog.com/touhouxjx/src/main.js | sha1sum
+git show HEAD:src/main.js | sha1sum      # 忽略 CRLF 时用 tr -d '\r'
+```
 
 ## 技术说明
 
