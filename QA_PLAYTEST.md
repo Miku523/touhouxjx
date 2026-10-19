@@ -201,3 +201,56 @@ startStage() 同步耗时   46.5 ms   ← 关卡生成很快，不是瓶颈
 
 第 1 面从出生到通关 **256 秒**（道中约 240s / Boss 约 16s）。
 人类玩家走位更高效，但 2100+ 列的道中长度决定了单面下限约 3 分钟。
+
+---
+
+## 六、音频与切后台（`tools/_scan_audio_focus.mjs`，2026-10-19 补测）
+
+这两块此前是**完全空白**（音频 715 行从未实机跑过），本轮补齐，5/5 PASS。
+
+| 项 | 实测 | 结论 |
+|---|---|---|
+| 未交互时 AudioContext | 不存在（`unlock()` 才创建） | ✅ 符合设计，不触发 autoplay 警告 |
+| 真实手势（CDP 点击）后 unlock | `ctx.state = running` | ✅ 解锁正常 |
+| 21 个音效 | 全部播放成功，0 错误 | ✅ |
+| 连打 40 发 `shotHit` | 无爆音、无异常 | ✅ 高频触发安全 |
+| 11 首 BGM 连续切歌 | 全部成功，0 错误 | ✅ 换曲无重叠 |
+| 切后台 8 秒积压 | 理论 480 步 → 实际 **28 步** | ✅ `maxDelta 0.25` + `maxSteps 4` 钳制生效 |
+| visibilitychange 恢复 | `acc` 清零，位移 0 | ✅ 不穿墙 |
+
+音频是**程序化合成**（Web Audio 振荡器，无采样文件），
+音效名硬编码在 `_playSfx` 的 switch 里：
+`jump / doubleJump / land / coin / hurt / stomp / shotHit / enemyKill / bossHit /
+die / bossStomp / bossStagger / bossDive / win / spell / extend / checkpoint /
+dash / menu / select / bounce`。
+
+切后台兜底正确：`loop.js` 同时有 `maxDelta` 钳制、`maxSteps` 限制、
+`visibilitychange` 重置三重保护，属于这类游戏的正确做法。
+
+---
+
+## 七、测试过程的局限（诚实记录）
+
+这些**不是游戏的 bug**，是我这套自动测试本身的盲区，
+读上面的数据时需要相应打折：
+
+1. **自动玩家 AI 不会跳坑**。第 1 面 col 279 的坑宽 128px（玩家能跳 285px），
+   AI 卡了 500 秒过不去。所以报告里的「通关时长」是 **AI 水平**，
+   人类玩家会明显更快，但也可能有 AI 从未触发的操作路径。
+
+2. **只驱动了逻辑层，没走真实键盘事件**。全部测试都是注入假 input
+   （覆盖 `input.down/pressed`），真实的 keydown 处理、按键长按重复、
+   组合键（Shift + 方向同时按）**没有被覆盖**。
+
+3. **魔理沙覆盖不足**：只跑了第 1 面 Boss + good 结局，
+   其余 5 面 Boss、EXTRA、道中全是灵梦。
+
+4. **EXTRA 完整道中用时间轴快进跳过了**（1900 列 stg，设计约 14 分钟），
+   只验证了「中途 Boss → 终盘 Boss → 结局」这条链路。
+
+5. **只测了 1280×720 一种分辨率**，窗口缩放、不同 DPI 未测。
+
+6. **音乐房试听倒计时、暂停菜单逐项交互**未逐项验证。
+
+7. **headless 软渲染会让帧率数据失真**（早期测到 steps/s=27），
+   所有性能结论均已改用真实浏览器 rAF 复测。
