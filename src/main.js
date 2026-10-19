@@ -741,7 +741,7 @@ class Game {
       { ...row('help-move', '左右移动', cap('left') + cap('right')), groupTitle: '移动', glyph: '動' },
       row('help-move', '上下移动 / 选择', cap('up') + cap('down')),
       row('help-move', '跳跃', cap('jump') + '<span class="help-tip">二段跳</span>'),
-      row('help-move', '低速移动 / 判定点', cap('fast') + '<span class="help-tip">按住显示判定点</span>'),
+      row('help-move', '低速移动 / 判定点', cap('slow') + '<span class="help-tip">按住显示判定点</span>'),
       { ...row('help-act', '射击', cap('shoot')), groupTitle: '战斗', glyph: '戰' },
       row('help-act', '向上射击', cap('up') + '<span class="help-tip">按住打空中</span>'),
       row('help-act', '向下射击', cap('down') + '<span class="help-tip">按住打脚下</span>'),
@@ -898,6 +898,9 @@ class Game {
     this.renderer.skipPostFrames?.(2);
     // 关卡会在接下来几秒里喷新变体：空闲帧先把常见的 (型, 色, 尺寸) 烤好
     this._prewarmBulletSprites();
+    // 场景美术（天空 / 视差 / 地形 / 环境光）的 sprite、gradient、pattern 全是懒缓存，
+    // 首帧要一次性建 40+ 个离屏 canvas。先离屏跑一遍完整绘制，把这笔开销挪出可见卡顿。
+    this._prewarmStageArt();
     this.stage.onEvent = (type, data) => this._onStageEvent(type, data);
     // 本关会出场的 AI 立绘（玩家 + Boss）现在就开始下载：
     // 等跑到 Boss 触发对话时已经就绪，不会闪回旧的矢量立绘。
@@ -1452,8 +1455,29 @@ class Game {
     this._setPanel('暂停', `游戏已暂停 · 难度 ${diff} · 剩余残机 ${left}`, [
       { label: '继续', key: 'ESC', cls: 'primary', onPick: () => this._resume() },
       { label: '设置', key: 'S', hotkey: 'KeyS', onPick: () => this._showSettings(0, 'pause') },
-      { label: '退出到标题', key: 'Q', hotkey: 'KeyQ', onPick: () => this.showTitle() },
-    ], '↑ ↓ 选择　ENTER 确认　Esc 返回');
+      { label: '退出到标题', key: 'Q', hotkey: 'KeyQ', onPick: () => this._showQuitRun() },
+    ], '↑ ↓ 选择　ENTER 确认　Esc 返回　退出会结束本局');
+  }
+
+  /**
+   * 暂停 → 退出到标题的二次确认。
+   * 直接退出会丢掉本局进度，这里默认高亮「继续游戏」，防止手快误触。
+   */
+  _showQuitRun() {
+    this.state = 'paused';
+    this._captureAction = null;
+    const diff = this.inExtra ? 'EXTRA' : this.difficulty;
+    const level = this.inExtra ? 'EXTRA' : `STAGE ${this.levelIndex + 1}`;
+    this._setPanel(
+      '退出到标题',
+      '当前进度不会保存，确定离开本局？',
+      [
+        { label: '继续游戏', key: 'ESC', back: true, onPick: () => this._showPause() },
+        { label: '退出到标题', key: 'Q', hotkey: 'KeyQ', cls: 'danger', onPick: () => this.showTitle() },
+      ],
+      `${level} · 难度 ${diff} · 退出后需从标题重新开始`,
+      { select: 0 }
+    );
   }
 
   /* ============================================================
@@ -1690,7 +1714,7 @@ class Game {
     const cap = this._captureAction;
 
     const CATEGORIES = [
-      { id: 'kb-move', title: '移动', glyph: '動', actions: ['left', 'right', 'up', 'down', 'fast'] },
+      { id: 'kb-move', title: '移动', glyph: '動', actions: ['left', 'right', 'up', 'down', 'slow'] },
       { id: 'kb-act', title: '战斗', glyph: '戰', actions: ['jump', 'shoot', 'dash', 'cast'] },
       { id: 'kb-sys', title: '系统', glyph: '系', actions: ['confirm', 'pause', 'restart', 'mute', 'quit'] },
     ];
@@ -1991,6 +2015,41 @@ class Game {
     };
     // 标题揭幕后 1.5s 再开始：首屏先把自己的活干完
     setTimeout(step, 1500);
+  }
+
+  /**
+   * 进关前把场景美术的懒缓存烤热。
+   *
+   * 天空 / 视差 / 地形 / 环境光的 sprite、gradient、pattern 全是「用到才建」：
+   * 实测首帧要一次性建 41 个离屏 canvas、106 个线性渐变、36 个径向渐变，
+   * 而稳态每帧是 0 / 8 / 0 —— 这笔冷启动开销就是「进关瞬间画面冻结」的来源
+   * （真实 GPU 下约 0.5 秒）。
+   *
+   * 这里用离屏 ctx 完整跑一遍 stage.draw：走的是和真实渲染完全相同的代码路径，
+   * 所以无论当前主题走的是手绘背景还是程序化场景，该建的缓存都会被建好。
+   * 同步执行是刻意的 —— 必须在第一帧渲染之前完成，否则等于没预热。
+   * 开销落在「菜单消失 → 游戏画面出现」之间，玩家感知是加载而不是卡死。
+   */
+  _prewarmStageArt() {
+    if (typeof document === 'undefined') return;
+    const st = this.stage;
+    if (!st || typeof st.draw !== 'function') return;
+    try {
+      const cv = document.createElement('canvas');
+      cv.width = this.renderer?.w || 1280;
+      cv.height = this.renderer?.h || 720;
+      const ctx = cv.getContext('2d');
+      if (!ctx) return;
+      const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      const t0 = now();
+      st.draw(ctx, 1);
+      const ms = now() - t0;
+      if (typeof window !== 'undefined') {
+        (window.__prewarmInfo || (window.__prewarmInfo = {})).stageArtMs = Math.round(ms);
+      }
+    } catch (e) {
+      // 预热失败不影响游玩：最坏情况就是首帧照旧慢一点
+    }
   }
 
   /** 全局静音开关：引擎状态为准，同时同步持久化快照 */
