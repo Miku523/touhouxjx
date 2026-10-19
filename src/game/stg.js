@@ -140,7 +140,7 @@ export class StgPlayer {
     const ayAll = ay - up;
 
     // 按住 Shift 低速移动：移速降到 50%，并显示判定点
-    this.focus = !!input.down('fast');
+    this.focus = !!input.down('slow');
     const spd = this.focus ? SPEED * 0.5 : SPEED;
 
     if (ax !== 0) this.facing = ax;

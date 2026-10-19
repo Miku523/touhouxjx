@@ -21,7 +21,7 @@ export const ACTION_DEFS = [
   { action: 'down',    label: '下移 / 下选', primary: 'ArrowDown',  alt: 'KeyS' },
   { action: 'jump',    label: '跳跃',        primary: 'Space',      alt: null },
   { action: 'shoot',   label: '射击',        primary: 'KeyZ',       alt: 'KeyJ' },
-  { action: 'fast',    label: '低速移动',    primary: 'ShiftLeft',  alt: 'ShiftRight' },
+  { action: 'slow',    label: '低速移动',    primary: 'ShiftLeft',  alt: 'ShiftRight' },
   { action: 'dash',    label: '冲刺',        primary: 'KeyK',       alt: 'KeyC' },
   { action: 'cast',    label: '符卡',        primary: 'KeyX',       alt: 'KeyL' },
   { action: 'confirm', label: '确认',        primary: 'Enter',      alt: 'NumpadEnter' },
@@ -104,6 +104,9 @@ function loadBinds() {
     if (!raw) return map;
     const saved = JSON.parse(raw);
     if (!saved || typeof saved !== 'object') return map;
+    // 动作改名：'fast' 曾是「低速移动」的动作名，已统一为 'slow'。
+    // 老存档里存的还是 fast，这里搬过来，避免玩家改动过的键位被静默丢弃。
+    if (typeof saved.fast === 'string' && saved.fast && !saved.slow) saved.slow = saved.fast;
     for (const d of ACTION_DEFS) {
       const code = saved[d.action];
       if (typeof code === 'string' && code) map.get(d.action).primary = code;

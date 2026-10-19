@@ -209,7 +209,7 @@ export class Player {
     this.prevY = this.y;
 
     // 按住 Shift：低速移动 + 显示判定点
-    this.focus = !!input.down('fast');
+    this.focus = !!input.down('slow');
 
     if (!this.alive || this.casting) {
       this._tickDeadOrCast(dt, input);
