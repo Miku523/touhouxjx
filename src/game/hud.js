@@ -14,6 +14,9 @@ export class Hud {
     this.elPowerPips = document.getElementById('powerPips');
     this.elPowerCastMark = document.getElementById('powerCastMark');
     this.elPowerPop = document.getElementById('powerPop');
+    this.elExtendBox = document.getElementById('extendBox');
+    this.elExtendFill = document.getElementById('extendFill');
+    this.elExtendNum = document.getElementById('extendNum');
     this.elStage = document.getElementById('stageName');
     this.elStageSub = document.getElementById('stageSub');
     this.elTimer = document.getElementById('timer');
@@ -23,13 +26,6 @@ export class Hud {
     this.elBossFill = document.getElementById('bossFill');
     this.elBanner = document.getElementById('banner');
 
-    // 秘籍「无敌模式」徽章：挂在残机左侧，默认隐藏
-    this.elCheatBadge = document.createElement('span');
-    this.elCheatBadge.className = 'cheat-badge hidden';
-    this.elCheatBadge.textContent = '無敵';
-    document.querySelector('#hud .hud-left')?.appendChild(this.elCheatBadge);
-    this._invincible = false;
-
     this._lives = -1;
     this._power = -1;
     this._powerRaw = -1;
@@ -37,6 +33,10 @@ export class Hud {
     this._level = -1;
     this._castable = null;
     this._castPct = -1;
+    this._extendPct = -1;
+    this._extendPts = -1;
+    this._extendNeed = -1;
+    this._extendBumpT = 0;
     this._popT = 0;
     this._levelChanged = false;
     this._time = -1;
@@ -54,12 +54,6 @@ export class Hud {
   setChar(char) {
     this._char = char === 'marisa' ? 'marisa' : 'reimu';
     if (this.elLives) this.elLives.dataset.char = this._char;
-  }
-
-  /** 秘籍「无敌模式」徽章开关 */
-  setInvincible(on) {
-    this._invincible = !!on;
-    this.elCheatBadge?.classList.toggle('hidden', !this._invincible);
   }
 
   _buildLives(n) {
@@ -91,6 +85,8 @@ export class Hud {
 
     if (stageState.lives !== this._lives) {
       this._lives = stageState.lives;
+      // 1UP 会让残机数超过初始格子数，补建图标再刷新显隐
+      if (stageState.lives > this.elsLives.length) this._buildLives(stageState.lives);
       for (let i = 0; i < this.elsLives.length; i++) {
         this.elsLives[i].classList.toggle('off', i >= stageState.lives);
       }
@@ -115,7 +111,7 @@ export class Hud {
       this._levelChanged = this._levelChanged || (prevLv > 0 && prevLv !== lv);
     }
 
-    // 符卡消耗刻度（50 / 128 ≈ 39%）+ 可施放时的发光提示
+    // 符卡消耗刻度（6 / 16 ≈ 38%）+ 可施放时的发光提示
     const castCost = stageState.castCost ?? POWER.castCost;
     const costPct = Math.round((castCost / stageState.maxPower) * 100);
     if (costPct !== this._castPct) {
@@ -139,10 +135,34 @@ export class Hud {
     }
     this._powerRaw = rawPower;
 
+    // 1UP 累计条：每 99 点 POWER → 恢复 1 条残机，条满清零后重新累计
+    const ep = stageState.extendPts || 0;
+    const en = stageState.extendNeed || POWER.extend || 99;
+    const epct = Math.round((ep / en) * 1000) / 10;
+    if (epct !== this._extendPct) {
+      this._extendPct = epct;
+      if (this.elExtendFill) this.elExtendFill.style.width = epct + '%';
+    }
+    if (en !== this._extendNeed || ep !== this._extendPts) {
+      const prev = this._extendPts;
+      this._extendNeed = en;
+      this._extendPts = ep;
+      if (this.elExtendNum) this.elExtendNum.textContent = `${Math.floor(ep)}/${en}`;
+      // 计数回绕 = 刚刚拿到 1UP，闪一下提醒
+      if (prev >= 0 && ep < prev) {
+        this._extendBumpT = 1.1;
+        this.elExtendBox?.classList.add('bump');
+      }
+    }
+    if (this._extendBumpT > 0) {
+      this._extendBumpT -= dt;
+      if (this._extendBumpT <= 0) this.elExtendBox?.classList.remove('bump');
+    }
+
     // 浮字：吃 P 涨火力、放符卡烧火力
     if (prevRaw >= 0 && rawPower !== prevRaw) {
       const delta = rawPower - prevRaw;
-      if (delta <= -10) {
+      if (delta <= -5) {
         this._pop(`-${-delta}${this._levelChanged ? ` · Lv.${lv}` : ''}`, 'down');
       } else if (delta > 0 && this._levelChanged) {
         this._pop(`火力 Lv.${lv} ↑`, 'up');
@@ -249,7 +269,14 @@ export class Hud {
     this._levelChanged = false;
     this._castable = null;
     this._castPct = -1;
+    this._extendPct = -1;
+    this._extendPts = -1;
+    this._extendNeed = -1;
+    this._extendBumpT = 0;
     this._popT = 0;
+    this.elExtendBox?.classList.remove('bump');
+    if (this.elExtendFill) this.elExtendFill.style.width = '0%';
+    if (this.elExtendNum) this.elExtendNum.textContent = '0/99';
     this._time = -1;
     this.elPowerBar?.classList.remove('full', 'castable');
     if (this.elPowerLvNum) this.elPowerLvNum.textContent = '1';

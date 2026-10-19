@@ -1,12 +1,14 @@
 /**
  * 玩家的射击弹（御札 / 魔弹）。
  *
- * 两名自机的弹道从「只有伤害和贴图不同」改成两套完全不同的机制：
- *   灵梦 = 白纸御札 + 追踪：发射后自动咬住最近的敌人（Boss / 杂兵一视同仁），
- *          以有限的转向速率修弯弹道，命中后消失（不穿透）。
- *   魔理沙 = 星形魔弹 + 扩散穿透：扇形散开，单发伤害是普通弹的 2 倍，
- *          命中后不消失、继续穿透后续目标（同一目标只会被同一发击中一次），
- *          但完全不追踪。
+ * 两名自机的每一轮开火都是「固定直射主弹 + 特殊副弹」的混合弹幕：
+ *   主弹：沿 aim / fan 笔直飞出，负责稳定命中；
+ *   副弹：每两轮开火追加一发——
+ *     灵梦 = 白纸御札 + 追踪：自动咬住最近的敌人，以有限转向速率掰弯弹道；
+ *     魔理沙 = 星形魔弹 + 穿透：命中不消失，继续穿透后续目标（同一目标只吃一次）。
+ *
+ * 射程：主弹 life 1.65–1.7s、副弹 2.2–2.4s，从自机位置能打到 1280 宽画面的
+ * 另一头，不再飞半屏就消失。
  *
  * 数量很少（同屏十几发），视觉仍然预渲染成离屏精灵；运行时只做
  * drawImage + 旋转/翻转，尾迹复用同一张精灵，不新建渐变。
@@ -23,32 +25,57 @@ const SS = 2; // 超采样倍率
  * 两名自机的弹道参数表。
  *
  * damage 是「单发基准伤害」，最终仍乘 balance.js 的全局攻击倍率；
- * 魔理沙的 8 = 普通弹 4 的两倍（用户需求：特殊弹伤害是正常子弹的两倍）。
+ * 魔理沙主弹的 8 = 普通弹 4 的两倍（保留原来的特长）。
+ * special 是每两轮开火追加的一发特殊副弹：灵梦追踪、魔理沙穿透。
  */
 const SHOT_PROFILE = {
   reimu: {
     damage: 4,
     speed: 980,
-    life: 0.8,
+    life: 1.7,          // 射程 ≈ 1666px：能横穿整个 1280 画面
     r: 7,
-    homing: true,       // 自动追踪敌人（不区分 Boss / 杂兵）
-    homingTurn: 6.4,    // 最大转向角速度 rad/s（速度 980 时转弯半径约 153px）
-    homingRange: 760,   // 超过这个距离就不再拐弯，保证弹道不会满屏乱绕
+    homing: false,      // 主弹固定直射
+    homingTurn: 0,
+    homingRange: 0,
     pierce: false,
     fanFlat: 0.09,      // 平射时的半张角（原来就是 0.09）
     fanAim: 0.55,       // 仰射时的半张角（覆盖不同高度）
+    special: {
+      damage: 2.4,
+      speed: 760,
+      life: 2.4,
+      r: 6.5,
+      homing: true,     // 副弹自动追踪
+      homingTurn: 7.4,
+      homingRange: 1100,
+      pierce: false,
+      every: 2,         // 每 2 轮开火补一发
+      scale: 1.18,
+    },
   },
   marisa: {
-    damage: 8,          // 普通弹（4）× 2 = 8，用户要求「比正常子弹高二倍」
+    damage: 8,          // 主弹单发 8 = 普通弹 4 的两倍
     speed: 1040,
-    life: 0.75,
+    life: 1.65,
     r: 9,
-    homing: false,      // 不追踪
+    homing: false,      // 主弹固定直射
     homingTurn: 0,
     homingRange: 0,
-    pierce: true,       // 穿透：命中后继续飞，同一目标只吃一次
+    pierce: false,
     fanFlat: 0.22,      // 扩散：平射也有明显扇形（约 25° 总张角）
     fanAim: 0.6,        // 仰射散得更开，像一蓬流星雨
+    special: {
+      damage: 3.2,
+      speed: 900,
+      life: 2.2,
+      r: 8,
+      homing: false,
+      homingTurn: 0,
+      homingRange: 0,
+      pierce: true,     // 副弹命中后继续穿透
+      every: 2,
+      scale: 1.26,
+    },
   },
 };
 
@@ -305,13 +332,16 @@ export class PlayerShots {
       this.pool[i] = {
         active: false, x: 0, y: 0, vx: 0, vy: 0,
         life: 0, r: 7, damage: 1, char: 'reimu', rot: 0, t: 0,
-        homing: false, pierce: false,
+        homing: false, pierce: false, special: false,
+        turn: 0,             // 单发追踪角速度（主弹 0，副弹按 special 表）
+        range: 0,            // 单发追踪距离
         target: null,        // 追踪锁定的目标包装对象 { ref, x, y }
         hitTargets: [],      // 穿透弹已经打过的目标，避免同一敌人每帧重复扣血
       };
     }
     this.cursor = 0;
     this.cooldown = 0;
+    this.fireCount = 0;   // 开火轮数：决定特殊副弹的节奏（每 2 轮一发）
   }
 
   _take() {
@@ -328,7 +358,7 @@ export class PlayerShots {
   }
 
   /**
-   * 开火。火力等级 1-4 决定弹数，角色决定弹道机制，aim 为额外仰角（向上射击用）。
+   * 开火。每一轮 = 固定直射主弹（数量随火力 1-4 成长）+ 每 2 轮的 1 发特殊副弹。
    * @param {number} x 枪口 x
    * @param {number} y 枪口 y
    * @param {number} dir 朝向 1 / -1
@@ -340,7 +370,7 @@ export class PlayerShots {
   fire(x, y, dir, char, powerLevel = 1, aim = 0, spread) {
     const prof = SHOT_PROFILE[char] || SHOT_PROFILE.reimu;
     const lv = Math.min(4, Math.max(1, powerLevel | 0));
-    // 弹数成长：1 / 2 / 3 / 5 发；灵梦单发 4，魔理沙单发 8（普通弹两倍），
+    // 主弹数成长：1 / 2 / 3 / 5 发；灵梦单发 4，魔理沙单发 8（普通弹两倍），
     // 最终都乘 balance.js 的全局攻击倍率
     const shots = [1, 2, 3, 5][lv - 1];
     // 向上射击时用大扇形覆盖不同的高度/距离，平射用较小的散布；
@@ -359,8 +389,39 @@ export class PlayerShots {
       b.r = prof.r;
       b.damage = scalePlayerDamage(prof.damage);
       b.char = char;
-      b.homing = prof.homing;
-      b.pierce = prof.pierce;
+      // 主弹：固定直射，不追踪、不穿透
+      b.homing = false;
+      b.pierce = false;
+      b.special = false;
+      b.turn = 0;
+      b.range = 0;
+      b.target = null;
+      b.hitTargets.length = 0;
+      b.rot = dir > 0 ? 0 : Math.PI;
+      b.t = 0;
+    }
+
+    // 特殊副弹：每 every 轮补一发，让「固定 + 追踪 / 固定 + 穿透」同时在场
+    this.fireCount = (this.fireCount + 1) | 0;
+    const sp = prof.special;
+    if (sp && this.fireCount % (sp.every || 2) === 0) {
+      const b = this._take();
+      const ang = aim * 0.6; // 副弹比主弹更贴近直线，追踪/穿透自己会找目标
+      b.active = true;
+      b.x = x + 6 * dir;
+      b.y = y + 3;
+      b.vx = Math.cos(ang) * sp.speed * dir;
+      b.vy = Math.sin(ang) * sp.speed;
+      b.life = sp.life;
+      b.r = sp.r;
+      b.damage = scalePlayerDamage(sp.damage);
+      b.char = char;
+      b.homing = !!sp.homing;
+      b.pierce = !!sp.pierce;
+      b.special = true;
+      b.turn = sp.homingTurn || 0;
+      b.range = sp.homingRange || 0;
+      b.scale = sp.scale || 1.2;
       b.target = null;
       b.hitTargets.length = 0;
       b.rot = dir > 0 ? 0 : Math.PI;
@@ -407,7 +468,7 @@ export class PlayerShots {
     const dx = t.x - b.x;
     const dy = t.y - b.y;
     const dist2 = dx * dx + dy * dy;
-    const range = prof.homingRange;
+    const range = b.range || prof.homingRange || 900;
     if (dist2 > range * range) { b.target = null; return; }
 
     const sp = Math.hypot(b.vx, b.vy) || 1;
@@ -416,7 +477,7 @@ export class PlayerShots {
     let d = want - cur;
     while (d > Math.PI) d -= PI2;
     while (d < -Math.PI) d += PI2;
-    const maxTurn = prof.homingTurn * dt;
+    const maxTurn = (b.turn || prof.homingTurn || 6) * dt;
     if (d > maxTurn) d = maxTurn;
     else if (d < -maxTurn) d = -maxTurn;
     const na = cur + d;
@@ -437,7 +498,7 @@ export class PlayerShots {
 
   _nearestTarget(b, targets) {
     const prof = SHOT_PROFILE[b.char] || SHOT_PROFILE.reimu;
-    const range = prof.homingRange;
+    const range = b.range || prof.homingRange || 900;
     let best = null;
     let bestD = range * range;
     for (let i = 0; i < targets.length; i++) {
@@ -494,8 +555,28 @@ export class PlayerShots {
       }
       const alpha = Math.min(1, b.life * 6);
       const S = getShotSprite(b.char, b.r);
+      const sc = b.special ? (b.scale || 1.2) : 1;
       const dir = b.vx >= 0 ? 1 : -1;
       const sp = Math.hypot(b.vx, b.vy) || 1;
+
+      // 特殊副弹：额外一圈高亮光环 + 柔光核，和主弹一眼区分
+      if (b.special) {
+        const col = b.char === 'marisa' ? '150,225,255' : '255,160,210';
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = alpha * 0.32;
+        ctx.fillStyle = `rgba(${col},0.42)`;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r * 1.25, 0, PI2);
+        ctx.fill();
+        ctx.globalAlpha = alpha * 0.72;
+        ctx.strokeStyle = `rgba(${col},0.95)`;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r * (1.85 + Math.sin(b.t * 20) * 0.12), 0, PI2);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       if (b.char === 'marisa') {
         /* ---- 魔理沙：金色尾迹 + 旋转星弹 + 穿透光环 ---- */
@@ -521,7 +602,7 @@ export class PlayerShots {
         ctx.save();
         ctx.translate(b.x, b.y);
         ctx.rotate(b.t * 11); // 缓慢自转，星形更有生命力
-        const w = S.w;
+        const w = S.w * sc;
         ctx.globalAlpha = alpha;
         ctx.drawImage(S.img, -w * 0.5, -w * 0.5, w, w);
         ctx.restore();
@@ -540,7 +621,7 @@ export class PlayerShots {
         }
       } else {
         /* ---- 灵梦：御札 —— 两层残影 + 符纸（沿实际速度方向拖尾，水平镜像，不旋转） ---- */
-        const w = S.w;
+        const w = S.w * sc;
         const s1 = w * 0.84;
         const s2 = w * 0.94;
         const ux = -b.vx / sp;

@@ -1,5 +1,5 @@
 /**
- * 剧情对话系统：DOM 文本 + canvas 矢量立绘 + 打字机效果。
+ * 剧情对话系统：DOM 文本 + AI 立绘（加载失败时退化为剪影）+ 打字机效果。
  *
  * 用法：
  *   const dlg = new Dialogue();
@@ -7,8 +7,6 @@
  *   // 每帧：dlg.update(dt)  —— 即使用户不看对话，也要驱动立绘呼吸/眨眼
  *   // 推进：dlg.advance()   —— 空格/确认键/点击
  */
-import * as BossArt from '../art/bosses.js';
-import { drawCharacter } from '../art/chars.js';
 import { preloadWhenIdle } from '../engine/lazy_preload.js';
 
 /* ---------------- AI 立绘（Seedream 生成，tools/cutout.py 抠图） ---------------- */
@@ -85,36 +83,49 @@ function paintAiPortrait(ctx, o) {
   return true;
 }
 
-/** 立绘兜底：bosses.js 的 drawPortrait 还没就绪时用它，保证对话不崩 */
+/**
+ * 立绘兜底：AI 立绘还没到时的占位。
+ * 只画柔光 + 无细节剪影，不画程序化小人（和 AI 立绘画风差太远）。
+ */
 function fallbackPortrait(ctx, o) {
-  const t = o.t || 0;
-  const key = o.char;
+  const alpha = (o.alpha ?? 1) * 0.62;
   ctx.save();
-  ctx.globalAlpha = o.alpha ?? 1;
-  if (key === 'reimu' || key === 'marisa') {
-    ctx.scale(4.2, 4.2);
-    drawCharacter(ctx, {
-      char: key, state: 'idle', t, facing: 1, vx: 0, vy: 0, flash: 0, alpha: 1, scale: 1,
-    });
-  } else {
-    // 未知 / 尚未实现的 Boss：占位剪影
-    const g = ctx.createLinearGradient(0, -420, 0, 0);
-    g.addColorStop(0, 'rgba(60,40,80,0.9)');
-    g.addColorStop(1, 'rgba(20,12,30,0.95)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.ellipse(0, -150, 110, 160, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,158,203,0.4)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
+  ctx.globalAlpha = alpha;
+
+  // 柔光
+  const glow = ctx.createRadialGradient(0, -300, 10, 0, -300, 260);
+  glow.addColorStop(0, 'rgba(255,255,255,0.10)');
+  glow.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, -300, 260, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 剪影：头 + 长发 + 衣摆
+  const g = ctx.createLinearGradient(0, -520, 0, 0);
+  g.addColorStop(0, 'rgba(52,38,70,0.92)');
+  g.addColorStop(0.6, 'rgba(26,18,40,0.95)');
+  g.addColorStop(1, 'rgba(12,8,20,0.97)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(-96, 0);
+  ctx.bezierCurveTo(-120, -110, -110, -280, -56, -368);
+  ctx.bezierCurveTo(-45, -404, -35, -434, -37, -462);
+  ctx.bezierCurveTo(-27, -508, 27, -508, 37, -462);
+  ctx.bezierCurveTo(35, -434, 45, -404, 56, -368);
+  ctx.bezierCurveTo(110, -280, 120, -110, 96, 0);
+  ctx.quadraticCurveTo(0, 15, -96, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,180,200,0.35)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
   ctx.restore();
 }
 
 function paintPortrait(ctx, o) {
   if (paintAiPortrait(ctx, o)) return;
-  if (typeof BossArt.drawPortrait === 'function') return BossArt.drawPortrait(ctx, o);
   return fallbackPortrait(ctx, o);
 }
 

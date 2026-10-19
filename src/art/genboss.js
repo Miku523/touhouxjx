@@ -121,6 +121,37 @@ function loadOne(src) {
   return holder;
 }
 
+/**
+ * 强制加载某位 Boss 的战斗立绘（高优先级，幂等）。
+ * Boss 战开始前调用，避免玩家先看到占位剪影再被 AI 立绘顶替。
+ * @returns {Promise<boolean>} 是否拿到了可用素材
+ */
+const LOADING = new Map();
+export function ensureBossArt(key) {
+  const holder = IMGS[key];
+  if (holder && holder.art) return Promise.resolve(true);
+  if (LOADING.has(key)) return LOADING.get(key);
+  if (typeof Image === 'undefined' || !KEYS.includes(key)) return Promise.resolve(false);
+  const p = new Promise((resolve) => {
+    const img = new Image();
+    img.decoding = 'async';
+    setPriority(img, 'high');
+    img.onload = () => {
+      const art = prep(img);
+      IMGS[key] = { art };
+      LOADING.delete(key);
+      resolve(!!art);
+    };
+    img.onerror = () => {
+      LOADING.delete(key);
+      resolve(false);
+    };
+    img.src = new URL(key + '.png', BASE).href;
+  });
+  LOADING.set(key, p);
+  return p;
+}
+
 // 首屏只需要标题素材：Boss 立绘等首屏稳定后再排队（未就绪时 drawGenBoss 返回 false，走程序化绘制）
 preloadWhenIdle(() => {
   if (typeof Image === 'undefined') return;
@@ -134,7 +165,11 @@ preloadWhenIdle(() => {
 export function drawGenBoss(ctx, o) {
   const holder = IMGS[o.boss];
   const art = holder && holder.art;
-  if (!art) return false;
+  if (!art) {
+    // 未就绪：按需拉一次，本帧返回 false 由调用方画占位
+    ensureBossArt(o.boss);
+    return false;
+  }
 
   const scale = o.scale || 1;
   const h = (o.height || BOSS_H[o.boss] || DRAW_H) * scale;
@@ -214,4 +249,13 @@ export function drawGenBoss(ctx, o) {
 export function genBossReady(key) {
   const holder = IMGS[key];
   return !!(holder && holder.art);
+}
+
+/**
+ * 立绘的显示高度（以脚底原点向上，像素）。
+ * 近战提示（破势条 / 眩晕星）按这个高度定位头顶，别用 Boss 的碰撞盒 h——
+ * 碰撞盒只有 132，立绘却有 236~256，直接按 h 算会把 UI 画到脸上。
+ */
+export function bossArtHeight(key) {
+  return BOSS_H[key] || DRAW_H;
 }

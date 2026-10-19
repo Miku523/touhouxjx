@@ -37,7 +37,7 @@ export const DIFFICULTIES = {
   E: {
     key: 'E',
     label: 'EASY',
-    cn: '简单',
+    cn: '昨日行',
     stageCount: 5,
     unlockExtra: false,
     trimHardCards: [4, 5],
@@ -57,12 +57,11 @@ export const DIFFICULTIES = {
     stgScoutShots: 1,
     stgGunnerShots: 2,
     enemyDifficulty: 'easy',
-    blurb: '5 面 · 不解锁 Extra · 第 4、5 面各少一张难符卡 · 弹数 −50%、弹速 −16%',
   },
   N: {
     key: 'N',
     label: 'NORMAL',
-    cn: '普通',
+    cn: '现在行',
     stageCount: 6,
     unlockExtra: true,
     trimHardCards: [4, 5, 6],
@@ -82,12 +81,11 @@ export const DIFFICULTIES = {
     stgScoutShots: 1,
     stgGunnerShots: 3,
     enemyDifficulty: 'normal',
-    blurb: '6 面 · 解锁 Extra · 第 4、5、6 面各少一张难符卡 · 弹数略减、弹速正常',
   },
   H: {
     key: 'H',
     label: 'HARD',
-    cn: '困难',
+    cn: '明日行',
     stageCount: 6,
     unlockExtra: true,
     trimHardCards: [],
@@ -107,12 +105,11 @@ export const DIFFICULTIES = {
     stgScoutShots: 2,
     stgGunnerShots: 4,
     enemyDifficulty: 'hard',
-    blurb: '6 面 · 解锁 Extra · 完整符卡 · 弹数约 +35%、弹速约 +10%',
   },
   L: {
     key: 'L',
     label: 'LUNATIC',
-    cn: '狂气',
+    cn: '永夜行',
     stageCount: 6,
     unlockExtra: true,
     trimHardCards: [],
@@ -132,7 +129,6 @@ export const DIFFICULTIES = {
     stgScoutShots: 3,
     stgGunnerShots: 5,
     enemyDifficulty: 'hard',
-    blurb: '6 面 · 解锁 Extra · 完整符卡 · 弹数约 +80%、弹速约 +22%，最凶弹幕',
   },
 
   /**
@@ -149,8 +145,8 @@ export const DIFFICULTIES = {
     stageCount: 6,
     unlockExtra: false,
     trimHardCards: [],
-    // 芙兰 27080 × 2.4 × 全局 0.9 ≈ 58,493（约为原来 H 档 28,028 的 2.1 倍）
-    hpScale: 2.4,
+    // 芙兰 27080 × 1.1（BOSS_HP_MUL）× 1.8 × 全局 0.9 ≈ 48,236：按当前自机输出约 10 分钟打完
+    hpScale: 1.8,
     // 弹幕：弹量翻倍，弹速继续抬，开火间隔压到 L 的九成
     bulletCountScale: 2.05,
     bulletSpeedScale: 1.18,
@@ -170,7 +166,6 @@ export const DIFFICULTIES = {
     stgScoutShots: 3,
     stgGunnerShots: 6,
     enemyDifficulty: 'hard',
-    blurb: 'EXTRA 专用隐藏档 · 芙兰血量约 2.1× · 弹数约 2×、弹速 +18% · 护栏放宽',
   },
 };
 

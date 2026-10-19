@@ -36,12 +36,18 @@
             </div>
             <div class="power-body">
               <div class="pbar" id="powerBar">
-                <span id="powerCastMark" class="pcast" title="符卡消耗 50 POWER"></span>
+                <span id="powerCastMark" class="pcast" title="符卡消耗 6 POWER"></span>
                 <i id="powerFill"></i>
               </div>
               <span id="powerNum" class="pn">0</span>
-              <span class="pdim">/ <b id="powerMax">128</b></span>
+              <span class="pdim">/ <b id="powerMax">16</b></span>
               <span id="powerPop" class="ppop" aria-live="polite"></span>
+            </div>
+            <!-- 1UP 累计：拾取 POWER 每满 99 点恢复 1 命 -->
+            <div class="extend" id="extendBox" title="累计拾取 99 点 POWER 恢复 1 条残机（循环）">
+              <span class="ex-tag">1UP</span>
+              <span class="ex-bar"><i id="extendFill"></i></span>
+              <b id="extendNum">0/99</b>
             </div>
           </div>
 
@@ -65,6 +71,27 @@
           <span id="bossPhase"></span>
         </div>
         <div class="bbar"><i id="bossFill"></i></div>
+      </div>
+
+      <!-- ===== 符卡 cut-in：释放瞬间的全屏演出（白闪 → 立绘破屏 → 符卡名砸出 → 白光收束） ===== -->
+      <div id="spellCutin" class="spell-cutin" aria-hidden="true">
+        <div class="sc-clear"></div>
+        <div class="sc-vignette"></div>
+        <div class="sc-rays"></div>
+        <div class="sc-speed"></div>
+        <div class="sc-rings"><i></i><i></i><i></i></div>
+        <div class="sc-band"></div>
+        <div class="sc-portrait">
+          <canvas id="scPortrait2" class="sc-ghost" width="372" height="560"></canvas>
+          <canvas id="scPortrait" width="372" height="560"></canvas>
+        </div>
+        <div class="sc-body">
+          <div class="sc-tag">SPELL CARD</div>
+          <div id="scName" class="sc-name"></div>
+          <div id="scSub" class="sc-sub"></div>
+        </div>
+        <div class="sc-burst"></div>
+        <div class="sc-flash"></div>
       </div>
 
       <!-- ===== 关卡横幅 ===== -->

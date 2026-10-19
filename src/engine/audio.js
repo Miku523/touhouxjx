@@ -53,6 +53,12 @@ export class AudioEngine {
     this._songStart = 0;       // 本轮循环的绝对起始时间（ctx 时间）
     this._songIdx = 0;         // 事件指针
     this._songLoop = 0;        // 已循环轮数
+    /**
+     * 曲目真正开始发声时的回调（音乐回忆室用来记录「听过的曲子」）。
+     * 音乐关着时 playMusic 只记住曲目、不触发；等 setMusic(true) 真正开播才触发。
+     * @type {((name: string) => void)|null}
+     */
+    this.onSongStart = null;
 
     this._sfxVoices = new Set();   // 一次性音效节点，仅用于回收引用
     this._musicVoices = new Set(); // BGM 节点，切歌/关闭时强制 stop
@@ -137,6 +143,21 @@ export class AudioEngine {
   /** 供外部查询当前曲目 key */
   get currentSong() {
     return this._songName;
+  }
+
+  /**
+   * 当前 BGM 的播放进度（音乐回忆室的进度条用）。
+   * 没有在发声（未 unlock / 音乐关 / 还没排期）时返回 null。
+   * @returns {{elapsed: number, duration: number, loop: number}|null}
+   */
+  get musicProgress() {
+    if (!this._musicOn || !this.ctx || !this._song) return null;
+    const duration = Number(this._song.duration) || 0;
+    if (!duration) return null;
+    // _songStart 是第一次循环起点的 ctx 时间；进度按「本圈内」折算，循环次数单独给出
+    const t = Math.max(0, this.ctx.currentTime - this._songStart);
+    const loop = Math.floor(t / duration);
+    return { elapsed: t - loop * duration, duration, loop };
   }
 
   /** 开/关 BGM。true 可重复调用而不会叠音。 */
@@ -286,6 +307,26 @@ export class AudioEngine {
         this._noise(0.4, g(0.07), 'lowpass', 900, 120, t0);
         break;
 
+      // 踩 Boss 头顶：比踩小怪更沉的撞击 + 短促上挑的「得手」音
+      case 'bossStomp':
+        this._noise(0.15, g(0.2), 'lowpass', 1500, 180, t0);
+        this._tone('square', 170, 60, 0.16, g(0.2), t0);
+        this._tone('triangle', 680, 980, 0.09, g(0.08), t0 + 0.02);
+        break;
+
+      // 破势打满：两下明亮警报，提示硬直窗口开启
+      case 'bossStagger':
+        this._tone('square', 880, 880, 0.07, g(0.12), t0);
+        this._tone('square', 1320, 1320, 0.1, g(0.12), t0 + 0.09);
+        this._noise(0.12, g(0.06), 'highpass', 3000, 6000, t0);
+        break;
+
+      // 俯冲砸地：低频轰 + 长噪声尾巴
+      case 'bossDive':
+        this._tone('sawtooth', 110, 40, 0.3, g(0.2), t0);
+        this._noise(0.3, g(0.16), 'lowpass', 1200, 120, t0);
+        break;
+
       // 胜利：C-E-G-C 四音上行
       case 'win': {
         const notes = [523.25, 659.25, 783.99, 1046.5];
@@ -295,6 +336,30 @@ export class AudioEngine {
           this._tone('square', notes[i], notes[i], dur, g(0.15), t0 + i * 0.11);
           this._tone('triangle', notes[i] / 2, notes[i] / 2, dur, g(0.05), t0 + i * 0.11);
         }
+        break;
+      }
+
+      // 符卡：低频轰鸣 + 上扬扫频 + 明亮和弦，一耳朵听出「清屏大招」
+      case 'spell': {
+        this._noise(0.5, g(0.2), 'lowpass', 2600, 200, t0);
+        this._tone('sawtooth', 90, 40, 0.5, g(0.16), t0);
+        this._tone('triangle', 320, 1280, 0.32, g(0.09), t0 + 0.04);
+        const chord = [523.25, 659.25, 783.99, 1046.5];
+        for (let i = 0; i < chord.length; i++) {
+          this._tone('square', chord[i], chord[i], 0.34, g(0.07), t0 + 0.06 + i * 0.02);
+        }
+        break;
+      }
+
+      // 1UP：五连上行琶音 + 高音闪光
+      case 'extend': {
+        const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5];
+        for (let i = 0; i < notes.length; i++) {
+          const last = i === notes.length - 1;
+          this._tone('square', notes[i], notes[i], last ? 0.24 : 0.08, g(0.13), t0 + i * 0.075);
+          this._tone('triangle', notes[i] * 2, notes[i] * 2, last ? 0.24 : 0.08, g(0.04), t0 + i * 0.075);
+        }
+        this._noise(0.18, g(0.05), 'highpass', 4000, 8000, t0 + 0.01);
         break;
       }
 
@@ -504,6 +569,8 @@ export class AudioEngine {
     this._songSoft = !!song.soft;
     this._events = this._getEvents(name, song);
     if (!this._events || !this._events.length) return;
+    // 真正开始发声时才算「听见」：音乐关着时切歌不会误解锁回忆室里的曲目
+    this.onSongStart?.(name);
 
     this._songStart = this.ctx.currentTime + 0.06;
     this._songIdx = 0;

@@ -14,10 +14,16 @@
  */
 import { T } from './level.js';
 import { drawCharacter } from '../art/chars.js';
-import { drawGenChar } from '../art/genchars.js';
+import { drawGenChar, DRAW_H } from '../art/genchars.js';
 import { drawHitbox } from '../art/hitbox.js';
 import { POWER, powerLevel, canSpell, spendPower } from './power.js';
-import { isInvincible } from './cheat.js';
+
+/**
+ * 判定圆相对「立绘视觉中心」再往下多少像素。
+ * 立绘脚底对齐玩家底边、身高 DRAW_H=104，所以视觉中心在脚底上方 52；
+ * 判定点落在中心下方 6px，就是玩家要的「人物中心微微偏下」。
+ */
+const HIT_CENTER_DROP = 6;
 
 /** 调参集中在这里（32px tile 尺度） */
 export const TUNE = {
@@ -177,6 +183,20 @@ export class Player {
   /** 判定半径：真正的受伤判定圆（魔理沙比灵梦小一点） */
   get hitRadius() {
     return this.char === 'marisa' ? 5.4 : 6;
+  }
+
+  /**
+   * 判定圆心的纵向偏移（相对玩家顶边 / y）。
+   * 立绘高 DRAW_H，脚底贴玩家底边 —— 视觉中心 = y + h - DRAW_H/2，
+   * 圆心再往下 HIT_CENTER_DROP，绘制与碰撞都从这一个值取，别再各写一份。
+   */
+  get hitPointOffsetY() {
+    return this.h - DRAW_H / 2 + HIT_CENTER_DROP;
+  }
+
+  /** 判定点（真实受伤判定的圆心与半径） */
+  get hitPoint() {
+    return { x: this.x + this.w / 2, y: this.y + this.hitPointOffsetY, r: this.hitRadius };
   }
 
   /** 是否满足放符卡的条件 */
@@ -353,18 +373,7 @@ export class Player {
 
     // ---------- 掉出地图 ----------
     if (this.y > this.level.h + 80) {
-      if (isInvincible()) {
-        // 无敌模式不掉命：送回检查点，火力保留
-        this.x = this.checkpoint.x;
-        this.y = this.checkpoint.y;
-        this.prevX = this.x;
-        this.prevY = this.y;
-        this.vx = 0;
-        this.vy = 0;
-        this.onGround = false;
-      } else {
-        this.die();
-      }
+      this.die();
     }
   }
 
@@ -478,8 +487,6 @@ export class Player {
 
   /** 受伤。dir：伤害来源方向（-1 从左边来，玩家被推向右边） */
   hurt(dir, sourceX = null) {
-    // 秘籍「无敌模式」：完全免疫伤害（尖刺 / 弹幕 / 接触伤害都走这里）
-    if (isInvincible()) return;
     if (this.invuln > 0 || !this.alive || this.casting) return;
     if (sourceX !== null) dir = this.x + this.w / 2 < sourceX ? -1 : 1;
     this.hearts--;
@@ -574,7 +581,7 @@ export class Player {
       drawHitbox(
         ctx,
         cx,
-        p.y + this.h * 0.55,
+        p.y + this.hitPointOffsetY,
         this.hitRadius,
         this.animTime,
         this.char === 'marisa' ? '#ffd23f' : '#ff5ea8'

@@ -9,12 +9,11 @@
  * 操作：方向键自由移动，Z/J 连射，Shift 低速移动（显示判定点），K/C 冲刺（短无敌位移），X/L/V 符卡。
  */
 import { drawCharacter } from '../art/chars.js';
-import { drawGenChar } from '../art/genchars.js';
+import { drawGenChar, DRAW_H, POSE_RATIO } from '../art/genchars.js';
 import { drawGenFairy } from '../art/genfairy.js';
 import { drawHitbox } from '../art/hitbox.js';
 import { POWER, powerLevel, canSpell, spendPower } from './power.js';
 import { scaleEnemyHp } from './balance.js';
-import { isInvincible } from './cheat.js';
 
 const SPEED = 340;
 const ACCEL = 3200;
@@ -23,6 +22,15 @@ const DASH_SPEED = 900;
 const DASH_TIME = 0.16;
 // 玩家判定半径（东方风：判定点比视觉小得多；魔理沙比灵梦小一点）
 const HIT_R = { reimu: 4.2, marisa: 3.6 };
+
+/* 判定点位置：立绘画在 translate(sx, sy + 浮动) 后再 translate(0, HIT_FEET_DY)，
+ * 脚底就在 sy + HIT_FEET_DY；飞行姿势高 DRAW_H*POSE_RATIO.fly = 89.44，
+ * 所以视觉中心在 sy + 38 - 44.72 = sy - 6.72。
+ * 判定圆落在「人物中心微微偏下」→ 中心再往下 HIT_CENTER_DROP=6px ≈ sy - 0.7。
+ * 绘制与碰撞都从 HIT_OFFSET_Y 取，不各写一份。 */
+const HIT_FEET_DY = 38;
+const HIT_CENTER_DROP = 6;
+const HIT_OFFSET_Y = HIT_FEET_DY - (DRAW_H * POSE_RATIO.fly) / 2 + HIT_CENTER_DROP;
 
 export class StgPlayer {
   constructor(opts = {}) {
@@ -97,7 +105,7 @@ export class StgPlayer {
   }
 
   get hitPoint() {
-    return { x: this.worldX, y: this.worldY + 6, r: this.hitRadius };
+    return { x: this.worldX, y: this.worldY + HIT_OFFSET_Y, r: this.hitRadius };
   }
 
   update(dt, input, scroll) {
@@ -203,8 +211,6 @@ export class StgPlayer {
   }
 
   hurt(dir = 1) {
-    // 秘籍「无敌模式」：完全免疫伤害
-    if (isInvincible()) return;
     if (this.invuln > 0 || !this.alive) return;
     this.hearts--;
     this.invuln = 1.4;
@@ -283,7 +289,7 @@ export class StgPlayer {
       alpha: a,
     };
     ctx.save();
-    ctx.translate(0, 38);
+    ctx.translate(0, HIT_FEET_DY);
     const drewAI = drawGenChar(ctx, {
       ...charOpts,
       state: (this.state === 'idle' || this.state === 'cast') ? 'fly' : this.state,
@@ -297,7 +303,7 @@ export class StgPlayer {
     // 判定点：只在按住 Shift 低速移动时显示。
     // 画在角色之后（不被立绘盖住），位置严格取 hitPoint，不跟随上下浮动。
     if (this.focus && this.alive) {
-      drawHitbox(ctx, this.sx, this.sy + 6, this.hitRadius, this.animTime,
+      drawHitbox(ctx, this.sx, this.sy + HIT_OFFSET_Y, this.hitRadius, this.animTime,
         this.char === 'marisa' ? '#ffd23f' : '#ff5ea8');
     }
   }
@@ -312,6 +318,11 @@ const ENEMY_KINDS = {
   scout: { hp: 4, w: 26, h: 30, color: '#8fd8ff', aura: 'blue', speed: 150, rate: 1.5, aim: true },
   gunner: { hp: 8, w: 34, h: 38, color: '#ff9ad0', aura: 'red', speed: 90, rate: 1.0, aim: false },
   diver: { hp: 3, w: 24, h: 28, color: '#ffd27a', aura: 'yellow', speed: 240, rate: 2.4, aim: true },
+  // 扩展兵种（同样按幻想乡的妖精 / 妖怪设计）：弓妖精 / 魔法妖精 / 提灯妖精 / 大妖精
+  sniper: { hp: 6, w: 28, h: 32, color: '#9ad0ff', aura: 'blue', speed: 118, rate: 1.9, aim: true },
+  spinner: { hp: 7, w: 32, h: 34, color: '#c79bff', aura: 'purple', speed: 96, rate: 0.18 },
+  bomber: { hp: 10, w: 40, h: 38, color: '#ffb066', aura: 'yellow', speed: 72, rate: 2.6 },
+  turret: { hp: 12, w: 40, h: 44, color: '#9fe6a0', aura: 'green', speed: 108, rate: 2.1 },
 };
 
 class StgEnemy {
@@ -333,48 +344,119 @@ class StgEnemy {
     this.hitFlash = 0;
     this.fireT = Math.random() * 0.8;
     this.phase = Math.random() * 6.28;
+    this.spinA = Math.random() * 6.28;
+    this.ringA = Math.random() * 6.28;
+    this.enterT = kind === 'turret' ? 1.7 : 0;
+    this.size = Math.max(k.w, k.h) * 1.25;
+  }
+
+  /** 各兵种轨迹：统一向左推进，但速度 / 悬浮幅度不同；大妖精进场后定点 */
+  _move(dt) {
+    const k = this.k;
+    if (this.kind === 'turret') {
+      this.enterT -= dt;
+      if (this.enterT <= 0) this.vx = 0;
+    }
+    this.x += this.vx * dt;
+
+    let amp = 22;
+    let hz = 2.2;
+    if (this.kind === 'spinner') { amp = 34; hz = 1.7; }
+    else if (this.kind === 'sniper') { amp = 26; hz = 1.5; }
+    else if (this.kind === 'bomber') { amp = 16; hz = 1.4; }
+    else if (this.kind === 'turret') { amp = 6; hz = 1.1; }
+    this.y = this.baseY + Math.sin(this.t * hz + this.phase) * amp;
   }
 
   update(dt, bullets, px, py, mods = null) {
     this.t += dt;
     this.hitFlash = Math.max(0, this.hitFlash - dt);
-    this.x += this.vx * dt;
-    this.y = this.baseY + Math.sin(this.t * 2.2 + this.phase) * 22;
+    this._move(dt);
 
     const speedMul = mods ? mods.speed : 1;
     const fireMul = mods ? mods.fire : 1;
     const cap = mods ? mods.cap : 520;
+    const budget = mods ? (mods.budget || 1200) : 1200;
     const shotSpeed = (base) => Math.min(cap, base * speedMul);
 
-    if (this.k.aim) {
+    // 魔法妖精：持续螺旋（不占齐射冷却；弹幕池有软上限）
+    if (this.kind === 'spinner') {
+      this.spinA += 2.3 * dt;
       this.fireT -= dt;
-      if (this.fireT <= 0) {
+      if (this.fireT > 0 || !bullets) return;
+      this.fireT = Math.max(0.11, this.k.rate * fireMul);
+      if (bullets.count() >= budget) return;
+      const arms = mods && mods.scout > 2 ? 2 : 1;
+      for (let k = 0; k < arms; k++) {
+        bullets.spiral(this.x, this.y, this.spinA + (k / arms) * Math.PI, shotSpeed(155), {
+          color: this.k.color, r: 5, life: 5, type: 0,
+        });
+      }
+      return;
+    }
+
+    this.fireT -= dt;
+    if (this.fireT > 0 || !bullets || bullets.count() >= budget) return;
+
+    const n = mods ? mods.gunner : 3;
+    const nScout = mods ? mods.scout : 1;
+    switch (this.kind) {
+      case 'sniper': {
+        // 高速瞄准米弹（可被低速擦过；密度随难度小幅增加）
         this.fireT = this.k.rate * fireMul;
-        const n = mods ? mods.scout : 1;
-        const sp = shotSpeed(230);
         const a = Math.atan2(py - this.y, px - this.x);
-        if (n > 1) {
-          // 高难度：单发瞄准变成一小束瞄准扇，方向仍然指向玩家，缝还在
-          bullets.fan(this.x, this.y, n, 0.18, a, sp, {
+        bullets.fan(this.x, this.y, Math.max(1, nScout), 0.12, a, shotSpeed(320), {
+          color: this.k.color, r: 5, life: 5, type: 1,
+        });
+        break;
+      }
+      case 'turret': {
+        // 大妖精定点：一圈弹，每次旋转半个间隔
+        this.fireT = this.k.rate * fireMul;
+        const count = 6 + Math.min(2, Math.max(0, n - 3));
+        bullets.ring(this.x, this.y, count, shotSpeed(145), {
+          angle: this.ringA, color: this.k.color, r: 6, life: 5, type: 0,
+        });
+        this.ringA += Math.PI / count;
+        break;
+      }
+      case 'bomber': {
+        // 抛物延迟雨：下坠加速，落地前有时间闪避
+        this.fireT = this.k.rate * fireMul;
+        const count = Math.max(2, Math.round(n * 0.7));
+        for (let k = 0; k < count; k++) {
+          const bx = this.x + (k - (count - 1) / 2) * 22;
+          bullets.spawn({
+            x: bx, y: this.y + 12, vx: -18, vy: 26, accel: 240,
+            color: this.k.color, r: 6, life: 6, type: 1,
+          });
+        }
+        break;
+      }
+      case 'gunner': {
+        this.fireT = this.k.rate * fireMul;
+        bullets.fan(this.x, this.y, n, 0.4, Math.PI * 0.86, shotSpeed(190), {
+          color: this.k.color, r: 6, life: 5,
+        });
+        break;
+      }
+      default: {
+        // scout / diver：单发瞄准，高难度变成小扇
+        this.fireT = this.k.rate * fireMul;
+        const a = Math.atan2(py - this.y, px - this.x);
+        if (nScout > 1) {
+          bullets.fan(this.x, this.y, nScout, 0.18, a, shotSpeed(230), {
             color: this.k.color, r: 6, life: 5,
           });
         } else {
           bullets.spawn({
             x: this.x, y: this.y,
-            vx: Math.cos(a) * sp,
-            vy: Math.sin(a) * sp,
+            vx: Math.cos(a) * shotSpeed(230),
+            vy: Math.sin(a) * shotSpeed(230),
             color: this.k.color, r: 6, life: 5,
           });
         }
-      }
-    } else {
-      this.fireT -= dt;
-      if (this.fireT <= 0) {
-        this.fireT = this.k.rate * fireMul;
-        const n = mods ? mods.gunner : 3;
-        bullets.fan(this.x, this.y, n, 0.4, Math.PI * 0.86, shotSpeed(190), {
-          color: this.k.color, r: 6, life: 5,
-        });
+        break;
       }
     }
   }
@@ -392,9 +474,10 @@ class StgEnemy {
       facing: 1,
       dead: 0,
       flash: this.hitFlash > 0 ? Math.min(1, this.hitFlash / 0.12) * 0.7 : 0,
-      size: Math.max(k.w, k.h) * 1.25,
+      size: this.size,
     });
     if (drewAi) {
+      this._drawKindDecor(ctx);
       ctx.restore();
       return;
     }
@@ -468,6 +551,121 @@ class StgEnemy {
     ctx.arc(hr * 0.36, hy - hr * 0.02, 2.2, 0, Math.PI * 2);
     ctx.fill();
 
+    this._drawKindDecor(ctx);
+    ctx.restore();
+  }
+
+  /** 扩展兵种的附加装饰：弓 / 魔法阵 / 鬼火 / 大妖精的光轮（全部是幻想乡的符与妖火） */
+  _drawKindDecor(ctx) {
+    const k = this.k;
+    const t = this.t;
+    ctx.save();
+    if (this.kind === 'sniper') {
+      // 弓妖精：一张月牙长弓，弦随开火节奏拉满，箭尖始终指着自机方向
+      const pull = 1.5 + 2.5 * Math.max(0, Math.sin(t * 2.2));
+      ctx.strokeStyle = `${k.color}dd`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(this.w * 0.55, 0, this.w * 0.55, Math.PI * 0.62, Math.PI * 1.38);
+      ctx.stroke();
+      const ax0 = this.w * 0.55 + Math.cos(Math.PI * 0.62) * this.w * 0.55;
+      const ay0 = Math.sin(Math.PI * 0.62) * this.w * 0.55;
+      const ax1 = this.w * 0.55 + Math.cos(Math.PI * 1.38) * this.w * 0.55;
+      const ay1 = Math.sin(Math.PI * 1.38) * this.w * 0.55;
+      ctx.strokeStyle = `${k.color}88`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(ax0, ay0);
+      ctx.lineTo(this.w * 0.55 - pull, 0);
+      ctx.lineTo(ax1, ay1);
+      ctx.stroke();
+      // 搭在弦上的箭
+      ctx.strokeStyle = `${k.color}f0`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(this.w * 0.55 - pull, 0);
+      ctx.lineTo(-this.w * 0.85, 0);
+      ctx.stroke();
+      ctx.fillStyle = `${k.color}f0`;
+      ctx.beginPath();
+      ctx.moveTo(-this.w * 0.85 - 4, 0);
+      ctx.lineTo(-this.w * 0.85 + 1, -2.2);
+      ctx.lineTo(-this.w * 0.85 + 1, 2.2);
+      ctx.closePath();
+      ctx.fill();
+    } else if (this.kind === 'spinner') {
+      // 魔法妖精：一圈星之魔法阵 + 四颗绕行星点
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = `${k.color}88`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(0, 0, this.w * 0.68, t * 2.6, t * 2.6 + Math.PI * 1.4);
+      ctx.stroke();
+      for (let i = 0; i < 4; i++) {
+        const a = t * 3.2 + (i * Math.PI) / 2;
+        ctx.fillStyle = `${k.color}cc`;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * this.w * 0.7, Math.sin(a) * this.w * 0.7, 3.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (this.kind === 'bomber') {
+      // 提灯妖精：两簇青白色鬼火悬在身下，火苗随呼吸一明一暗
+      const pulse = 0.5 + 0.5 * Math.sin(t * 7);
+      ctx.globalCompositeOperation = 'lighter';
+      for (const sx of [-1, 1]) {
+        const bx = sx * this.w * 0.3 + Math.sin(t * 2.4 + sx) * 1.5;
+        const by = this.h * 0.56 + Math.sin(t * 3.1 + sx * 2) * 1.4;
+        const hgt = 11 + pulse * 3;
+        // 外晕
+        ctx.fillStyle = `${k.color}22`;
+        ctx.beginPath();
+        ctx.arc(bx, by - hgt * 0.25, 8.5 + pulse * 2.4, 0, Math.PI * 2);
+        ctx.fill();
+        // 鬼火：上尖下圆的水滴，尖端轻轻摇曳
+        const tipX = bx + Math.sin(t * 5.2 + sx) * 1.6;
+        ctx.fillStyle = `rgba(186,232,255,${0.5 + pulse * 0.4})`;
+        ctx.beginPath();
+        ctx.moveTo(tipX, by - hgt);
+        ctx.bezierCurveTo(bx + 5, by - hgt * 0.34, bx + 4.4, by + 3.8, bx, by + 5);
+        ctx.bezierCurveTo(bx - 4.4, by + 3.8, bx - 5, by - hgt * 0.34, tipX, by - hgt);
+        ctx.fill();
+        // 内焰
+        ctx.fillStyle = `rgba(255,255,255,${0.48 + pulse * 0.42})`;
+        ctx.beginPath();
+        ctx.ellipse(bx, by - 0.5, 1.5, 3.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // 飘散的火星
+        for (let m = 0; m < 2; m++) {
+          const ea = t * 1.9 + m * 2.4 + sx;
+          ctx.fillStyle = `rgba(200,240,255,${0.25 + 0.3 * (0.5 + 0.5 * Math.sin(ea * 2))})`;
+          ctx.beginPath();
+          ctx.arc(bx + Math.sin(ea) * 3.2, by - hgt - 2 - ((ea * 4) % 9), 1.1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    } else if (this.kind === 'turret') {
+      // 大妖精：立定后张开背后一圈薄光轮，头顶三颗魔力星缓缓公转
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = `${k.color}55`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, this.w * 0.72, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = `${k.color}88`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(0, 0, this.w * 0.58, t * 0.9, t * 0.9 + Math.PI * 1.25);
+      ctx.stroke();
+      for (let i = 0; i < 3; i++) {
+        const a = -Math.PI / 2 + (i - 1) * 0.55 + Math.sin(t * 0.8) * 0.12;
+        const px = Math.cos(a) * this.w * 0.5;
+        const py = Math.sin(a) * this.h * 0.78;
+        ctx.fillStyle = `${k.color}dd`;
+        ctx.beginPath();
+        ctx.arc(px, py, 2.1 + Math.sin(t * 3 + i) * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     ctx.restore();
   }
 }
@@ -502,15 +700,18 @@ export class StgStage {
     this.enemyBulletScale = Number(diff?.enemyBulletScale) || 1;
     this.enemyFireScale = (Number(diff?.enemyFireScale) || 1) / dens;
     this.enemySpeedCap = Number(diff?.bulletSpeedCap) || 520;
+    const budget = Number(diff?.bulletBudget) || 950;
+    this.enemyBulletBudget = Math.min(1250, Math.max(300, budget * 0.88));
     this.enemyMods = {
       speed: this.enemyBulletScale,
       fire: this.enemyFireScale,
       cap: this.enemySpeedCap,
       scout: Math.max(1, Math.round((Number(diff?.stgScoutShots) || 1) * dens)),
       gunner: Math.max(1, Math.round((Number(diff?.stgGunnerShots) || 3) * dens)),
+      budget: this.enemyBulletBudget,
     };
 
-    // 按关卡主色给三类敌机分配配色：主色给最常见的 scout，点缀色分给另外两类
+    // 按关卡主色给各敌机分配配色：主色给最常见的 scout / sniper，点缀色分给其余
     const tint = (level.def && level.def.fairyTint) || null;
     if (tint && tint.main) {
       const mix = (tint.mix || []).filter(Boolean);
@@ -518,9 +719,16 @@ export class StgStage {
         scout: tint.main,
         gunner: mix[0] || tint.main,
         diver: mix[1] || mix[0] || tint.main,
+        sniper: tint.main,
+        spinner: mix[1] || 'purple',
+        bomber: mix[2] || 'yellow',
+        turret: mix[2] || mix[0] || 'green',
       };
     } else {
-      this.auras = { scout: 'blue', gunner: 'red', diver: 'yellow' };
+      this.auras = {
+        scout: 'blue', gunner: 'red', diver: 'yellow',
+        sniper: 'blue', spinner: 'purple', bomber: 'yellow', turret: 'green',
+      };
     }
 
     this._buildWaves();
@@ -529,24 +737,100 @@ export class StgStage {
   _buildWaves() {
     const levelW = this.level.w;
     const usable = levelW - 1280 - 200;
-    const step = 520;
+    const step = 500;
     let n = 0;
     for (let s = 400; s < usable; s += step) {
-      const roll = n % 5;
+      const roll = n % 9;
       if (roll === 0) {
-        this.waves.push({ at: s, kind: 'scout', count: 4, gapY: 0 });
+        // V 字：两翼张开，中间留缝
+        this.waves.push({ at: s, kind: 'scout', count: 5, gapY: 0, form: 'v' });
       } else if (roll === 1) {
-        this.waves.push({ at: s, kind: 'gunner', count: 2, gapY: 130 });
+        // 纵列：上下排开，一起扇形齐射
+        this.waves.push({ at: s, kind: 'gunner', count: 3, gapY: 120, form: 'column' });
       } else if (roll === 2) {
-        this.waves.push({ at: s, kind: 'diver', count: 6, gapY: 0 });
+        // 交叉：两条对角线交错俯冲
+        this.waves.push({ at: s, kind: 'diver', count: 6, gapY: 0, form: 'cross' });
       } else if (roll === 3) {
-        this.waves.push({ at: s, kind: 'scout', count: 3, gapY: 180 });
-        this.waves.push({ at: s + 180, kind: 'diver', count: 3, gapY: -160 });
+        // 上下夹击的狙击手
+        this.waves.push({ at: s, kind: 'sniper', count: 2, gapY: 170, form: 'pincer' });
+      } else if (roll === 4) {
+        this.waves.push({ at: s, kind: 'spinner', count: 3, gapY: 0, form: 'column' });
+      } else if (roll === 5) {
+        this.waves.push({ at: s, kind: 'bomber', count: 3, gapY: 60, form: 'line' });
+      } else if (roll === 6) {
+        // 大妖精压场 + 后续 V 字突进
+        this.waves.push({ at: s, kind: 'turret', count: 1, gapY: 30, form: 'line' });
+        this.waves.push({ at: s + 200, kind: 'scout', count: 3, gapY: 180, form: 'v' });
+      } else if (roll === 7) {
+        this.waves.push({ at: s, kind: 'scout', count: 4, gapY: -150, form: 'v' });
+        this.waves.push({ at: s + 160, kind: 'gunner', count: 2, gapY: 160, form: 'column' });
       } else {
-        this.waves.push({ at: s, kind: 'gunner', count: 3, gapY: 0 });
+        this.waves.push({ at: s, kind: 'diver', count: 4, gapY: 60, form: 'cross' });
+        this.waves.push({ at: s + 240, kind: 'sniper', count: 1, gapY: 210, form: 'line' });
       }
       n++;
     }
+  }
+
+  /** 按编队形状计算第 i 架敌机的相对位置 */
+  _spawnWave(w) {
+    const n = Math.max(1, w.count | 0);
+    const form = w.form || 'line';
+    const gapY = w.gapY || 0;
+    for (let i = 0; i < n; i++) {
+      const off = waveOffsets(form, i, n);
+      const x = this.scroll + 1400 + off.dx;
+      let y = 200 + gapY + off.dy;
+      y = Math.max(90, Math.min(this.level.h - 90, y));
+      this.enemies.push(new StgEnemy(w.kind, x, y, this.auras[w.kind]));
+    }
+  }
+
+  /**
+   * EXTRA 的波次表在 stage.js 里生成（那边只认识 scout/gunner/diver），
+   * 这里在第一次 update 时做确定性扩编：把一部分波次换成新兵种 + 新编队，
+   * 并穿插几组夹击 / V 字。不改变原有 at 顺序与总量级。
+   */
+  _enrichExtraWaves() {
+    if (this._extraEnriched) return;
+    this._extraEnriched = true;
+    const def = this.level.def || {};
+    if (def.id !== 'extra') return;
+    let a = (hashSeed('extra') ^ 0x9e3779b9) >>> 0;
+    const rng = () => {
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const kinds = ['sniper', 'spinner', 'bomber', 'turret'];
+    const forms = ['v', 'column', 'pincer', 'cross'];
+    const usable = this.level.w - 1280 - 200;
+    for (let i = 0; i < this.waves.length; i++) {
+      const w = this.waves[i];
+      const r = rng();
+      if (r < 0.28) {
+        const kind = kinds[Math.floor(rng() * kinds.length)];
+        w.kind = kind;
+        w.form = forms[Math.floor(rng() * forms.length)];
+        if (kind === 'turret') { w.count = 1; w.gapY = 30; w.form = 'line'; }
+        else if (kind === 'sniper') w.count = Math.max(1, Math.min(2, w.count - 1));
+        else if (kind === 'bomber') w.count = Math.max(2, Math.min(3, w.count));
+      } else if (r < 0.44) {
+        const at = w.at + 90;
+        if (at > usable) continue;
+        const kind = kinds[Math.floor(rng() * kinds.length)];
+        this.waves.splice(i + 1, 0, {
+          at,
+          kind,
+          count: kind === 'turret' ? 1 : 3,
+          gapY: (rng() < 0.5 ? -1 : 1) * (90 + Math.floor(rng() * 90)),
+          form: forms[Math.floor(rng() * forms.length)],
+        });
+        i++;
+      }
+    }
+    this.waves.sort((x, y) => x.at - y.at);
   }
 
   get bossTriggerScroll() {
@@ -565,14 +849,13 @@ export class StgStage {
       }
     }
 
+    // EXTRA 波次表由 stage.js 生成，第一次 update 时确定性扩编（只跑一次）
+    this._enrichExtraWaves();
+
     // 波次生成
     while (!this.spawnPaused && this.waveIdx < this.waves.length && this.waves[this.waveIdx].at <= this.scroll + 1400) {
       const w = this.waves[this.waveIdx++];
-      for (let i = 0; i < w.count; i++) {
-        const x = this.scroll + 1400 + i * 70;
-        const y = 200 + w.gapY + (i % 3) * 110;
-        this.enemies.push(new StgEnemy(w.kind, x, y, this.auras[w.kind]));
-      }
+      this._spawnWave(w);
     }
 
     // 敌人更新
@@ -626,4 +909,42 @@ function approach(v, target, delta) {
   if (v < target) return Math.min(v + delta, target);
   if (v > target) return Math.max(v - delta, target);
   return target;
+}
+
+/** 编队形状 → 第 i / n 架敌机的相对偏移（x 向右、y 向下，世界坐标） */
+function waveOffsets(form, i, n) {
+  const mid = (n - 1) / 2;
+  switch (form) {
+    case 'v': {
+      // V 字：楔尖朝左，两翼向右上下张开
+      return { dx: Math.abs(i - mid) * 74, dy: (i - mid) * 78 };
+    }
+    case 'column': {
+      return { dx: (i % 2) * 26, dy: (i - mid) * 74 };
+    }
+    case 'pincer': {
+      // 夹击：上下两排交替
+      const row = Math.floor(i / 2);
+      return { dx: row * 34 + (i % 2) * 22, dy: (i % 2 ? 1 : -1) * (110 + row * 55) };
+    }
+    case 'cross': {
+      // 交叉：两半各走一条对角线，在中线交错
+      const half = Math.max(1, Math.ceil(n / 2));
+      const j = i % half;
+      const dir = i < half ? 1 : -1;
+      return { dx: j * 34, dy: dir * (60 + j * 62) };
+    }
+    default:
+      return { dx: i * 70, dy: (i % 3) * 110 };
+  }
+}
+
+function hashSeed(s) {
+  let h = 2166136261;
+  const str = String(s);
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
 }

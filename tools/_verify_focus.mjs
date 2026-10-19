@@ -90,13 +90,15 @@ const result = await evaluate(`(async () => {
   out.platformFocus = { focus: p.focus, vx: Math.abs(p.vx), hitR: g.stage.playerHitPoint.r };
   g.render(1);
   const camX = g.stage.camera.x;
-  out.platformFocus.screen = { x: p.x + p.w / 2 - camX, y: p.y + p.h * 0.55 };
+  const hpFocus = g.stage.playerHitPoint;
+  out.platformFocus.screen = { x: hpFocus.x - camX, y: hpFocus.y };
   out.platformShot = document.querySelector('canvas').toDataURL('image/png');
   g.input._set('fast', false);
   for (let i = 0; i < 16; i++) { p.invuln = 9; step(1); }
   out.platformNormal = { focus: p.focus, vx: Math.abs(p.vx) };
   g.render(1);
-  out.platformNormal.screen = { x: p.x + p.w / 2 - g.stage.camera.x, y: p.y + p.h * 0.55 };
+  const hpNormal = g.stage.playerHitPoint;
+  out.platformNormal.screen = { x: hpNormal.x - g.stage.camera.x, y: hpNormal.y };
   g.input._set('right', false);
 
   // 魔理沙判定点更小

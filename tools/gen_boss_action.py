@@ -57,16 +57,16 @@ CHAR = {
         'ref': 'aya',
         'size': '1536x1024',
         'outfit': ('short black bob hair with a cute inward flip, big round crimson eyes with long eyelashes, '
-                   'soft feminine face with a light blush, a black tengu tokin hat with a white triangle emblem and '
-                   'a fluffy white pom-pom on top, a red and white reporter jacket with a PRESS armband over a '
-                   'white blouse, a short red pleated skirt, black thigh-high socks, red shoes, black feathered '
-                   'crow wings, a camera hanging from her neck'),
-        'pose': ('a split second of an extreme high-speed dash toward the right: body leaning far forward, '
-                 'one leg stretched back, huge black wings swept in a sharp V, one hand raising a camera to '
-                 'her eye with the flash firing a starburst, the other hand flinging a black feather fan open, '
-                 'jacket, skirt, scarf and hair streaming behind her, a bright mischievous girlish grin, '
-                 'gusts of wind and faint afterimages of herself trailing behind'),
-        'vibe': 'energetic, nosy, playful paparazzi girl tengu, the fastest in Gensokyo, cute but cheeky',
+                   'soft feminine face with a light blush, a crimson beret with a red cord and tassel, '
+                   'a white collared shirt under a cropped black tactical reporter vest with pockets and buckles, '
+                   'a black pleated mini skirt with thin red trim, black tights, brown leather ankle boots, '
+                   'black feathered crow wings, a vintage camera on a neck strap, a red maple-leaf fan, '
+                   'a small black crow perched on her shoulder'),
+        'pose': ('floating gently in midair with both legs together and slightly bent, large black wings '
+                 'spread behind her, one hand holding a red maple-leaf fan open, the other hand resting near '
+                 'the vintage camera on her chest, a small black crow perched on her shoulder, '
+                 'a confident cheeky smirk, beret cord and skirt swaying slightly'),
+        'vibe': 'energetic, nosy, playful paparazzi crow-reporter girl, the fastest in Gensokyo, cute but cheeky',
     },
     'yuyuko': {
         'ref': 'yuyuko',

@@ -33,8 +33,10 @@ BODY = {
                 'calm confident look'),
     'cirno': ('short pale blue hair with a blue ribbon, white and blue dress, exactly six clean sharp translucent '
               'ice crystal wings arranged symmetrically, cheerful expression'),
-    'aya': ('short black hair, red tengu toque hat with a white pom-pom, red and white tengu outfit, '
-            'holding a black feather fan, energetic smirk with a visible face and clear eyes'),
+    'aya': ('short black bob hair, crimson beret with a red cord and tassel, white collared shirt under a '
+            'cropped black reporter vest, black pleated skirt with red trim, black tights, brown ankle boots, '
+            'black feathered crow wings, a vintage camera on a neck strap, a red maple-leaf fan, '
+            'a small black crow beside her, energetic smirk with a visible face and clear eyes'),
     'yuyuko': ('long pink hair, pale blue and white kimono with butterfly patterns, holding a folding fan, '
                'serene gentle smile'),
     'kaguya': ('very long black hair, pale pink and purple layered kimono, princess headdress, elegant pose, '

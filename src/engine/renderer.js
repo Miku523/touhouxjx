@@ -11,6 +11,27 @@
 export const VIEW_W = 1280;
 export const VIEW_H = 720;
 
+/**
+ * 探测 WebGL 后端是否为软件光栅（WARP / SwiftShader / llvmpipe / 纯软件）。
+ * 软件光栅下：1920x1080 画布每帧上屏/读回成本高一个数量级（实测 144ms/帧），
+ * 此时把 backing 降到 clamp(scale*dpr, 1.0, 1.25) 并关闭全部后期（bloom/分级/暗角/颗粒），
+ * 正常 GPU 路径完全不受影响。
+ */
+export function detectSoftwareRaster() {
+  try {
+    const c = document.createElement('canvas');
+    c.width = 8; c.height = 8;
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    if (!gl) return true;   // 连 WebGL 都拿不到，按弱机降档
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const s = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '' : '');
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return /swiftshader|basic render driver|microsoft basic|software|llvmpipe|warp/i.test(s);
+  } catch (e) {
+    return false;
+  }
+}
+
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -25,6 +46,10 @@ export class Renderer {
     this.backing = 1;  // 逻辑像素 -> 设备像素
     this.wrap = canvas.parentElement;
     this.letterbox = { x: 0, y: 0 };
+
+    // ---- 低配自动降档：软件光栅（WARP/SwiftShader）下放弃全部后期、backing 降到 1.0 ----
+    this.softwareRaster = detectSoftwareRaster();
+    this.lowSpec = this.softwareRaster;
 
     // ---- 后期处理缓冲（bloom 用低分辨率，省带宽） ----
     this.bloom = document.createElement('canvas');
@@ -41,7 +66,7 @@ export class Renderer {
     // bloom 需要把主画布整帧读回低分辨率缓冲再放大叠加，是后期里唯一的重活。
     // 与其固定降质，不如量一下这次刷新到底花多久：贵就隔帧刷新（辉光本身是软的，
     // 30Hz/15Hz 的刷新肉眼看不出），便宜就每帧刷新，弱机与强机各自跑在自己的预算里。
-    this.postLevel = 2;          // 2=全开 1=关 bloom 0=关全部
+    this.postLevel = this.lowSpec ? 0 : 2;   // 2=全开 1=关 bloom 0=关全部（软件光栅直接关全部后期）
     this.bloomEmaMs = 0;         // bloom 刷新耗时 EMA
     this._bloomTick = 0;
     this.bloomInterval = 1;      // 每 N 帧刷新一次
@@ -88,8 +113,11 @@ export class Renderer {
     const cssW = Math.round(VIEW_W * scale);
     const cssH = Math.round(VIEW_H * scale);
 
-    // backing store：至少 1.5x 超采样，保证矢量描边和细字在 1x 屏上也不糊
-    const backing = Math.min(Math.max(scale * this.dpr, 1.5), 2.5);
+    // backing store：至少 1.5x 超采样，保证矢量描边和细字在 1x 屏上也不糊。
+    // 软件光栅下超采样代价翻倍，降到 clamp(scale*dpr, 1.0, 1.25)（GPU 路径维持原样）。
+    const floor = this.lowSpec ? 1.0 : 1.5;
+    const cap = this.lowSpec ? 1.25 : 2.5;
+    const backing = Math.min(Math.max(scale * this.dpr, floor), cap);
     this.backing = backing;
 
     this.canvas.width = Math.round(VIEW_W * backing);
@@ -118,11 +146,25 @@ export class Renderer {
 
     this.letterbox = { x: (vw - cssW) / 2, y: (vh - cssH) / 2 };
 
+    // 给测试/诊断用的只读信息，不污染现有 API
+    this._syncInfo();
+
     // 矢量绘制需要平滑，跟像素风相反
     this.ctx.imageSmoothingEnabled = true;
     this.ctx.imageSmoothingQuality = 'high';
 
     this.ctx.setTransform(backing, 0, 0, backing, 0, 0);
+  }
+
+  /** 诊断信息快照（供测试断言，不影响渲染逻辑） */
+  _syncInfo() {
+    window.__rendererInfo = {
+      mode: this.lowSpec ? 'soft' : 'gpu',
+      backing: this.backing,
+      postLevel: this.postLevel,
+      canvasW: this.canvas.width,
+      canvasH: this.canvas.height,
+    };
   }
 
   /** 每帧绘制前重置状态，返回以逻辑坐标工作的 ctx */
@@ -150,7 +192,7 @@ export class Renderer {
    * 这样 bloom 采样不会因为逻辑缩放重复插值。
    */
   present(t = 0) {
-    if (!this.postEnabled) return;
+    if (!this.postEnabled || this.postLevel === 0) return;
     const ctx = this.ctx;
     const cw = this.canvas.width, ch = this.canvas.height;
 
@@ -173,16 +215,18 @@ export class Renderer {
     ctx.fillStyle = this._vig;
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
-    /* 4) 胶片颗粒：低透明度 overlay，缓慢漂移避免静态感 */
-    if (!this._grainPattern) this._grainPattern = ctx.createPattern(this.grainTile, 'repeat');
-    if (this._grainPattern) {
-      const ox = Math.floor((t * 13) % 160);
-      const oy = Math.floor((t * 7) % 160);
-      ctx.globalCompositeOperation = 'overlay';
-      ctx.globalAlpha = 0.055;
-      ctx.translate(-ox, -oy);
-      ctx.fillStyle = this._grainPattern;
-      ctx.fillRect(0, 0, VIEW_W + 160, VIEW_H + 160);
+    /* 4) 胶片颗粒：低透明度 overlay，缓慢漂移避免静态感（软件光栅下省掉这一层） */
+    if (!this.lowSpec) {
+      if (!this._grainPattern) this._grainPattern = ctx.createPattern(this.grainTile, 'repeat');
+      if (this._grainPattern) {
+        const ox = Math.floor((t * 13) % 160);
+        const oy = Math.floor((t * 7) % 160);
+        ctx.globalCompositeOperation = 'overlay';
+        ctx.globalAlpha = 0.055;
+        ctx.translate(-ox, -oy);
+        ctx.fillStyle = this._grainPattern;
+        ctx.fillRect(0, 0, VIEW_W + 160, VIEW_H + 160);
+      }
     }
     ctx.restore();
   }
@@ -253,7 +297,7 @@ export class Renderer {
     if (this._bloomWarm < 2) {
       this._bloomWarm++;
       this.bloomEmaMs = ms;
-      if (this._bloomWarm === 2 && ms > 30) this.postLevel = 1;  // 读回成本离谱，直接放弃 bloom
+      if (this._bloomWarm === 2 && ms > 30) { this.postLevel = 1; this._syncInfo(); }  // 读回成本离谱，直接放弃 bloom
       return;
     }
     this.bloomEmaMs = this.bloomEmaMs > 0 ? this.bloomEmaMs * 0.7 + ms * 0.3 : ms;
@@ -263,7 +307,7 @@ export class Renderer {
     else if (e < 5) this.bloomInterval = 3;
     else this.bloomInterval = 4;
 
-    if (e > 10 && ++this._bloomIdle >= 3) this.postLevel = 1;
+    if (e > 10 && ++this._bloomIdle >= 3) { this.postLevel = 1; this._syncInfo(); }
   }
 
   /** 屏幕（client）坐标 -> 逻辑坐标，供鼠标/触摸用 */

@@ -3,9 +3,9 @@
  *
  * 一个 tile = 32 逻辑像素。22 行关正好一屏（704px），34 行关（stage5/6）给纵向空间。
  *
- * 1–6 面的地形不再手写，改为 levelgen.js 按「地块模板」生成 3000+ 列的长关卡：
- * 纯跑图约 5–6 分钟，含 Boss 约 6–7 分钟。每关末尾自动留出 Boss 场。
- * Extra 走另一套节奏：零火力起手的长道中（约 14 分钟）→ 5:00 雷米莉亚中途战 → 芙兰收尾。
+ * 1–6 面的地形不再手写，改为 levelgen.js 按「地块模板」生成 2.1k–3.9k 列的关卡：
+ * 纯跑图从 3:00 起逐面 +0:30（3:00 / 3:30 / 4:00 / 4:30 / 5:00 / 5:30），每关末尾自动留出 Boss 场。
+ * Extra 走另一套节奏：零火力起手的 6:00 道中 → 3:00 雷米莉亚中途战 → 6:00 芙兰收尾（Boss 战约 10 分钟）。
  *
  * 瓦片字符（与 src/game/level.js 一一对应）：
  *   '.' / ' '  空气          '#'  泥土岩体（实心）     'G'  草皮（实心，地表最上层）
@@ -33,7 +33,7 @@ export const LEVELS = [
     music: 'stage1',
     hint: '← → 移动　空格 跳跃／二段跳　K 冲刺　↑／↓ 向上／下射击　砖块踩久会塌',
     fairyTint: { main: 'purple', mix: ['yellow', 'red', 'blue'] },
-    gen: { kind: 'platform', rows: 22, ground: 19, cols: 3700, seed: 1101, style: 'shrine' },
+    gen: { kind: 'platform', rows: 22, ground: 19, cols: 2138, seed: 1101, style: 'shrine' },
   },
   {
     id: 'stage2',
@@ -45,7 +45,7 @@ export const LEVELS = [
     music: 'stage2',
     hint: '蘑菇会把自机弹飞　藤蔓墙下方留有空隙　可以下水游泳',
     fairyTint: { main: 'green', mix: ['yellow', 'blue', 'purple'] },
-    gen: { kind: 'platform', rows: 22, ground: 19, cols: 3760, seed: 2202, style: 'forest' },
+    gen: { kind: 'platform', rows: 22, ground: 19, cols: 2494, seed: 2202, style: 'forest' },
   },
   {
     id: 'stage3',
@@ -57,7 +57,7 @@ export const LEVELS = [
     music: 'stage3',
     hint: '冰面会打滑，提前起跳　水面可以游泳　崩落砖别停太久',
     fairyTint: { main: 'blue', mix: ['purple', 'yellow', 'green'] },
-    gen: { kind: 'platform', rows: 22, ground: 19, cols: 3790, seed: 3303, style: 'lake' },
+    gen: { kind: 'platform', rows: 22, ground: 19, cols: 2850, seed: 3303, style: 'lake' },
   },
   {
     id: 'stage4',
@@ -69,7 +69,7 @@ export const LEVELS = [
     music: 'stage4',
     hint: '方向键 自由飞行　空格 加速　Z 连射　X 释放符卡',
     fairyTint: { main: 'green', mix: ['blue', 'yellow', 'purple'] },
-    gen: { kind: 'stg', rows: 22, cols: 1800 },
+    gen: { kind: 'stg', rows: 22, cols: 1436 },
   },
   {
     id: 'stage5',
@@ -81,7 +81,7 @@ export const LEVELS = [
     music: 'stage5',
     hint: '纵向高台落差更大　砖块踩久会塌　↑／↓ 上下射击',
     fairyTint: { main: 'purple', mix: ['red', 'yellow', 'blue'] },
-    gen: { kind: 'platform', rows: 34, ground: 31, cols: 3690, seed: 5505, style: 'nether' },
+    gen: { kind: 'platform', rows: 34, ground: 31, cols: 3563, seed: 5505, style: 'nether' },
   },
   {
     id: 'stage6',
@@ -93,7 +93,7 @@ export const LEVELS = [
     music: 'stage6',
     hint: '砖墙与浮台交错　崩落砖桥要快速通过　↑／↓ 上下射击',
     fairyTint: { main: 'blue', mix: ['purple', 'yellow', 'red'] },
-    gen: { kind: 'platform', rows: 34, ground: 31, cols: 3720, seed: 6606, style: 'moon' },
+    gen: { kind: 'platform', rows: 34, ground: 31, cols: 3919, seed: 6606, style: 'moon' },
   },
   {
     id: 'extra',
@@ -104,10 +104,10 @@ export const LEVELS = [
     boss: 'flandre',
     music: 'extra',
     extra: true,
-    hint: '零火力起手的长道中　5:00 雷米莉亚拦路 → 芙兰朵露终盘　全程弹幕密度极高',
+    hint: '零火力起手的 6:00 道中　3:00 雷米莉亚拦路 → 6:00 芙兰朵露终盘　全程弹幕密度极高',
     fairyTint: { main: 'red', mix: ['purple', 'yellow', 'blue'] },
-    // 道中要铺满 EXTRA_TIMELINE 的 14:00（165px/s × 840s ≈ 138,600px）。
-    // T=32，cols 4480 → w=143,360，滚动上限 w-1400≈141,960 ≈ 860 秒，留一点余量。
-    gen: { kind: 'stg', rows: 22, cols: 4480 },
+    // 道中要铺满 EXTRA_TIMELINE 的 6:00（165px/s × 360s = 59,400px）。
+    // T=32，cols 1900 → w=60,800，滚动上限 w-1400=59,400 = 360 秒整。
+    gen: { kind: 'stg', rows: 22, cols: 1900 },
   },
 ];

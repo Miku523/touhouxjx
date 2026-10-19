@@ -213,15 +213,18 @@ const PAL = {
   aya: Object.assign({}, SKIN, {
     line: '#241a20',
     hair: '#2a2530', hair2: '#3a3442', hair3: '#57506a', hair4: '#8a7fa0',
-    red: '#c0392b', red2: '#8f2a20', red3: '#e8604a',
+    red: '#b8333f', red2: '#8a2430', red3: '#e8605a',
+    beret: '#b8333f', beret2: '#8a2430', beret3: '#e05a5a',
     white: '#f6f1e9', white2: '#d8cfc2',
-    skirt: '#2a2430', skirt2: '#3c3444',
+    vest: '#25222e', vest2: '#38343f',
+    skirt: '#26222c', skirt2: '#38333e',
     wing: '#1a1620', wing2: '#342a46', wing3: '#6a4a8a',
     maple: '#e05a2b', maple2: '#b83a1e',
     metal: '#9aa4b0', metal2: '#5f6a78',
     lens: '#8fe0ff', eye: '#e04a4a', eyeGlow: '#ff7a6a',
     trim: '#e8c878', accent: '#ff6b6b',
-    shoe: '#2a2430',
+    boot: '#6a4a34', boot2: '#4a3224',
+    shoe: '#6a4a34',
   }),
   yuyuko: Object.assign({}, SKIN, {
     line: '#2a1a2a',
@@ -2016,7 +2019,7 @@ function bossCirno(ctx, p, P) {
 
 /* ----------------------------------------------------------------
  * 射命丸文 —— 最速的记者
- * 黑发单马尾 + 红白记者装 + 天狗黑羽翼 + 枫叶 + 相机
+ * 黑色短发 bob + 红贝雷帽 + 黑记者马甲 + 白衬衫 + 黑褶裙 + 黑鸦翼 + 枫叶团扇 + 相机 + 乌鸦
  * ---------------------------------------------------------------- */
 function bossAya(ctx, p, P) {
   const t = P.t;
@@ -2073,36 +2076,31 @@ function bossAya(ctx, p, P) {
     ctx.restore();
   }
 
-  /* ---------------- 马尾 ---------------- */
-  const sway = Math.sin(t * 1.6) * 4;
-  ctx.beginPath();
-  ctx.moveTo(14, -214);
-  ctx.bezierCurveTo(46, -226, 72, -204, 76 + sway, -172);
-  ctx.bezierCurveTo(80 + sway, -144, 66 + sway * 0.6, -128, 56 + sway * 0.4, -126);
-  ctx.bezierCurveTo(64, -148, 58, -172, 42, -186);
-  ctx.bezierCurveTo(32, -196, 22, -200, 12, -200);
-  ctx.closePath();
-  ctx.fillStyle = LG(ctx, 12, -220, 66, -128, [[0, p.hair4], [0.3, p.hair], [0.75, p.hair2], [1, p.hair]]);
-  ctx.fill();
-  ctx.strokeStyle = p.line;
-  ctx.lineWidth = 2.8;
-  ctx.stroke();
-  // 发丝
-  ctx.strokeStyle = rgba(p.hair3, 0.7);
-  ctx.lineWidth = 1.4;
-  for (let i = 0; i < 3; i++) {
+  /* ---------------- 短发内扣（bob） ---------------- */
+  const sway = Math.sin(t * 1.6) * 3;
+  for (const s of [-1, 1]) {
     ctx.beginPath();
-    ctx.moveTo(24 + i * 6, -208);
-    ctx.quadraticCurveTo(56 + i * 4, -190, 62 + i * 3 + sway, -140);
+    ctx.moveTo(s * 10, -222);
+    ctx.bezierCurveTo(s * 46, -228, s * 66, -206, s * 68 + sway * 0.5, -178);
+    ctx.bezierCurveTo(s * 70 + sway * 0.5, -158, s * 58 + sway * 0.4, -148, s * 50 + sway * 0.3, -148);
+    ctx.bezierCurveTo(s * 56, -168, s * 52, -190, s * 40, -200);
+    ctx.bezierCurveTo(s * 30, -208, s * 20, -210, s * 8, -208);
+    ctx.closePath();
+    ctx.fillStyle = LG(ctx, s * 8, -224, s * 66, -148, [[0, p.hair4], [0.3, p.hair], [0.75, p.hair2], [1, p.hair]]);
+    ctx.fill();
+    ctx.strokeStyle = p.line;
+    ctx.lineWidth = 2.8;
     ctx.stroke();
+    // 发丝
+    ctx.strokeStyle = rgba(p.hair3, 0.7);
+    ctx.lineWidth = 1.4;
+    for (let i = 0; i < 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(s * (22 + i * 6), -212);
+      ctx.quadraticCurveTo(s * (46 + i * 4), -192, s * (52 + i * 3 + sway * 0.3), -156);
+      ctx.stroke();
+    }
   }
-  // 马尾发带
-  ctx.save();
-  ctx.translate(20, -210);
-  ctx.rotate(-0.5);
-  rrPath(ctx, -3, -6, 7, 13, 3);
-  paint(ctx, p.red, p.line, 1.8);
-  ctx.restore();
 
   /* ---------------- 后发 ---------------- */
   ctx.beginPath();
@@ -2113,45 +2111,65 @@ function bossAya(ctx, p, P) {
   ctx.closePath();
   paint(ctx, LG(ctx, -40, -200, -24, -144, [[0, p.hair], [1, p.hair2]]), p.line, 2.5);
 
-  /* ---------------- 身体：红白记者装 ---------------- */
+  /* ---------------- 身体：白衬衫 + 黑记者马甲 ---------------- */
   const body = drawBodyChibi(ctx, p, P, {
     torsoTop: p.white, torsoBot: p.white2,
-    skirtTop: p.red, skirtBot: p.red2,
-    trim: p.white, trim2: p.white2, sash: p.red2,
-    ribbon: p.red, sleeve: 'long', sleeveColor: p.white, sleeve2: p.white2,
-    legColor: '#2b2430', shoeColor: '#1a1520', legW: 9.5,
+    skirtTop: p.skirt, skirtBot: p.skirt2,
+    trim: p.red, trim2: p.red2, sash: p.vest2,
+    ribbon: null, sleeve: 'long', sleeveColor: p.white, sleeve2: p.white2,
+    legColor: '#2a262e', shoeColor: p.boot, legW: 9.5,
     hemY: -40, hemHalf: 33, collar: 'round', chest: true,
     skirtFlare: 0.98,
   });
 
-  // 红色短外套前襟
+  // 黑色马甲前襟（左右两片）
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(s * 18, -120);
+    ctx.quadraticCurveTo(s * 23, -106, s * 17, -90);
+    ctx.lineTo(s * 4, -88);
+    ctx.lineTo(s * 2, -122);
+    ctx.closePath();
+    paint(ctx, LG(ctx, s * 20, -122, s * 2, -88, [[0, p.vest2], [1, p.vest]]), p.line, 2.2);
+  }
+  // 马甲口袋
+  for (const [px, py] of [[-11, -104], [11, -104]]) {
+    rrPath(ctx, px - 3.5, py - 4, 7, 8, 1.6);
+    paint(ctx, p.vest2, rgba(p.line, 0.8), 1.2);
+    ctx.beginPath();
+    ctx.moveTo(px - 3, py - 4);
+    ctx.lineTo(px + 3, py - 4);
+    ctx.strokeStyle = p.trim;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  }
+  // 马甲金属扣环
   ctx.beginPath();
-  ctx.moveTo(-18, -118);
-  ctx.quadraticCurveTo(-22, -106, -16, -92);
-  ctx.lineTo(-4, -90);
-  ctx.lineTo(-2, -120);
-  ctx.closePath();
-  paint(ctx, LG(ctx, -20, -120, -2, -90, [[0, p.red3], [1, p.red]]), p.line, 2.2);
-  ctx.beginPath();
-  ctx.moveTo(18, -118);
-  ctx.quadraticCurveTo(22, -106, 16, -92);
-  ctx.lineTo(4, -90);
-  ctx.lineTo(2, -120);
-  ctx.closePath();
-  paint(ctx, LG(ctx, 20, -120, 2, -90, [[0, p.red3], [1, p.red]]), p.line, 2.2);
+  ctx.arc(-9, -118, 2.2, 0, Math.PI * 2);
+  ctx.strokeStyle = p.metal;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
 
-  // 领带
+  // 黑色领结
   ctx.beginPath();
-  ctx.moveTo(0, -110);
-  ctx.lineTo(-4, -100);
-  ctx.lineTo(0, -88);
-  ctx.lineTo(4, -100);
+  ctx.moveTo(-1.6, -110);
+  ctx.lineTo(-8, -114);
+  ctx.lineTo(-8, -104);
   ctx.closePath();
-  paint(ctx, p.red, p.line, 1.6);
+  paint(ctx, p.vest2, p.line, 1.2);
+  ctx.beginPath();
+  ctx.moveTo(1.6, -110);
+  ctx.lineTo(8, -114);
+  ctx.lineTo(8, -104);
+  ctx.closePath();
+  paint(ctx, p.vest2, p.line, 1.2);
+  ctx.beginPath();
+  ctx.arc(0, -109, 2.4, 0, Math.PI * 2);
+  paint(ctx, p.vest, p.line, 1.2);
 
   // 裙褶线条
   ctx.save();
-  ctx.strokeStyle = rgba(p.red2, 0.55);
+  ctx.strokeStyle = rgba(p.red, 0.22);
   ctx.lineWidth = 1.4;
   for (let i = -2; i <= 2; i++) {
     ctx.beginPath();
@@ -2219,6 +2237,48 @@ function bossAya(ctx, p, P) {
   drawMapleLeaf(ctx, 11, p);
   ctx.restore();
 
+  /* ---------------- 红贝雷帽 ---------------- */
+  ctx.save();
+  ctx.translate(0, -226);
+  ctx.rotate(-0.12 + Math.sin(t * 1.2) * 0.02);
+  ctx.scale(0.86, 0.86);
+  // 帽体
+  ctx.beginPath();
+  ctx.moveTo(-38, 4);
+  ctx.bezierCurveTo(-44, -18, -22, -30, 4, -29);
+  ctx.bezierCurveTo(30, -28, 44, -14, 40, 6);
+  ctx.quadraticCurveTo(16, -2, -8, 2);
+  ctx.quadraticCurveTo(-26, 5, -38, 4);
+  ctx.closePath();
+  paint(ctx, LG(ctx, -30, -30, 24, 8, [[0, p.beret3], [0.45, p.beret], [1, p.beret2]]), p.line, 2.8);
+  // 帽檐
+  ctx.beginPath();
+  ctx.moveTo(-38, 4);
+  ctx.quadraticCurveTo(-6, 12, 40, 6);
+  ctx.quadraticCurveTo(-2, 18, -38, 4);
+  ctx.closePath();
+  paint(ctx, LG(ctx, -38, 14, 40, 16, [[0, p.beret2], [1, p.beret]]), p.line, 2.4);
+  // 帽顶小凸起
+  ctx.beginPath();
+  ctx.arc(26, -24, 3.4, 0, Math.PI * 2);
+  paint(ctx, p.beret2, p.line, 1.6);
+  // 红绳 + 流苏
+  ctx.beginPath();
+  ctx.moveTo(36, 2);
+  ctx.quadraticCurveTo(46, 8, 44 + Math.sin(t * 2) * 2, 18);
+  ctx.strokeStyle = p.red2;
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.moveTo(44 + Math.sin(t * 2) * 2, 18);
+    ctx.lineTo(41 + i * 2.2, 27 + Math.sin(t * 2 + i) * 1.2);
+    ctx.strokeStyle = i % 2 ? p.red3 : p.red2;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
+  ctx.restore();
+
   /* ---------------- 相机（右手） ---------------- */
   const cam = [body.handR[0] + 2, body.handR[1] - 4];
   ctx.save();
@@ -2254,6 +2314,63 @@ function bossAya(ctx, p, P) {
   ellPath(ctx, -10, -4, 2.2, 2.2);
   ctx.fillStyle = p.trim;
   ctx.fill();
+  ctx.restore();
+
+  /* ---------------- 肩头小乌鸦 ---------------- */
+  ctx.save();
+  ctx.translate(28, -248);
+  ctx.rotate(0.14 + Math.sin(t * 1.8) * 0.03);
+  ctx.scale(0.62, 0.62);
+  // 尾羽
+  ctx.beginPath();
+  ctx.moveTo(-4, -8);
+  ctx.lineTo(-24, -20);
+  ctx.lineTo(-13, -2);
+  ctx.closePath();
+  paint(ctx, '#161220', p.line, 1.4);
+  // 身体
+  ctx.beginPath();
+  ctx.moveTo(-3, 0);
+  ctx.bezierCurveTo(-11, -12, -4, -22, 6, -21);
+  ctx.bezierCurveTo(16, -20, 18, -9, 13, -1);
+  ctx.bezierCurveTo(7, 3, 0, 3, -3, 0);
+  ctx.closePath();
+  paint(ctx, LG(ctx, -8, -20, 16, 2, [[0, '#3a3248'], [0.55, '#1c1626'], [1, '#0e0a14']]), p.line, 1.8);
+  // 头
+  ctx.beginPath();
+  ctx.arc(9, -23, 6.4, 0, Math.PI * 2);
+  paint(ctx, '#1c1626', p.line, 1.5);
+  // 喙
+  ctx.beginPath();
+  ctx.moveTo(14, -25);
+  ctx.lineTo(23, -22);
+  ctx.lineTo(14, -20);
+  ctx.closePath();
+  paint(ctx, '#4a4452', p.line, 1);
+  // 眼
+  ctx.beginPath();
+  ctx.arc(10.5, -24, 1.3, 0, Math.PI * 2);
+  ctx.fillStyle = p.red3;
+  ctx.fill();
+  ctx.restore();
+
+  /* ---------------- 枫叶团扇（左手） ---------------- */
+  const fanX = body.handL[0] - 6;
+  const fanY = body.handL[1] - 30;
+  ctx.save();
+  ctx.translate(fanX, fanY);
+  ctx.rotate(-0.42 + Math.sin(t * 1.5) * 0.06);
+  // 扇柄
+  ctx.beginPath();
+  ctx.moveTo(0, 18);
+  ctx.lineTo(0, 46);
+  ctx.strokeStyle = p.line;
+  ctx.lineWidth = 3.2;
+  ctx.stroke();
+  ctx.strokeStyle = p.trim;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  drawMapleLeaf(ctx, 26, p);
   ctx.restore();
 
   /* ---------------- 风 + 枫叶 ---------------- */
@@ -5396,7 +5513,7 @@ function portraitCirno(ctx, p, P) {
 
 /* ----------------------------------------------------------------
  * 射命丸文 —— 最速の記者
- * 黑单马尾 + 红白记者装 + 天狗羽翼 + 枫叶 + 相机
+ * 黑色短发 bob + 红贝雷帽 + 黑记者马甲 + 白衬衫 + 黑鸦翼 + 枫叶团扇 + 相机
  * ---------------------------------------------------------------- */
 function portraitAya(ctx, p, P) {
   const t = P.t;
@@ -5459,46 +5576,87 @@ function portraitAya(ctx, p, P) {
   ctx.quadraticCurveTo(-78, -310, -70, -380);
   ctx.closePath();
   paint(ctx, LG(ctx, -80, -430, -100, -250, [[0, p.hair3], [0.5, p.hair], [1, p.hair2]]), p.line, 3.2);
-  const pw = Math.sin(t * 1.6) * 8;
-  ctx.beginPath();
-  ctx.moveTo(62, -436);
-  ctx.bezierCurveTo(104, -424, 138, -368, 150 + pw, -300);
-  ctx.bezierCurveTo(162 + pw, -232, 146 + pw, -190, 128 + pw, -176);
-  ctx.quadraticCurveTo(140 + pw, -236, 126 + pw, -298);
-  ctx.bezierCurveTo(112 + pw, -356, 84, -396, 58, -414);
-  ctx.closePath();
-  ctx.fillStyle = LG(ctx, 66, -430, 140, -180, [
-    [0, p.hair3], [0.35, p.hair], [0.75, p.hair2], [1, p.hair3],
-  ]);
-  ctx.fill();
-  ctx.strokeStyle = p.line;
-  ctx.lineWidth = 3.2;
-  ctx.stroke();
-  // 马尾高光
-  ctx.strokeStyle = rgba(p.hair4, 0.5);
-  ctx.lineWidth = 2.6;
-  ctx.beginPath();
-  ctx.moveTo(76, -420);
-  ctx.bezierCurveTo(112, -372, 134, -300, 138 + pw, -226);
-  ctx.stroke();
+  const pw = Math.sin(t * 1.6) * 4;
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(s * 66, -442);
+    ctx.bezierCurveTo(s * 112, -430, s * 128, -372, s * 122 + pw, -300);
+    ctx.bezierCurveTo(s * 118 + pw, -268, s * 106 + pw, -244, s * 92 + pw, -238);
+    ctx.bezierCurveTo(s * 104 + pw, -280, s * 100 + pw, -344, s * 82, -404);
+    ctx.bezierCurveTo(s * 76, -424, s * 70, -436, s * 64, -442);
+    ctx.closePath();
+    ctx.fillStyle = LG(ctx, s * 66, -440, s * 122, -240, [
+      [0, p.hair3], [0.35, p.hair], [0.75, p.hair2], [1, p.hair3],
+    ]);
+    ctx.fill();
+    ctx.strokeStyle = p.line;
+    ctx.lineWidth = 3.2;
+    ctx.stroke();
+    // 发丝高光
+    ctx.strokeStyle = rgba(p.hair4, 0.5);
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(s * 78, -426);
+    ctx.bezierCurveTo(s * 108, -378, s * 116, -310, s * 112 + pw, -256);
+    ctx.stroke();
+  }
 
   // 身体
   const body = portraitBody(ctx, p, P, {
-    shHalf: 98, top: p.red, top2: p.red2,
+    shHalf: 98, top: p.white, top2: p.white2,
     collar: 'round', collarColor: p.white, collar2: p.white2,
-    sleeve: 'long', sleeveColor: p.white, sleeve2: p.red2,
+    sleeve: 'long', sleeveColor: p.white, sleeve2: p.white2,
     lw: 3.2,
   });
 
-  // 红色领带
+  // 黑色记者马甲（前襟两片）
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(s * 100, -226);
+    ctx.quadraticCurveTo(s * 94, -150, s * 86, -60);
+    ctx.quadraticCurveTo(s * 84, -36, s * 62, -28);
+    ctx.lineTo(s * 24, -34);
+    ctx.quadraticCurveTo(s * 30, -140, s * 34, -228);
+    ctx.quadraticCurveTo(s * 68, -240, s * 100, -226);
+    ctx.closePath();
+    paint(ctx, LG(ctx, s * 96, -230, s * 28, -30, [[0, p.vest2], [1, p.vest]]), p.line, 2.8);
+  }
+  // 马甲口袋
+  for (const s of [-1, 1]) {
+    rrPath(ctx, s * 56 - 17, -150, 34, 26, 6);
+    paint(ctx, p.vest2, rgba(p.line, 0.8), 2);
+    ctx.beginPath();
+    ctx.moveTo(s * 56 - 15, -150);
+    ctx.lineTo(s * 56 + 15, -150);
+    ctx.strokeStyle = p.trim;
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+  }
+  // 马甲金属扣环
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.arc(s * 40, -206, 4, 0, Math.PI * 2);
+    ctx.strokeStyle = p.metal;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // 黑色领结
   ctx.beginPath();
-  ctx.moveTo(-10, -238);
-  ctx.lineTo(10, -238);
-  ctx.lineTo(6, -206);
-  ctx.lineTo(0, -196);
-  ctx.lineTo(-6, -206);
+  ctx.moveTo(-9, -242);
+  ctx.lineTo(-32, -252);
+  ctx.lineTo(-32, -228);
   ctx.closePath();
-  paint(ctx, LG(ctx, -8, -236, 8, -198, [[0, p.red3], [1, p.red2]]), p.line, 1.8);
+  paint(ctx, p.vest2, p.line, 2);
+  ctx.beginPath();
+  ctx.moveTo(9, -242);
+  ctx.lineTo(32, -252);
+  ctx.lineTo(32, -228);
+  ctx.closePath();
+  paint(ctx, p.vest2, p.line, 2);
+  ctx.beginPath();
+  ctx.arc(0, -240, 10, 0, Math.PI * 2);
+  paint(ctx, p.vest, p.line, 2);
 
   // 脸
   drawFacePortrait(ctx, p, P, {
@@ -5545,50 +5703,44 @@ function portraitAya(ctx, p, P) {
     paint(ctx, p.hair, p.line, 2.8);
   }
 
-  // 红色发带
+  // 红色贝雷帽
   ctx.save();
-  ctx.translate(64, -424);
-  ctx.rotate(-0.3);
-  rrPath(ctx, -8, -8, 30, 16, 5);
-  paint(ctx, p.red, p.line, 2);
+  ctx.translate(2, -462);
+  ctx.rotate(-0.1 + Math.sin(t * 1.2) * 0.015);
   ctx.beginPath();
-  ctx.moveTo(18, -2);
-  ctx.quadraticCurveTo(34, -10 + pw * 0.2, 40, 4);
-  ctx.quadraticCurveTo(28, 4, 18, 6);
+  ctx.moveTo(-74, 6);
+  ctx.bezierCurveTo(-86, -32, -44, -58, 8, -56);
+  ctx.bezierCurveTo(58, -54, 86, -24, 78, 10);
+  ctx.quadraticCurveTo(30, -4, -16, 2);
+  ctx.quadraticCurveTo(-52, 8, -74, 6);
   ctx.closePath();
-  paint(ctx, p.red2, p.line, 1.6);
-  ctx.restore();
-
-  // 鸦天狗的帽子
-  ctx.save();
-  ctx.translate(2, -468);
-  ctx.rotate(-0.05);
+  paint(ctx, LG(ctx, -58, -58, 46, 14, [[0, p.beret3], [0.45, p.beret], [1, p.beret2]]), p.line, 3.2);
+  // 帽檐
   ctx.beginPath();
-  ctx.moveTo(-42, 8);
-  ctx.quadraticCurveTo(-46, -26, -8, -32);
-  ctx.quadraticCurveTo(34, -34, 40, -2);
-  ctx.quadraticCurveTo(42, 10, 34, 14);
-  ctx.lineTo(-38, 16);
+  ctx.moveTo(-74, 6);
+  ctx.quadraticCurveTo(-10, 22, 78, 10);
+  ctx.quadraticCurveTo(-6, 34, -74, 6);
   ctx.closePath();
-  ctx.fillStyle = LG(ctx, -40, -30, 38, 14, [[0, p.wing3], [0.5, p.wing2], [1, '#0e0a14']]);
-  ctx.fill();
-  ctx.strokeStyle = p.line;
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  // 金边
+  paint(ctx, LG(ctx, -74, 26, 78, 32, [[0, p.beret2], [1, p.beret]]), p.line, 2.8);
+  // 帽顶凸起
   ctx.beginPath();
-  ctx.moveTo(-40, 8);
-  ctx.quadraticCurveTo(0, 16, 36, 6);
-  ctx.strokeStyle = p.trim;
-  ctx.lineWidth = 3;
+  ctx.arc(52, -46, 7, 0, Math.PI * 2);
+  paint(ctx, p.beret2, p.line, 1.8);
+  // 红绳 + 流苏
+  ctx.beginPath();
+  ctx.moveTo(74, -2);
+  ctx.quadraticCurveTo(96, 20, 92 + Math.sin(t * 2) * 4, 54);
+  ctx.strokeStyle = p.red2;
+  ctx.lineWidth = 3.6;
   ctx.stroke();
-  // 帽顶小红叶
-  ctx.save();
-  ctx.translate(0, -30);
-  ctx.rotate(0.2);
-  ctx.scale(0.8, 0.8);
-  drawMapleLeaf(ctx, 14, p);
-  ctx.restore();
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.moveTo(92 + Math.sin(t * 2) * 4, 54);
+    ctx.lineTo(85 + i * 4, 72 + Math.sin(t * 2 + i) * 3);
+    ctx.strokeStyle = i % 2 ? p.red3 : p.red2;
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+  }
   ctx.restore();
 
   // 枫叶发饰

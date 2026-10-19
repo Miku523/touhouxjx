@@ -25,21 +25,21 @@ import { drawSky, drawParallax, drawTiles, drawAmbient } from '../art/scenes.js'
 /**
  * EXTRA 关的时间轴（秒）。
  *
- * EXTRA 不再是「一进关就开打」的快速 Boss 战，而是一条完整的超长道中：
- *   0:00 ─ 5:00   零火力起手的长道中 A（敌机波次一路铺到 5 分钟）
- *   5:00          雷米莉亚当中途 Boss 拦路（两张符卡，不打通进不去）
- *   5:00 ─ 14:00  击破后道中 B 继续推进（9 分钟）
- *   14:00         芙兰朵露登场收尾
- * 道中合计 14:00，叠上中途 Boss 约 2 分钟的实际战斗，
- * 手感到芙兰登场大约是 15～16 分钟——正好是「一场 15 分钟的超长 STG」。
+ * EXTRA 不再是「一进关就开打」的快速 Boss 战，而是一条完整的道中：
+ *   0:00 ─ 3:00   零火力起手的长道中 A（敌机波次一路铺到 3 分钟）
+ *   3:00          雷米莉亚当中途 Boss 拦路（两张符卡，不打通进不去）
+ *   3:00 ─ 6:00   击破后道中 B 继续推进（3 分钟）
+ *   6:00          芙兰朵露登场收尾
+ * 道中合计 6:00，叠上中途 Boss 约 2 分钟的实际战斗，
+ * 手感到芙兰登场大约是 8 分钟，随后是约 10 分钟的芙兰战。
  * 计时只在「可以操作道中」时推进：Boss 战、对话、死亡都暂停，
  * 所以中途 Boss 打多久都不会把后面的节奏挤掉。
  */
 export const EXTRA_TIMELINE = Object.freeze({
   midbossKey: 'remilia', // 中途 Boss 的键：时间轴与「再战」共用，别两处写死
-  midbossAt: 300,   // 5:00 雷米莉亚
-  finalAt: 840,     // 14:00 芙兰登场（中途 Boss 击破后还有 9 分钟道中）
-  retryPower: 96,   // 中途 / 终盘再战时的起手火力（Lv.4 缺一颗，别让复习从零开始）
+  midbossAt: 180,   // 3:00 雷米莉亚
+  finalAt: 360,     // 6:00 芙兰登场（中途 Boss 击破后还有 3 分钟道中）
+  retryPower: 12,   // 中途 / 终盘再战时的起手火力（Lv.4 缺一颗，别让复习从零开始）
 });
 
 /* ------------------------------------------------------------------
@@ -390,6 +390,10 @@ export class Stage {
     }
 
     this.castFx = 0;
+    // 1UP 累计：拾取的 POWER 每满 99 点 → 恢复 1 条残机，清零后继续循环。
+    // 进出关卡时由 main.js 带着走，跨关不清零（否则 99 点永远攒不满）。
+    this.extendPts = Math.max(0, Math.min(POWER.extend - 1, opts.extendPts || 0));
+    this.extendCount = 0;
     this.deathT = 0; // 死亡→复活倒计时（用逻辑帧计时，暂停/切后台时冻结）
 
     // 崩落砖：0 待机 / 1 抖动（踩上 0.5s 后塌）/ 2 消失（3s 后复原）
@@ -458,9 +462,8 @@ export class Stage {
   }
 
   get playerHitPoint() {
-    if (this.mode === 'stg') return this.player.hitPoint;
-    const p = this.player;
-    return { x: p.x + p.w / 2, y: p.y + p.h * 0.55, r: p.hitRadius };
+    // 平台关与飞行关各自在自己的 player 上算，绘制与碰撞共用同一份位置
+    return this.player.hitPoint;
   }
 
   /**
@@ -509,6 +512,8 @@ export class Stage {
     }
     this.t += dt;
     if (this.state === 'play') this.time += dt;
+    // 符卡屏幕染色的余韵，和 DOM cut-in 一起淡出
+    if (this.castFx > 0) this.castFx = Math.max(0, this.castFx - dt * 1.05);
     this.camera.beginStep();
 
     const p = this.player;
@@ -542,7 +547,7 @@ export class Stage {
       if (this.mode === 'stg') {
         // 擦弹加分
         const g = this.bullets.grazeTest(hp.x, hp.y, hp.r, 26);
-        if (g > 0) p.power = Math.min(p.maxPower, p.power + g * POWER.graze);
+        if (g > 0) this._addPower(g * POWER.graze);
       }
     }
 
@@ -582,6 +587,27 @@ export class Stage {
         if (this.boss.hitByDash(p, this.fx)) {
           this.camera.shake(8, 0.2);
           this.onEvent('bossHit');
+        }
+      }
+      // 平台关：从上方踩 Boss 头顶（STG 关没有平台跳跃，不启用）
+      if (this.mode === 'platform' && p.alive && this.boss.stompBy(p, this.fx)) {
+        this.camera.shake(10, 0.25);
+        this.onEvent('bossStomp');
+      }
+      // 平台关：破势打满 / 俯冲落地的演出反馈（音效 + 震屏）
+      if (this.mode === 'platform') {
+        if (this._seenStagger !== this.boss.staggerCount) {
+          this._seenStagger = this.boss.staggerCount;
+          this.camera.shake(12, 0.35);
+          this.onEvent('bossStagger');
+        }
+        const ds = this.boss._dive ? this.boss._dive.state : 'idle';
+        if (ds !== this._seenDive) {
+          if (ds === 'land') {
+            this.camera.shake(14, 0.3);
+            this.onEvent('bossDiveLand');
+          }
+          this._seenDive = ds;
         }
       }
     }
@@ -652,7 +678,7 @@ export class Stage {
     if (input.pressed('shoot') || input.down('shoot')) this._tryShoot(input);
     this.stg.update(dt, p, this.bullets, this.shots, this.fx, {
       onReachBoss: () => {
-        // EXTRA 的 Boss 由时间轴调度（5:00 中途 / 终盘），不看滚动条
+        // EXTRA 的 Boss 由时间轴调度（3:00 中途 / 6:00 终盘），不看滚动条
         if (this.extra) return;
         if (!this.bossPending && !this.bossStarted) {
           this.bossPending = true;
@@ -680,7 +706,7 @@ export class Stage {
 
   /**
    * EXTRA 的关内时间轴：
-   *   道中计时 → 5:00 雷米莉亚（中途 Boss）→ 击破后继续道中 → 终盘芙兰。
+   *   道中计时 → 3:00 雷米莉亚（中途 Boss）→ 击破后继续道中 → 6:00 终盘芙兰。
    * 计时只在「能操作道中」时推进（Boss 战 / 对话 / 复活倒计时都暂停），
    * 这样中途 Boss 打得久也不会把终盘节奏往后推。
    */
@@ -706,7 +732,7 @@ export class Stage {
   }
 
   /**
-   * EXTRA 的敌方波次表：柱状推进 5 分钟，每 14 波（约 20 秒）为一个节奏段，
+   * EXTRA 的敌方波次表：柱状推进 3 分钟，每 14 波（约 20 秒）为一个节奏段，
    * 段落收尾叠一波密集齐射，避免长时间道中变成一条匀速的直线。
    */
   _buildExtraWaves() {
@@ -835,11 +861,18 @@ export class Stage {
     const lv = Math.max(1, ev.levelBefore || p.fireLevel || powerLevel(p.power));
     const accent = this.char === 'marisa' ? '#ffd23f' : '#ff5ea8';
 
-    // 全屏清弹（原作 Bomb 的核心）
+    // 全屏清弹（原作 Bomb 的核心）+ 场上演出层：
+    // 白闪 → 三重冲击环（白芯 / 角色色 / 大范围）→ 花瓣与金屑爆散
     this.bullets.clear();
-    this.fx.shockwave(hp.x, hp.y, accent, 40, 2200, 0.7);
-    this.fx.flash(hp.x, hp.y, '#ffffff', 30);
-    this.camera.shake(20, 0.5);
+    this.fx.flash(hp.x, hp.y, '#ffffff', 34);
+    // 快环窜出、角色色环铺场、慢环留到最后，三层叠出「炸开→扩散→余波」
+    this.fx.shockwave(hp.x, hp.y, '#ffffff', 14, 3800, 0.42);
+    this.fx.shockwave(hp.x, hp.y, accent, 20, 2200, 0.75);
+    this.fx.shockwave(hp.x, hp.y, accent, 6, 900, 1.35);
+    this.fx.burst(hp.x, hp.y, accent, 34, 780);
+    this.fx.burst(hp.x, hp.y, '#ffd23f', 18, 460);
+    this.fx.sparkle(hp.x, hp.y, '#ffffff');
+    this.camera.shake(26, 0.6);
 
     // 对 Boss / 敌人造成伤害
     if (this.boss) this.boss.damage(scalePlayerDamage(90 + 80 * lv));
@@ -853,7 +886,7 @@ export class Stage {
       });
     }
     p.invuln = Math.max(p.invuln || 0, 2.0);
-    this.castFx = 0.9;
+    this.castFx = 1.2;
 
     this.onEvent('cast', {
       char: this.char,
@@ -899,9 +932,38 @@ export class Stage {
     }
   }
 
+  /**
+   * 涨 POWER：只结算「真正加上去的部分」，并就这部分推进 1UP 累计。
+   * 条满时多出来的量不浪费——仍然计入 extend 计数（原作里满火力后吃 P 也是分数）。
+   */
   _addPower(n) {
     const p = this.player;
+    if (!p || !(n > 0)) return;
     p.power = Math.min(p.maxPower, (p.power || 0) + n);
+    // 按「拾取量」而不是「槽内增量」计数：满槽时吃 P 也不浪费 extend 进度
+    this._addExtend(n);
+  }
+
+  /**
+   * 1UP 累计：每 99 点 POWER → +1 残机（循环）。
+   * 计数只增不减，不会因为放符卡掉火力把进度抹掉。
+   */
+  _addExtend(amount) {
+    const p = this.player;
+    if (!p || !(amount > 0)) return;
+    this.extendPts = (this.extendPts || 0) + amount;
+    const need = POWER.extend;
+    while (this.extendPts >= need) {
+      this.extendPts -= need;
+      p.lives += 1;
+      p.maxLives = Math.max(p.maxLives || 0, p.lives);
+      this.extendCount = (this.extendCount || 0) + 1;
+      const hp = this.playerHitPoint;
+      this.fx.shockwave(hp.x, hp.y, '#ffd23f', 20, 620, 0.7);
+      this.fx.shockwave(hp.x, hp.y, '#fff6cf', 10, 380, 0.5);
+      this.fx.burst(hp.x, hp.y, '#ffd23f', 18, 420);
+      this.onEvent('extend', { lives: p.lives, count: this.extendCount });
+    }
   }
 
   _onPlayerEvent(ev) {
@@ -993,8 +1055,16 @@ export class Stage {
       difficulty: this.difficulty,
       // Extra 不参与 4/5/6 面的难符卡裁剪
       stageNumber: this.extra ? 0 : this.index + 1,
+      // 平台关启用近战系统：踩踏 / 冲刺破势 / 破势硬直 / 俯冲砸地
+      platformMelee: this.mode === 'platform',
+      groundY: this.mode === 'platform'
+        ? (this.level.gen ? this.level.gen.ground * 32 : this.level.h - 96)
+        : by + 240,
     });
     this.boss.x = Math.max(300, Math.min(this.boss.x, this.level.w - 200));
+    // 平台关近战的演出计数（首次触发不重复播）
+    this._seenStagger = 0;
+    this._seenDive = 'idle';
     this.camera.shake(18, 0.6);
     this.fx.flash(bx, by - 80, this.boss.def.accent, 40);
     this.onEvent('bossStart', {
@@ -1566,6 +1636,24 @@ export class Stage {
 
     // 近景剪影（最近的一层，建立景深）
     this._drawForeground(ctx, theme, cam);
+
+    // 符卡释放瞬间的屏幕染色：铺在最后面，才盖得住所有世界层
+    if (this.castFx > 0) {
+      const accent = this.char === 'marisa' ? '255, 210, 120' : '255, 120, 185';
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = Math.min(0.5, this.castFx * 0.55);
+      const g = ctx.createRadialGradient(
+        VIEW_W * 0.5, VIEW_H * 0.56, 0,
+        VIEW_W * 0.5, VIEW_H * 0.56, VIEW_W * 0.72
+      );
+      g.addColorStop(0, `rgba(${accent}, 0.6)`);
+      g.addColorStop(0.55, `rgba(${accent}, 0.22)`);
+      g.addColorStop(1, `rgba(${accent}, 0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.restore();
+    }
   }
 
   /* 前景剪影：贴边的东西（枝、苇、竹、花）作为「最近一层」。
@@ -1938,14 +2026,16 @@ export class Stage {
     const p = this.player;
     return {
       lives: p.lives,
-      maxLives: p.maxLives,
+      maxLives: Math.max(p.maxLives || 0, p.lives),
+      extendPts: this.extendPts || 0,
+      extendNeed: POWER.extend,
       power: p.power || 0,
       maxPower: p.maxPower || POWER.max,
       fireLevel: p.fireLevel || powerLevel(p.power || 0),
       castCost: POWER.castCost,
       perLevel: POWER.perLevel,
       char: this.char,
-      // EXTRA 显示「道中累计时间」：中途 Boss 战期间冻结，5:00 就是雷米莉亚的位置
+      // EXTRA 显示「道中累计时间」：中途 Boss 战期间冻结，3:00 就是雷米莉亚的位置
       time: this.extra ? this.extraT : this.time,
       boss: this.boss && this.boss.state !== 'dead'
         ? {

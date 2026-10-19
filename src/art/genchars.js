@@ -19,14 +19,14 @@ import { preloadWhenIdle, setPriority } from '../engine/lazy_preload.js';
 const BASE = new URL('./gen/run/', import.meta.url);
 const FRAME_N = 4;
 /** 画到游戏里的角色身高（碰撞盒 56，视觉 104 更有立绘感） */
-const DRAW_H = 104;
+export const DRAW_H = 104;
 /** 轮廓分离：暗贴纸 + 上缘受光，保证角色在暗角/亮背景里都不糊进去 */
 const HALO_K = 1.065;
 const RIM_DX = -1.1;
 const RIM_DY = -1.5;
 
 /** 各动作相对身高的归一化系数：起跳屈腿会矮一点，落下略伸展 */
-const POSE_RATIO = { idle: 1, run: 1, jump: 0.93, fall: 0.97, dash: 1, fly: 0.86 };
+export const POSE_RATIO = { idle: 1, run: 1, jump: 0.93, fall: 0.97, dash: 1, fly: 0.86 };
 
 const SHEETS = {};
 const SUPPORTED = ['reimu', 'marisa'];

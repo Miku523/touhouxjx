@@ -74,29 +74,135 @@ function pickFairyColor(tint, idx) {
   return mix[(group * 2 + (slot - 3)) % mix.length];
 }
 
-function makeFairy(type, x, y, idx, tint) {
+/**
+ * 杂兵种类扩展（平台关）。
+ * 全部按幻想乡的「妖精 / 妖怪」来设计，没有机械兵装：
+ *  - fairy    原地面巡逻妖精，不开火（红白裙，最常见的杂鱼）
+ *  - lancer   御币妖精：手持神主的御币，蓄力后突进（撞人），并打出 1–3 发瞄准米弹
+ *  - weaver   蛛网妖精：定期闪到前方地面，向四方打「交叉」星弹，丝线是土蜘蛛的网
+ *  - flyer    原空中狙击妖精
+ *  - spreader 蝶妖精：三只小蝶绕身飞舞，环射时蝶群同时振翅
+ *  - bomber   提灯妖精：身下悬一盏纸提灯，从上方抛落延迟的鬼火雨
+ *  - spinner  魔法妖精：魔法森林出身的施法妖精，脚下是旋转的星之魔法阵
+ * 装饰只画「御币 / 蛛网 / 蝶 / 提灯 / 魔法阵」，与冰晶弹幕同一套冷暖光，
+ * 不引入枪炮、引信、浮游炮这类不属幻想乡的机械部件。
+ * 种子固定（level.def.gen.seed + level.def.id），同一关每次进入种类分布一致。
+ */
+const PLATFORM_KINDS = {
+  fairy: { air: false, w: 28, h: 36, hp: 2, size: 42, amp: 12, hover: 1.6 },
+  lancer: { air: false, w: 30, h: 38, hp: 4, size: 46, amp: 12, hover: 1.6 },
+  weaver: { air: false, w: 26, h: 32, hp: 3, size: 38, amp: 12, hover: 1.6 },
+  flyer: { air: true, w: 30, h: 34, hp: 2, size: 42, amp: 12, hover: 1.6 },
+  spreader: { air: true, w: 34, h: 38, hp: 4, size: 47, amp: 14, hover: 1.45 },
+  bomber: { air: true, w: 38, h: 34, hp: 5, size: 48, amp: 9, hover: 1.2 },
+  spinner: { air: true, w: 30, h: 34, hp: 4, size: 43, amp: 16, hover: 1.8 },
+};
+
+/** 关卡序号 → 杂兵池档位（stage1 最保守，stage5/6 最丰富） */
+const GROUND_WEIGHTS = {
+  1: { fairy: 0.74, lancer: 0.26 },
+  2: { fairy: 0.56, lancer: 0.28, weaver: 0.16 },
+  3: { fairy: 0.46, lancer: 0.30, weaver: 0.24 },
+  4: { fairy: 0.40, lancer: 0.32, weaver: 0.28 },
+  5: { fairy: 0.36, lancer: 0.32, weaver: 0.32 },
+};
+const AIR_WEIGHTS = {
+  1: { flyer: 0.78, spreader: 0.22 },
+  2: { flyer: 0.58, spreader: 0.24, bomber: 0.18 },
+  3: { flyer: 0.47, spreader: 0.21, bomber: 0.18, spinner: 0.14 },
+  4: { flyer: 0.40, spreader: 0.20, bomber: 0.20, spinner: 0.20 },
+  5: { flyer: 0.34, spreader: 0.20, bomber: 0.22, spinner: 0.24 },
+};
+/** 单关每种新杂兵的上限，防止长关卡里子弹种类堆爆 */
+const KIND_CAPS = { lancer: 16, weaver: 12, spreader: 16, bomber: 12, spinner: 12 };
+
+function hashStr(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function levelRng(level) {
+  const def = (level && level.def) || {};
+  const gen = def.gen || {};
+  const seed = (Number(gen.seed) || 0) ^ hashStr(String(def.id || 'stage'));
+  return mulberry32(seed || 0x5bd1e995);
+}
+
+function platformTierOf(level) {
+  const def = (level && level.def) || {};
+  const m = /^stage(\d+)$/.exec(String(def.id || ''));
+  return m ? Math.min(5, Math.max(1, Number(m[1]))) : 1;
+}
+
+function pickPlatformKind(baseType, tier, rng, used) {
+  const table = baseType === 'flyer' ? AIR_WEIGHTS[tier] : GROUND_WEIGHTS[tier];
+  const allowed = Object.entries(table).filter(([k]) => (
+    k === baseType || !KIND_CAPS[k] || (used[k] || 0) < KIND_CAPS[k]
+  ));
+  let total = 0;
+  for (const [, w] of allowed) total += w;
+  let r = rng() * total;
+  for (const [k, w] of allowed) {
+    r -= w;
+    if (r <= 0) return k;
+  }
+  return baseType;
+}
+
+function makeFairy(type, x, y, idx, tint, kind = type, rng = null) {
   const colorKey = pickFairyColor(tint, idx);
+  const info = PLATFORM_KINDS[kind] || PLATFORM_KINDS[type] || PLATFORM_KINDS.fairy;
+  const rnd = rng || Math.random;
+  const vx = info.air ? 0 : (kind === 'lancer' ? 42 : kind === 'weaver' ? 46 : 52);
   return {
     type,
+    kind,
+    ground: !info.air,
     colorKey,
     colors: FAIRY_COLORS[colorKey],
     x, y,
     prevX: x, prevY: y,
-    w: type === 'flyer' ? 30 : 28,
-    h: type === 'flyer' ? 34 : 36,
-    vx: type === 'flyer' ? 0 : 52,
+    w: info.w,
+    h: info.h,
+    vx,
     vy: 0,
-    facing: -1,
-    hp: scaleEnemyHp(2),
-    maxHp: scaleEnemyHp(2),
+    facing: vx >= 0 ? 1 : -1,
+    hp: scaleEnemyHp(info.hp),
+    maxHp: scaleEnemyHp(info.hp),
     alive: true,
     hitFlash: 0,
     baseY: y,
-    phase: Math.random() * 6.28,
-    shootCd: 1.2 + Math.random() * 1.6,
-    animTime: Math.random() * 6.28,
+    phase: rnd() * 6.28,
+    shootCd: 1.2 + rnd() * 1.6,
+    animTime: rnd() * 6.28,
     deadT: 0,
     stompGrace: 0,
+    // 扩展字段：外观尺寸 / 悬停参数 / 各兵种状态机
+    size: info.size,
+    hoverAmp: info.amp,
+    hoverSpeed: info.hover,
+    patrol: info.air ? 0 : (kind === 'lancer' ? 42 : kind === 'weaver' ? 46 : 52),
+    state: 'patrol',
+    stateT: 0,
+    chargeCd: 2.0 + rnd() * 2.2,
+    blinkCd: 3.2 + rnd() * 2.2,
+    ringA: rnd() * 6.28,
+    spinA: rnd() * 6.28,
+    fireT: 0,
   };
 }
 
@@ -905,14 +1011,39 @@ export class EnemyManager {
 
     let i = 0;
     const tint = level.def && level.def.fairyTint;
+    // 种类分布由关卡 id + 生成种子决定：同一关每次进入完全一致
+    const tier = platformTierOf(level);
+    const rng = levelRng(level);
+    const used = {};
+    const escorts = [];
     for (const e of level.entities) {
-      if (e.type === 'fairy' || e.type === 'flyer') {
-        // 实体的 (x,y) 是瓦片左上角，敌人居中偏下
-        const x = e.x + (T - (e.type === 'flyer' ? 30 : 28)) / 2;
-        const y = e.y + (T - (e.type === 'flyer' ? 34 : 36));
-        this.list.push(makeFairy(e.type, x, y, i++, tint));
+      if (e.type !== 'fairy' && e.type !== 'flyer') continue;
+      const kind = pickPlatformKind(e.type, tier, rng, used);
+      used[kind] = (used[kind] || 0) + 1;
+      const info = PLATFORM_KINDS[kind] || PLATFORM_KINDS[e.type];
+      // 实体的 (x,y) 是瓦片左上角，敌人居中偏下
+      const x = e.x + (T - info.w) / 2;
+      let y = e.y + (T - info.h);
+      if (info.air) {
+        if (kind === 'bomber') y -= 44;
+        y = Math.max(T * 1.5, y);
+        let guard = 0;
+        while (level.rectHitsSolid(x, y, info.w, info.h) && y > T * 1.5 && guard < 30) { y -= 8; guard++; }
+      }
+      this.list.push(makeFairy(e.type, x, y, i++, tint, kind, rng));
+
+      // 高面数关卡的空中护航：只补空中兵，绝不在地面路线中间加卡位
+      if (info.air && tier >= 3 && rng() < 0.16 && escorts.length < 10) {
+        const ex = x - 118;
+        const ey = Math.max(T * 1.5, y - 38);
+        if (ex > T * 2 && !level.rectHitsSolid(ex, ey, 30, 34)) {
+          const ek = rng() < 0.5 ? 'spreader' : 'spinner';
+          escorts.push(makeFairy('flyer', ex, ey, i++, tint, ek, rng));
+        }
       }
     }
+    this.list.push(...escorts);
+    this.tier = tier;
     this.bulletCooldownMul = this.difficulty === 'easy' ? 1.5 : this.difficulty === 'hard' ? 0.7 : 1;
 
     // 难度细节：优先用难度表给的精确倍率（能区分 H / L），否则退回三档 enemyDifficulty
@@ -923,6 +1054,14 @@ export class EnemyManager {
     this.bulletCooldownMul = this.fireScale;
     this.bulletSpeed = Math.min(Number(d?.bulletSpeedCap) || 520, 150 * (Number(d?.enemyBulletScale) || 1));
     this.bulletShots = Math.max(1, Math.round((Number(d?.flyerShots) || 1) * dens));
+    // 全局弹幕软上限（难度表的 bulletBudget 打个折）：超过就先不开火，绝不把池子打爆
+    const budget = Number(d?.bulletBudget) || 720;
+    this.bulletCap = Math.min(1250, Math.max(260, budget * 0.9));
+  }
+
+  /** 弹幕池还有余量才开火（池子有 1400 硬上限，这里留出 Boss / 符卡的空间） */
+  _mayFire(bullets) {
+    return !!bullets && bullets.count() < this.bulletCap;
   }
 
   update(dt, player, bullets, fx, opts = {}) {
@@ -950,59 +1089,10 @@ export class EnemyManager {
       e.stompGrace = Math.max(0, e.stompGrace - dt);
       e.phase += dt;
 
-      if (e.type === 'fairy') {
-        // 地面巡逻
-        e.x += e.vx * dt;
-        // 撞墙 / 悬崖 就转身
-        const aheadX = e.vx > 0 ? e.x + e.w + 4 : e.x - 4;
-        const footY = e.y + e.h + 4;
-        const cx = Math.floor(aheadX / T);
-        const cyFoot = Math.floor(footY / T);
-        const wallHit = level.isSolidTile(cx, Math.floor((e.y + e.h / 2) / T));
-        const noFloor = !level.isSolidTile(cx, cyFoot) && !level.isPlatformTile(cx, cyFoot);
-        if (wallHit || noFloor) {
-          e.vx *= -1;
-          e.facing = e.vx > 0 ? 1 : -1;
-          e.x += e.vx * dt * 2;
-        }
-        // 重力贴地（简单版）
-        let gy = e.y;
-        let steps = 0;
-        while (level.rectHitsSolid(e.x, gy, e.w, e.h) && steps < 40) { gy -= 2; steps++; }
-        steps = 0;
-        while (!level.rectHitsSolid(e.x, gy + 2, e.w, e.h) && steps < 60) { gy += 2; steps++; }
-        e.y = gy;
+      if (e.ground) {
+        this._updateGround(e, dt, player, px, py, bullets, fx, opts);
       } else {
-        // 飞行：正弦上下漂浮 + 缓慢靠近玩家
-        e.y = e.baseY + Math.sin(e.phase * 1.6) * 12;
-        const dx = px - (e.x + e.w / 2);
-        e.x += Math.sign(dx) * Math.min(26, Math.abs(dx) * 0.6) * dt;
-        e.facing = dx > 0 ? 1 : -1;
-
-        // 射击
-        e.shootCd -= dt * (1 / this.bulletCooldownMul);
-        if (e.shootCd <= 0 && !opts.freeze && bullets) {
-          e.shootCd = 2.4 + Math.random() * 1.8;
-          const ox = e.x + e.w / 2;
-          const oy = e.y + e.h * 0.6;
-          if (this.bulletShots > 1) {
-            // 高难度：一束小瞄准扇（弹速同样受难度倍率与上限约束）
-            const a = Math.atan2(py - oy, px - ox);
-            bullets.fan(ox, oy, this.bulletShots, 0.22, a, this.bulletSpeed, {
-              r: 5,
-              color: e.colors.glow,
-              type: 0,
-              life: 5,
-            });
-          } else {
-            bullets.aimed(ox, oy, px, py, this.bulletSpeed, {
-              r: 6,
-              color: e.colors.glow,
-              type: 0,
-              life: 5,
-            });
-          }
-        }
+        this._updateAir(e, dt, player, px, py, bullets, fx, opts);
       }
 
       // 与玩家碰撞：踩 vs 撞
@@ -1030,6 +1120,210 @@ export class EnemyManager {
 
     // 清理很久的尸体
     this.list = this.list.filter((e) => e.alive || e.deadT < 1.2);
+  }
+
+  /* ---------------- 地面型：巡逻 / 冲锋 / 闪现 ---------------- */
+
+  _updateGround(e, dt, player, px, py, bullets, fx, opts) {
+    const level = this.level;
+    const cx = e.x + e.w / 2;
+    const cy = e.y + e.h / 2;
+
+    // 御币妖精：靠近后 0.45s 蓄力（红光警示），随后 0.4s 高速突进
+    if (e.kind === 'lancer') {
+      e.chargeCd = Math.max(0, e.chargeCd - dt);
+      if (e.state === 'patrol') {
+        if (e.chargeCd <= 0 && Math.abs(px - cx) < 430 && Math.abs(py - cy) < 190) {
+          e.state = 'wind';
+          e.stateT = 0.45;
+          e.facing = px > cx ? 1 : -1;
+          fx?.flash?.(cx, cy, e.colors.hot, 24);
+        }
+      } else if (e.state === 'wind') {
+        e.stateT -= dt;
+        e.vx = 0;
+        if (e.stateT <= 0) {
+          e.state = 'charge';
+          e.stateT = 0.42;
+          e.vx = e.facing * 340;
+        }
+      } else if (e.state === 'charge') {
+        e.stateT -= dt;
+        if (e.stateT <= 0) {
+          e.state = 'patrol';
+          e.stateT = 0;
+          e.vx = (e.facing > 0 ? 1 : -1) * e.patrol;
+          e.chargeCd = 3.4;
+        }
+      }
+    }
+
+    // 蛛网妖精：定期闪现到前方一块可站立的地面（不穿墙、不落空）
+    if (e.kind === 'weaver') {
+      e.blinkCd -= dt;
+      if (e.blinkCd <= 0) {
+        e.blinkCd = 3.6 + ((e.phase * 0.37) % 1.2);
+        const tx = e.x + e.facing * 96;
+        let ty = e.y;
+        let guard = 0;
+        while (guard < 40 && ty > T * 0.5 && level.rectHitsSolid(tx, ty - 2, e.w, e.h)) { ty -= 4; guard++; }
+        guard = 0;
+        while (guard < 40 && ty < level.h - e.h - 2 && !level.rectHitsSolid(tx, ty + 2, e.w, e.h)) { ty += 4; guard++; }
+        const clear = tx > T && tx < level.w - e.w - T && !level.rectHitsSolid(tx, ty, e.w, e.h);
+        if (clear) {
+          fx?.flash?.(cx, cy, e.colors.wing, 18);
+          e.x = tx;
+          e.y = ty;
+          fx?.burst?.(e.x + e.w / 2, e.y + e.h / 2, e.colors.glow, 6, 160);
+        }
+      }
+    }
+
+    // 巡逻移动（冲锋 / 蓄力期间由状态机接管 vx）
+    if (e.state !== 'wind' && e.state !== 'charge') e.x += e.vx * dt;
+
+    // 撞墙 / 悬崖 就转身；冲锋撞墙则提前结束
+    if (e.state === 'charge') {
+      const probe = e.x + (e.vx > 0 ? 6 : -6);
+      if (level.rectHitsSolid(probe, e.y, e.w, e.h) || e.x < T || e.x > level.w - e.w - T) {
+        e.state = 'patrol';
+        e.vx = (e.facing > 0 ? 1 : -1) * e.patrol;
+        e.chargeCd = 3.4;
+        fx?.burst(e.x + e.w / 2, e.y + e.h, e.colors.wing, 4, 120);
+      }
+    } else if (e.state !== 'wind') {
+      const aheadX = e.vx > 0 ? e.x + e.w + 4 : e.x - 4;
+      const footY = e.y + e.h + 4;
+      const tx = Math.floor(aheadX / T);
+      const cyFoot = Math.floor(footY / T);
+      const wallHit = level.isSolidTile(tx, Math.floor((e.y + e.h / 2) / T));
+      const noFloor = !level.isSolidTile(tx, cyFoot) && !level.isPlatformTile(tx, cyFoot);
+      if (wallHit || noFloor) {
+        e.vx *= -1;
+        e.facing = e.vx > 0 ? 1 : -1;
+        e.x += e.vx * dt * 2;
+      }
+    }
+
+    // 重力贴地（简单版）
+    let gy = e.y;
+    let steps = 0;
+    while (level.rectHitsSolid(e.x, gy, e.w, e.h) && steps < 40) { gy -= 2; steps++; }
+    steps = 0;
+    while (!level.rectHitsSolid(e.x, gy + 2, e.w, e.h) && steps < 60) { gy += 2; steps++; }
+    e.y = gy;
+
+    // 地面型开火（fairy 保持原设计：不开火）
+    if (opts.freeze || !bullets) return;
+    e.shootCd -= dt * (1 / this.bulletCooldownMul);
+    if (e.shootCd > 0 || !this._mayFire(bullets)) return;
+
+    const ox = e.x + e.w / 2;
+    const oy = e.y + e.h * 0.45;
+    const dist = Math.hypot(px - ox, py - oy);
+    if (e.kind === 'lancer' && dist < 760 && Math.abs(py - oy) < 280) {
+      // 瞄准扇形米弹：难度的 flyerShots 让扇面变宽
+      e.shootCd = (2.4 + Math.random() * 0.8) * this.fireScale;
+      const n = 1 + Math.min(2, this.bulletShots - 1);
+      const aimX = px + (player.vx || 0) * 0.14;
+      const aimY = py + (player.vy || 0) * 0.14;
+      const a = Math.atan2(aimY - oy, aimX - ox);
+      bullets.fan(ox, oy, n, 0.16, a, this.bulletSpeed * 0.95, {
+        r: 5, color: e.colors.glow, type: 1, life: 5,
+      });
+    } else if (e.kind === 'weaver' && dist < 720) {
+      // 四向 / 八向「交叉网」星弹
+      e.shootCd = (3.2 + Math.random() * 0.9) * this.fireScale;
+      const n = this.bulletShots > 1 ? 8 : 4;
+      const base = Math.PI / 4 + e.ringA;
+      const sp = this.bulletSpeed * 0.72;
+      for (let k = 0; k < n; k++) {
+        const a = base + (k / n) * TAU;
+        bullets.spawn({
+          x: ox, y: oy,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          r: 5, color: e.colors.wing, type: 3, life: 5, spin: 3,
+        });
+      }
+      e.ringA += Math.PI / 8;
+    } else {
+      e.shootCd = 1.2 + Math.random() * 1.2;
+    }
+  }
+
+  /* ---------------- 空中型：悬停 / 环射 / 延迟雨 / 螺旋 ---------------- */
+
+  _updateAir(e, dt, player, px, py, bullets, fx, opts) {
+    const cx = e.x + e.w / 2;
+    const dx = px - cx;
+    e.facing = dx > 0 ? 1 : -1;
+    // 正弦悬停（各兵种幅度 / 频率不同）
+    e.y = e.baseY + Math.sin(e.phase * e.hoverSpeed) * e.hoverAmp;
+
+    const hold = e.kind === 'bomber' ? 250 : e.kind === 'spinner' ? 300 : 340;
+    const drift = Math.abs(dx) > hold ? 0.9 : 0.15;
+    const maxSp = e.kind === 'bomber' ? 18 : e.kind === 'spinner' ? 34 : 30;
+    e.x += Math.sign(dx) * Math.min(maxSp, Math.abs(dx) * 0.5) * drift * dt;
+
+    const ox = cx;
+    const oy = e.y + e.h * 0.55;
+
+    // 魔法妖精：持续螺旋（不进入冷却池，单独用 fireT 计时）
+    if (e.kind === 'spinner') {
+      e.spinA += dt * 2.1;
+      e.fireT -= dt;
+      if (e.fireT > 0 || opts.freeze || !this._mayFire(bullets)) return;
+      e.fireT = Math.max(0.13, 0.2 * this.fireScale);
+      const arms = this.bulletShots > 2 ? 2 : 1;
+      const sp = Math.min(this.bulletSpeed, 150);
+      for (let k = 0; k < arms; k++) {
+        bullets.spiral(ox, oy, e.spinA + (k / arms) * Math.PI, sp, {
+          r: 4.5, color: e.colors.wing, type: 0, life: 4.5,
+        });
+      }
+      return;
+    }
+
+    e.shootCd -= dt * (1 / this.bulletCooldownMul);
+    if (e.shootCd > 0 || opts.freeze || !this._mayFire(bullets)) return;
+
+    if (e.kind === 'spreader') {
+      // 环射：每次换一个角度，弹数随难度 / 分面密度增加
+      e.shootCd = (2.7 + Math.random() * 0.7) * this.fireScale;
+      const n = Math.min(9, 4 + Math.max(0, this.bulletShots - 1) * 2);
+      bullets.ring(ox, oy, n, Math.min(this.bulletSpeed, 135), {
+        angle: e.ringA, r: 5, color: e.colors.glow, type: 0, life: 5.5,
+      });
+      e.ringA += Math.PI / n;
+    } else if (e.kind === 'bomber') {
+      // 延迟雨：初速很慢 + 沿速度持续加速，落下时才是「雨」
+      const dist = Math.hypot(px - ox, py - oy);
+      if (dist < 900) {
+        e.shootCd = (3.0 + Math.random() * 0.8) * this.fireScale;
+        const n = 2 + Math.min(2, Math.max(0, this.bulletShots - 1));
+        for (let k = 0; k < n; k++) {
+          const bx = ox + (k - (n - 1) / 2) * 26;
+          bullets.spawn({
+            x: bx, y: oy + 6, vx: 0, vy: 30, accel: 260,
+            r: 6, color: e.colors.glow, type: 1, life: 7, scaleIn: 0.2,
+          });
+        }
+        fx?.flash?.(ox, oy + 10, e.colors.wing, 18);
+      }
+    } else {
+      // 原 flyer：单发瞄准 / 高难度小扇
+      e.shootCd = 2.4 + Math.random() * 1.8;
+      if (this.bulletShots > 1) {
+        const a = Math.atan2(py - oy, px - ox);
+        bullets.fan(ox, oy, this.bulletShots, 0.22, a, this.bulletSpeed, {
+          r: 5, color: e.colors.glow, type: 0, life: 5,
+        });
+      } else {
+        bullets.aimed(ox, oy, px, py, this.bulletSpeed, {
+          r: 6, color: e.colors.glow, type: 0, life: 5,
+        });
+      }
+    }
   }
 
   _overlap(e, p) {
@@ -1110,12 +1404,18 @@ export class EnemyManager {
       facing: e.facing,
       dead: dead0,
       flash: e.hitFlash > 0 ? Math.min(1, e.hitFlash / 0.12) * 0.62 : 0,
+      size: e.size || 42,
     };
     ctx.save();
     ctx.translate(e.x + e.w / 2, e.y + e.h / 2);
     const drewAi = drawGenFairy(ctx, aiOpts);
+    if (drewAi) {
+      // 附加装饰：御币 / 蛛网 / 蝶群 / 提灯 / 魔法阵（在妖精本体之后画）
+      this._drawKindDecor(ctx, e, alpha);
+      ctx.restore();
+      return;
+    }
     ctx.restore();
-    if (drewAi) return;
 
     const kit = getKit(kind, e.colorKey);
     if (!kit) return;
@@ -1137,12 +1437,214 @@ export class EnemyManager {
     if (kind === 'flyer') this._drawFlyer(ctx, e, kit, t, alpha, dead);
     else this._drawWraith(ctx, e, kit, t, alpha, dead);
 
+    // 程序化回退路径：ctx 已经按 facing 镜像，装饰不再二次镜像
+    this._drawKindDecor(ctx, e, alpha, true);
+
     // 受击白闪：叠一层白色剪影，0.12s 内快速衰减
     if (e.hitFlash > 0) {
       const f = getFlash(kind);
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = alpha * Math.min(1, e.hitFlash / 0.12) * 0.62;
       ctx.drawImage(f.img, -f.w / 2, -f.h / 2, f.w, f.h);
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * 扩展杂兵的附加装饰（画在本体之后、受击白闪之前）。
+   * 原点 = 包围盒中心；AI 路径未镜像，这里按 facing 补一次；回退路径已镜像则跳过。
+   */
+  _drawKindDecor(ctx, e, alpha, alreadyFacing = false) {
+    if (e.kind === 'fairy' || e.kind === 'flyer') return;
+    const t = e.animTime;
+    const c = e.colors;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (!alreadyFacing && e.facing < 0) ctx.scale(-1, 1);
+
+    if (e.kind === 'lancer') {
+      // 御币：木柄 + 两串白色纸垂，蓄力时纸垂被风带起（神主做法事的道具）
+      const wind = e.state === 'wind' ? 1 : e.state === 'charge' ? 1.35 : 0;
+      const bx0 = -e.w * 0.36;
+      const by0 = e.h * 0.30;
+      const bx1 = e.w * 0.40 + wind * 5;
+      const by1 = -e.h * 0.12 - wind * 5;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = rgba(c.deep, 0.92);
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(bx0, by0);
+      ctx.lineTo(bx1, by1);
+      ctx.stroke();
+      // 纸垂：两条从柄端垂下的折线，末端随动作轻摆
+      ctx.strokeStyle = 'rgba(255,250,240,0.92)';
+      ctx.lineWidth = 1.5;
+      for (let k = 0; k < 2; k++) {
+        const sway = Math.sin(t * 3 + k * 1.7) * (1.2 + wind * 1.8);
+        const sx = bx1 - 3 - k * 4;
+        const sy = by1 + 1;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        for (let s = 0; s < 3; s++) {
+          ctx.lineTo(sx + (s % 2 ? 2.4 : -2.4) + sway * (s + 1) * 0.12, sy + 3 + s * 3.4);
+        }
+        ctx.stroke();
+      }
+      // 蓄力时纸垂顶端亮起一抹巫女神乐的白光
+      if (wind > 0) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = rgba(c.hot, 0.25 + wind * 0.28);
+        ctx.beginPath();
+        ctx.arc(bx1, by1, 3 + wind * 2.5, 0, TAU);
+        ctx.fill();
+      }
+    } else if (e.kind === 'weaver') {
+      // 蛛网：两层缓慢反向旋转的椭圆，再补四条土蜘蛛的细腿与露珠
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = rgba(c.wing, 0.5);
+      ctx.lineWidth = 1.1;
+      for (let k = 0; k < 2; k++) {
+        ctx.save();
+        ctx.rotate(t * 0.9 * (k ? -1 : 1) + k * 0.7);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, e.w * 0.85, e.h * 0.52, 0, 0, TAU);
+        ctx.stroke();
+        ctx.restore();
+      }
+      // 露珠：网上挂着的四颗小光点
+      for (let k = 0; k < 4; k++) {
+        const a = t * 0.6 + (k * TAU) / 4;
+        ctx.fillStyle = rgba(c.hot, 0.5 + 0.25 * Math.sin(t * 4 + k));
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * e.w * 0.62, Math.sin(a) * e.h * 0.4, 1.1, 0, TAU);
+        ctx.fill();
+      }
+      // 蛛腿：本体左右的四根折线，不抢妖精剪影
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = rgba(c.deep, 0.75);
+      ctx.lineWidth = 1.1;
+      for (let k = 0; k < 4; k++) {
+        const side = k < 2 ? -1 : 1;
+        const yy = (k % 2 ? 1 : -1) * 3;
+        ctx.beginPath();
+        ctx.moveTo(side * e.w * 0.18, yy);
+        ctx.lineTo(side * e.w * 0.5, yy - 7);
+        ctx.lineTo(side * e.w * 0.6, yy - 2);
+        ctx.stroke();
+      }
+    } else if (e.kind === 'spreader') {
+      // 蝶妖精：三只小蝶绕身飞舞，四翼开合、鳞粉发亮（描边保证在亮暗背景上都读得出）
+      ctx.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < 3; k++) {
+        const a = t * 2.0 + (k * TAU) / 3;
+        const dx = Math.cos(a) * e.w * 0.86;
+        const dy = Math.sin(a) * e.w * 0.58;
+        const flap = 0.45 + 0.55 * Math.abs(Math.sin(t * 6.5 + k * 2));
+        const s = 4.4;
+        const tilt = Math.sin(t * 3.4 + k) * 0.25;
+        ctx.save();
+        ctx.translate(dx, dy);
+        ctx.rotate(tilt);
+        // 鳞粉光晕
+        ctx.fillStyle = rgba(c.glow, 0.16);
+        ctx.beginPath();
+        ctx.arc(0, 0, 8, 0, TAU);
+        ctx.fill();
+        // 四翼：上大下小，翼根分开，深色描边勾出蝶形剪影
+        ctx.fillStyle = rgba(c.wing, 0.8);
+        ctx.strokeStyle = rgba(c.deep, 0.85);
+        ctx.lineWidth = 0.9;
+        for (const sgn of [-1, 1]) {
+          ctx.beginPath();
+          ctx.ellipse(sgn * s * 1.02 * flap, -1.2, s * 0.72 * flap, s * 0.98, sgn * (0.5 + tilt), 0, TAU);
+          ctx.fill();
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.ellipse(sgn * s * 0.82 * flap, 2.4, s * 0.48 * flap, s * 0.6, sgn * (0.24 + tilt), 0, TAU);
+          ctx.fill();
+          ctx.stroke();
+        }
+        // 身体与触角
+        ctx.fillStyle = rgba(c.deep, 0.95);
+        ctx.beginPath();
+        ctx.ellipse(0, 0.6, 0.75, 3.4, 0, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = rgba(c.hot, 0.85);
+        ctx.beginPath();
+        ctx.ellipse(0, -1.6, 0.6, 1.2, 0, 0, TAU);
+        ctx.fill();
+        ctx.strokeStyle = rgba(c.deep, 0.75);
+        ctx.lineWidth = 0.6;
+        for (const sgn of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(0, -2.4);
+          ctx.quadraticCurveTo(sgn * 1.4, -3.9, sgn * 2.5, -4.4);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    } else if (e.kind === 'bomber') {
+      // 提灯妖精：身下悬一盏竹骨纸提灯，落弹前灯里的鬼火会亮起来
+      const pulse = 0.5 + 0.5 * Math.sin(t * 6);
+      const bx = Math.sin(t * 2.2) * 2.5;
+      const by = e.h * 0.52;
+      // 灯绳
+      ctx.strokeStyle = rgba(c.deep, 0.85);
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(0, 6);
+      ctx.quadraticCurveTo(bx * 0.5, by * 0.5, bx, by - 8.5);
+      ctx.stroke();
+      // 纸罩（由深到浅三层，不新建渐变）
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.fillStyle = rgba(c.deep, 0.9);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 7, 8.4, 0, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(198,96,74,0.92)';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 5.8, 7.2, 0, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = `rgba(255,206,140,${0.55 + pulse * 0.35})`;
+      ctx.beginPath();
+      ctx.ellipse(0, 0.4, 3.2, 4.6, 0, 0, TAU);
+      ctx.fill();
+      // 竹骨横箍
+      ctx.strokeStyle = rgba(c.deep, 0.5);
+      ctx.lineWidth = 0.8;
+      for (let s = -1; s <= 1; s++) {
+        ctx.beginPath();
+        ctx.ellipse(0, s * 2.6, 6.6, 1.2, 0, 0, TAU);
+        ctx.stroke();
+      }
+      // 上下木盖
+      ctx.fillStyle = rgba(c.deep, 0.95);
+      ctx.fillRect(-3.4, -9.8, 6.8, 1.8);
+      ctx.fillRect(-3.4, 8.0, 6.8, 1.8);
+      // 鬼火内焰
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = `rgba(255,238,178,${0.32 + pulse * 0.4})`;
+      ctx.beginPath();
+      ctx.arc(0, 0.5, 2.6 + pulse * 1.3, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    } else if (e.kind === 'spinner') {
+      // 魔法妖精：脚下一圈星之魔法阵，四颗星点反向绕行
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = rgba(c.wing, 0.42);
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(0, 0, e.w * 0.62, t * 2.4, t * 2.4 + Math.PI * 1.35);
+      ctx.stroke();
+      for (let k = 0; k < 4; k++) {
+        const a = t * 3.1 + (k * TAU) / 4;
+        ctx.fillStyle = rgba(c.hot, 0.7);
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * e.w * 0.64, Math.sin(a) * e.w * 0.64 * 0.7, 2.2, 0, TAU);
+        ctx.fill();
+      }
     }
 
     ctx.restore();

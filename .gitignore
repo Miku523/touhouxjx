@@ -67,3 +67,7 @@ _p4_compare.html
 _p3_backup/
 ._shots_danmaku/
 tools/_shots/
+
+# playtest / 调试产物
+_pt/
+_hit/

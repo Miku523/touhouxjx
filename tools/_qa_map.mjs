@@ -220,7 +220,7 @@ try {
   check('EXTRA 零火力开局', exStart.power === 0 && exStart.lvl === 1, `${exStart.power} / Lv${exStart.lvl}`);
   check('EXTRA 为 stg 且 EX 难度', exStart.isExtra === true && exStart.diff === 'EX' && exStart.mode === 'stg', JSON.stringify(exStart));
 
-  console.log('[4b] EXTRA 时间轴：5:00 雷米莉亚 → 14:00 芙兰');
+  console.log('[4b] EXTRA 时间轴：3:00 雷米莉亚 → 6:00 芙兰');
   await ev(`(() => { const g = window.__game; g.unlockedExtra = true; g.inExtra = true; g._hidePanel?.(); g._startExtraStage(); })()`);
   await sleep(500);
   const exFlow = await ev(`(async () => {
@@ -233,8 +233,8 @@ try {
     const e0 = st.extraT;
     await new Promise(r => setTimeout(r, 700));
     const e1 = st.extraT;
-    // 拨到 5:00 前一帧，等时间轴放雷米莉亚；对白逐句点掉，直到 Boss 开战
-    st.extraT = 299.4;
+    // 拨到 3:00 前一帧，等时间轴放雷米莉亚；对白逐句点掉，直到 Boss 开战
+    st.extraT = 179.4;
     for (let i = 0; i < 500 && !st.boss; i++) {
       if (g.dialogue?.active) g.dialogue.advance();
       await new Promise(r => setTimeout(r, 25));
@@ -248,8 +248,8 @@ try {
     if (st.boss) st.boss.state = 'dead';
     for (let i = 0; i < 80 && !st.midbossDone; i++) await new Promise(r => setTimeout(r, 50));
     const afterMid = { done: st.midbossDone, boss: !!st.boss, state: st.state };
-    // 拨到终盘时刻（14:00）
-    st.extraT = 839.4;
+    // 拨到终盘时刻（6:00）
+    st.extraT = 359.4;
     for (let i = 0; i < 240 && !(st.boss && st.boss.key === 'flandre'); i++) {
       if (g.dialogue?.active) g.dialogue.advance();
       await new Promise(r => setTimeout(r, 25));
@@ -258,16 +258,16 @@ try {
     return { w, waves, trigger, sec: Math.round(trigger / 165), tick: +(e1 - e0).toFixed(2), mid, frozen: +(e3 - e2).toFixed(2), afterMid, final };
   })()`);
   console.log('   ', JSON.stringify(exFlow));
-  check('Extra 道中滚动长度 >= 14 分钟', exFlow.sec >= 850, `${exFlow.sec}s`);
-  check('Extra 道中波次 >= 250', exFlow.waves >= 250, `${exFlow.waves}`);
+  check('Extra 道中滚动长度 >= 6 分钟', exFlow.sec >= 350, `${exFlow.sec}s`);
+  check('Extra 道中波次 >= 100', exFlow.waves >= 100, `${exFlow.waves}`);
   check('道中计时正常推进', exFlow.tick > 0.4 && exFlow.tick < 1.2, `${exFlow.tick}s`);
-  check('5:00 出现雷米莉亚', exFlow.mid?.key === 'remilia' && exFlow.mid?.mid === true, JSON.stringify(exFlow.mid));
+  check('3:00 出现雷米莉亚', exFlow.mid?.key === 'remilia' && exFlow.mid?.mid === true, JSON.stringify(exFlow.mid));
   check('雷米莉亚只有 2 张符卡', exFlow.mid?.phases === 2, `${exFlow.mid?.phases}`);
-  check('中途 Boss 血量按 EX 放大', (exFlow.mid?.hp || 0) >= 9000, `${exFlow.mid?.hp}`);
+  check('中途 Boss 血量按 EX 放大', (exFlow.mid?.hp || 0) >= 7000, `${exFlow.mid?.hp}`);
   check('Boss 战期间道中计时暂停', exFlow.frozen < 0.15, `${exFlow.frozen}s`);
   check('击破中途 Boss 后回道中', exFlow.afterMid.done === true && exFlow.afterMid.boss === false && exFlow.afterMid.state === 'play');
   check('终盘为芙兰朵露', exFlow.final?.key === 'flandre' && exFlow.final?.mid === false, JSON.stringify(exFlow.final));
-  check('终盘芙兰 EX 血量', (exFlow.final?.hp || 0) >= 50000, `${exFlow.final?.hp}`);
+  check('终盘芙兰 EX 血量', (exFlow.final?.hp || 0) >= 45000, `${exFlow.final?.hp}`);
 
   console.log('[4d] EXTRA 中途失败再战：直接回到芙兰');
   const exRetry = await ev(`(async () => {

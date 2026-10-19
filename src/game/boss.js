@@ -18,10 +18,10 @@
  *     保证不会出现「必死墙」，只是没法再靠背板过关。
  */
 
-import { drawBoss, BOSS_INFO } from '../art/bosses.js';
-import { drawGenBoss } from '../art/genboss.js';
+import { BOSS_INFO } from '../art/bosses.js';
+import { drawGenBoss, ensureBossArt, bossArtHeight } from '../art/genboss.js';
 import { getDifficulty, bossPhasesFor, scaleBossHp, stageDensityOf } from './difficulty.js';
-import { scalePlayerDamage, scaleEnemyHp } from './balance.js';
+import { scalePlayerDamage } from './balance.js';
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -72,6 +72,19 @@ function nextBattleSeed() {
      scatter {n, speed, color, rate, r, aimed, arc}     随机方向/速度
      spray   {n, speed, color, rate, r, aimed, arc, wave} 贴脸随机连撒
      cross   {n, dirs, spread, speed, color, rate, r, aimed} 多向扇
+     cage    {n, gaps, radius, gapFrac, speed, spin} 以玩家为圆心的缺口围栏（结界）
+     petal   {petals, n, speed, curl, spin}          旋转花瓣弧（瓣心快/瓣尖慢）
+     meteor  {n, delay, spread, burstN, burstSpeed}  坠落大玉，到点爆裂成环
+     snake   {n, speed, amp, freq}                   正弦摆动的蛇形连续流
+     mine    {n, delay, burstN, speed, turn}         漂浮泡弹，到点分裂成小环
+     arc     {n, arcs, gap, turn, speed, aimed}      左右反向转弯的交叉弧
+     spiralPulse {arms, spin, pulse, curl, speed}    双反向螺旋 + 速度脉冲
+
+     新增语法一律复用既有冰晶弹型，不新画一套美术：
+       cage / arc  = 宝石（B_CIRCLE）做的结界与弧线
+       petal       = 雪花 / 冰花（B_STAR）做花瓣
+       snake       = 冰棱（B_RICE）做蛇鳞
+       meteor/mine = 冰花外壳（B_BIG）炸裂成冰棱碎片（B_RICE），对应原作的「大玉→米弹」分裂
    ============================================================ */
 
 function firePattern(p, boss, api, fireT) {
@@ -307,16 +320,211 @@ function firePattern(p, boss, api, fireT) {
     }
   }
 
-  if (p.typeName === 'cross') {
-    const dirs = clamp(Math.round(p.dirs || 4), 2, 10);
-    const n = count(p.n || 3, 1, 12);
-    const spread = (p.spread || 0.5) * pat.spreadScale * boss.rnd(0.85, 1.2);
-    const base = pat.angle + (p.aimed ? Math.atan2(py - boss.y, px - boss.x) : 0);
-    for (let d = 0; d < dirs; d++) {
-      const a = base + (d / dirs) * TAU + boss.rnd(-0.28, 0.28);
-      b.fan(boss.x, boss.y, n, spread, a, varySpeed(p.speed, boss.rnd(0.94, 1.08)), {
-        color, r, type, life,
+  if (p.typeName === 'cage') {
+    // 围栏：以玩家为圆心摆一圈「向内收」的弹墙，留 gaps 个缺口。
+    // 缺口随每次开火缓慢转动，玩家必须移动到缺口或主动穿缝。
+    const R = clamp(p.radius || 240, 140, 320);
+    // 一圈的弹数受圆弧间距约束（ringGapPx），再夹到难度 ringLimit
+    const gapPxN = Math.floor((TAU * R) / boss.ringGapPx);
+    const n = clamp(Math.round(count(p.n || 18, 6, 48)), 6, Math.min(gapPxN, 48, boss.ringLimit));
+    const gaps = clamp(Math.round(p.gaps || 2), 1, 4);
+    const gapN = Math.max(2, Math.round(n * clamp(p.gapFrac || 0.14, 0.08, 0.3)));
+    const base = boss.rnd(0, TAU) + fireT * (p.spin || 0.35) * pat.dir;
+    const sp = varySpeed(p.speed || 92);
+    for (let i = 0; i < n; i++) {
+      const a = base + (i / n) * TAU;
+      // 判断这点落在哪个缺口里（圆上角距）
+      let blocked = false;
+      for (let g = 0; g < gaps; g++) {
+        const g0 = base + (g / gaps) * TAU;
+        const d = Math.abs(((a - g0 + Math.PI * 3) % TAU) - Math.PI);
+        if (d < (gapN / n) * TAU * 0.55) { blocked = true; break; }
+      }
+      if (blocked) continue;
+      const sx = px + Math.cos(a) * R;
+      const sy = py + Math.sin(a) * R;
+      const inward = Math.atan2(py - sy, px - sx);
+      b.spawn({
+        x: sx, y: sy,
+        vx: Math.cos(inward) * sp,
+        vy: Math.sin(inward) * sp,
+        color, r, type, life: Math.min(life, Math.max(1.5, R / sp + 0.4)),
+        rot: inward,
       });
+    }
+  }
+
+  if (p.typeName === 'petal') {
+    // 花瓣弧：每瓣是一条「中间快、两端慢」的弧形弹带，整朵花缓慢旋转。
+    const petals = clamp(Math.round((p.petals || 4) * pat.armScale), 3, 7);
+    const per = count(p.n || 3, 2, 8);
+    const base = pat.angle + fireT * (p.spin || 0.9) * pat.dir;
+    const sp0 = varySpeed(p.speed || 118, 1);
+    for (let k = 0; k < petals; k++) {
+      const a0 = base + (k / petals) * TAU;
+      const turn = (p.curl || 0.55) * (k % 2 === 0 ? 1 : -1) * pat.dir;
+      for (let i = 0; i < per; i++) {
+        const tt = per === 1 ? 0 : i / (per - 1) - 0.5;
+        const a = a0 + tt * (TAU / petals) * 0.62;
+        // 瓣心快、瓣尖慢：轮廓看起来像一层薄花瓣而不是均匀扇
+        const kk = 0.55 + 0.45 * Math.cos(tt * Math.PI);
+        const sp = Math.min(boss.speedCap, Math.max(20, sp0 * kk * boss.rnd(0.96, 1.04)));
+        b.spawn({
+          x: boss.x, y: boss.y,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          color, r: Math.max(4, r - 1),
+          type: p.type !== undefined ? p.type : 3,
+          life, turn: turn * (0.5 + Math.abs(tt)), rot: a, scaleIn: 0.25,
+        });
+      }
+    }
+  }
+
+  if (p.typeName === 'meteor') {
+    // 坠落爆裂：从玩家上方砸下「壳弹」，到点后在壳弹当前位置炸一圈碎片。
+    // 壳弹速度按「距离 / 延迟」反算，保证整招时间稳定；爆裂用 _scheduleLater 排队。
+    const n = clamp(Math.round((p.n || 2) * boss.pressure * boss.rnd(0.85, 1.2)), 1, 5);
+    const delay = clamp(p.delay || 1.3, 0.6, 2.2);
+    const spreadPx = clamp(p.spread || 180, 60, 320);
+    for (let i = 0; i < n; i++) {
+      const tx = px + boss.rnd(-spreadPx, spreadPx);
+      const ty = py + boss.rnd(-spreadPx * 0.55, spreadPx * 0.55);
+      const sx = tx + boss.rnd(-24, 24);
+      const sy = ty - 300;
+      const dx = tx - sx;
+      const dy = ty - sy;
+      const dist = Math.hypot(dx, dy) || 1;
+      const sp = Math.min(boss.speedCap, Math.max(45, dist / delay));
+      const vx = (dx / dist) * sp;
+      const vy = (dy / dist) * sp;
+      const shell = b.spawn({
+        x: sx, y: sy, vx, vy,
+        color, r: Math.max(7, r + 2), type: 2,
+        life: delay + 0.6, rot: Math.atan2(dy, dx), scaleIn: 0.18,
+      });
+      const ex0 = sx, ey0 = sy;
+      boss._scheduleLater(delay, (api2) => {
+        const bl = api2?.bullets;
+        const alive = shell && shell.life > 0;
+        const ex = alive ? shell.x : ex0 + vx * delay;
+        const ey = alive ? shell.y : ey0 + vy * delay;
+        if (alive) shell.life = 0;
+        if (!bl) return;
+        const room = (bl.activeCount || 0);
+        let m = clamp(Math.round((p.burstN || 8) * boss.pressure), 5, 18);
+        // 预算护栏：别让一次爆裂把同屏弹数顶穿
+        if (room + m > boss.bulletBudget) m = boss.bulletBudget - room;
+        if (m < 4) return;
+        const bsp = Math.min(boss.speedCap, (p.burstSpeed || 118) * pat.speedScale);
+        // 壳（大玉）炸成米弹碎片：原作的「大玉分裂」手感
+        bl.ring(ex, ey, m, bsp, {
+          color, r: Math.max(4, r - 1),
+          type: p.burstType !== undefined ? p.burstType : 1,
+          life: 3.4, turn: 0.35 * pat.dir,
+        });
+      });
+    }
+  }
+
+  if (p.typeName === 'snake') {
+    // 波动蛇形：一串弹沿正弦摆动的基准角连发，每发再带同向曲率，连成蛇身。
+    const n = count(p.n || 2, 1, 8);
+    const freq = p.freq || 2.2;
+    const wave = Math.sin(fireT * freq * Math.PI);
+    const amp = clamp((p.amp || 0.7) * pat.spreadScale * (0.85 + 0.35 * Math.sin(fireT * 0.7)), 0.15, 1.1);
+    const base = pat.angle + wave * amp * pat.dir;
+    const sp = varySpeed(p.speed || 128, 1);
+    const curl = Math.cos(fireT * freq * Math.PI) * amp * 1.15 * pat.dir;
+    for (let i = 0; i < n; i++) {
+      const a = base + (i - (n - 1) / 2) * 0.085;
+      b.spawn({
+        x: boss.x, y: boss.y,
+        vx: Math.cos(a) * sp * boss.rnd(0.95, 1.05),
+        vy: Math.sin(a) * sp * boss.rnd(0.95, 1.05),
+        color, r, type, life, turn: curl, rot: a,
+      });
+    }
+  }
+
+  if (p.typeName === 'mine') {
+    // 漂浮分裂：慢速大弹飘出去，延迟后原地炸成小环。
+    const n = clamp(Math.round((p.n || 3) * boss.pressure * boss.rnd(0.85, 1.2)), 1, 8);
+    const delay = clamp(p.delay || 1.5, 0.8, 3);
+    for (let i = 0; i < n; i++) {
+      const a = pat.angle + (i / n) * TAU + boss.rnd(-0.22, 0.22);
+      const sp = Math.min(boss.speedCap, Math.max(24, (p.speed || 46) * pat.speedScale));
+      const vx = Math.cos(a) * sp;
+      const vy = Math.sin(a) * sp;
+      const sx0 = boss.x, sy0 = boss.y;
+      const shell = b.spawn({
+        x: sx0, y: sy0, vx, vy,
+        color, r: Math.max(6, r + 2), type: 2,
+        life: delay + 0.5, turn: (p.turn || 0.3) * pat.dir, rot: a, scaleIn: 0.3,
+      });
+      boss._scheduleLater(delay, (api2) => {
+        const bl = api2?.bullets;
+        const alive = shell && shell.life > 0;
+        const ex = alive ? shell.x : sx0 + vx * delay;
+        const ey = alive ? shell.y : sy0 + vy * delay;
+        if (alive) shell.life = 0;
+        if (!bl) return;
+        const room = (bl.activeCount || 0);
+        let m = clamp(Math.round((p.burstN || 10) * boss.pressure), 6, 20);
+        if (room + m > boss.bulletBudget) m = boss.bulletBudget - room;
+        if (m < 5) return;
+        const bsp = Math.min(boss.speedCap, (p.burstSpeed || 132) * pat.speedScale);
+        // 泡弹炸成米弹小环，与 meteor 同一套分裂语言
+        bl.ring(ex, ey, m, bsp, {
+          color, r: Math.max(4, r - 1),
+          type: p.burstType !== undefined ? p.burstType : 1,
+          life: 3.2, turn: 0.45 * pat.dir,
+        });
+      });
+    }
+  }
+
+  if (p.typeName === 'arc') {
+    // 交叉弧：左右两束扇形弹各自反向转弯，飞出去后在半空交叉成网。
+    const arcs = clamp(Math.round((p.arcs || 2) * boss.rnd(0.9, 1.2)), 2, 4);
+    const n = count(p.n || 4, 2, 9);
+    const base = pat.angle + (p.aimed ? aim() : 0);
+    const step = clamp((p.gap || 0.55) * pat.spreadScale, 0.18, 1.1);
+    for (let k = 0; k < arcs; k++) {
+      const side = k % 2 === 0 ? 1 : -1;
+      const a0 = base + side * (0.12 + k * step) + boss.rnd(-0.03, 0.03);
+      const sp = varySpeed(p.speed || 148, boss.rnd(0.94, 1.06));
+      const turn = (p.turn || 1.0) * side * pat.dir;
+      for (let i = 0; i < n; i++) {
+        const a = a0 + (i - (n - 1) / 2) * 0.05;
+        b.spawn({
+          x: boss.x, y: boss.y,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          color, r, type, life, turn, rot: a,
+        });
+      }
+    }
+  }
+
+  if (p.typeName === 'spiralPulse') {
+    // 双螺旋脉冲：两股反向螺旋对转，速度随脉冲节奏一涨一落。
+    const arms = clamp(Math.round((p.arms || 2) * pat.armScale), 1, 8);
+    const spin = (p.spin || 2.6) * pat.dir;
+    const a0 = pat.angle + fireT * spin;
+    const a1 = pat.angle - fireT * spin * 1.15;
+    const pulse = 0.62 + 0.38 * Math.abs(Math.sin(fireT * (p.pulse || 2.4)));
+    for (let s = 0; s < 2; s++) {
+      const base = s === 0 ? a0 : a1;
+      const sgn = s === 0 ? 1 : -1;
+      for (let i = 0; i < arms; i++) {
+        const a = base + (i / arms) * TAU;
+        const sp = varySpeed(p.speed || 138, pulse * boss.rnd(0.97, 1.03));
+        b.spawn({
+          x: boss.x, y: boss.y,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          color, r, type, life,
+          turn: (p.curl || 0.22) * sgn * pat.dir, rot: a,
+        });
+      }
     }
   }
 }
@@ -325,6 +533,17 @@ function firePattern(p, boss, api, fireT) {
    七位 Boss 的弹幕数据
    weight 越大越容易被随机抽到（默认 1）
    ============================================================ */
+
+/**
+ * 全体 Boss 血量倍率（1 = 下面表格里的原始数值）。
+ * 平台关近战（踩踏 / 冲刺 / 破势）加入后自机多了一条输出线，
+ * 所以整体血量上调 10% 抵掉这部分额外伤害，Boss 战时长仍按原来数量级。
+ * 只乘 Boss 本体，不动杂兵 / 道中（那套走 balance.js 的 ENEMY_HP_SCALE）。
+ *
+ * 单个 Boss 想单独拉长 / 缩短，在它的 def 上写 `hpMul`（绝对倍率，不再乘全局）即可，
+ * 用来对齐「目标单场时长」：下方各 Boss 的 hpMul 就是按 3 / 4 / 5 / 8.5 分钟反推的。
+ */
+export const BOSS_HP_MUL = 1.1;
 
 export const BOSS_DEFS = {
   /* 符卡数量：1面2 / 2面3 / 3面4 / 4面5 / 5面6 / 6面8 / EX10。
@@ -353,7 +572,7 @@ export const BOSS_DEFS = {
   },
 
   wriggle: {
-    name: '莉格露', title: '暗中蠢动的光虫', hp: 2880, accent: '#8ef07a',
+    name: '莉格露', title: '暗中蠢动的光虫', hp: 2880, accent: '#8ef07a', hpMul: 1.18, // 目标单场 ≈3:00
     phases: [
       {
         name: '灯符「萤火虫现象」', hp: 800, patterns: [
@@ -385,7 +604,7 @@ export const BOSS_DEFS = {
   },
 
   cirno: {
-    name: '琪露诺', title: '冰之妖精', hp: 4120, accent: '#7fd8ff',
+    name: '琪露诺', title: '冰之妖精', hp: 4120, accent: '#7fd8ff', hpMul: 1.29, // 目标单场 ≈4:00
     phases: [
       {
         name: '冰符「冰柱落下」', hp: 840, patterns: [
@@ -424,26 +643,26 @@ export const BOSS_DEFS = {
   },
 
   aya: {
-    name: '射命丸文', title: '最速的记者', hp: 5720, accent: '#ff6b6b',
+    name: '射命丸文', title: '最速的记者', hp: 5720, accent: '#ff6b6b', hpMul: 1.28, // 目标单场 ≈5:00
     phases: [
       {
         name: '风符「风神一扇」', hp: 880, patterns: [
           { typeName: 'fan', n: 9, spread: 1.2, speed: 200, color: '#ff9a9a', rate: 0.55, r: 5 },
           { typeName: 'laser', n: 4, speed: 460, color: '#ffd0d0', rate: 0.5, angle: 0 },
-          { typeName: 'scatter', n: 8, speed: 190, color: '#ff6b6b', rate: 0.9, r: 5, aimed: true, arc: 1.0, weight: 0.8 },
+          { typeName: 'arc', n: 4, arcs: 2, gap: 0.6, speed: 200, color: '#ff6b6b', rate: 0.85, r: 5, turn: 1.1, aimed: true, weight: 0.85 },
         ],
       },
       {
         name: '疾风「风神少女」', hp: 1000, patterns: [
           { typeName: 'laser', n: 5, speed: 520, color: '#ffffff', rate: 0.35, angle: 0 },
           { typeName: 'fan', n: 11, spread: 1.1, speed: 250, color: '#ff6b6b', rate: 0.5, r: 4 },
-          { typeName: 'aimed', n: 4, spread: 0.35, speed: 330, color: '#ffd0d0', rate: 0.7, r: 5, weight: 0.8 },
+          { typeName: 'snake', n: 2, speed: 200, color: '#ffd0d0', rate: 0.1, r: 4, amp: 0.75, freq: 2.4 },
         ],
       },
       {
         name: '岐符「天之八衢」', hp: 1120, patterns: [
           { typeName: 'cross', n: 3, dirs: 4, spread: 0.4, speed: 230, color: '#ff9a9a', rate: 0.7, r: 4 },
-          { typeName: 'cross', n: 2, dirs: 8, spread: 0.3, speed: 210, color: '#ffd0d0', rate: 0.8, r: 4, weight: 0.85 },
+          { typeName: 'cage', n: 16, gaps: 2, radius: 230, speed: 95, color: '#ffd0d0', rate: 1.5, r: 4, weight: 0.9 },
           { typeName: 'aimed', n: 5, spread: 0.45, speed: 300, color: '#ffffff', rate: 0.75, r: 4, weight: 0.8 },
         ],
       },
@@ -451,7 +670,7 @@ export const BOSS_DEFS = {
         name: '风神「天狗颪」', hp: 1280, patterns: [
           { typeName: 'aimed', n: 6, spread: 0.5, speed: 340, color: '#ff6b6b', rate: 0.6, r: 5 },
           { typeName: 'fan', n: 9, spread: 0.8, speed: 260, color: '#ff9a9a', rate: 0.5, r: 4, aimed: true, weight: 0.85 },
-          { typeName: 'rain', n: 4, speed: 280, color: '#ffd0d0', rate: 0.55, r: 5, spreadX: 500, weight: 0.8 },
+          { typeName: 'spiralPulse', arms: 2, speed: 210, rate: 0.07, spin: 2.8, pulse: 2.6, color: '#ffd0d0', r: 4, type: 1, weight: 0.85 },
           { typeName: 'laser', n: 6, speed: 540, color: '#ffffff', rate: 0.9, angle: 0, weight: 0.7 },
         ],
       },
@@ -459,7 +678,7 @@ export const BOSS_DEFS = {
         name: '「幻想风靡」', hp: 1440, patterns: [
           { typeName: 'laser', n: 4, speed: 560, color: '#ffffff', rate: 0.3, angle: 0 },
           { typeName: 'fan', n: 13, spread: 1.2, speed: 265, color: '#ff6b6b', rate: 0.45, r: 4 },
-          { typeName: 'cross', n: 3, dirs: 6, spread: 0.35, speed: 250, color: '#ff9a9a', rate: 0.6, r: 4, weight: 0.85 },
+          { typeName: 'arc', n: 3, arcs: 4, gap: 0.45, speed: 230, rate: 0.6, color: '#ff9a9a', r: 4, turn: 1.3, weight: 0.85 },
           { typeName: 'spiral', arms: 5, speed: 200, color: '#ffd0d0', rate: 0.08, spin: 3.2, r: 4, weight: 0.8 },
           { typeName: 'sweep', n: 2, speed: 560, color: '#ffffff', rate: 0.34, speedTurn: 2.4, weight: 0.9 },
         ],
@@ -474,12 +693,12 @@ export const BOSS_DEFS = {
         name: '幽雅「死出诱蛾灯」', hp: 1200, patterns: [
           { typeName: 'ring', n: 14, speed: 105, color: '#ffa8d8', rate: 1.1, r: 10, type: 3, wobble: 45 },
           { typeName: 'fan', n: 7, spread: 1.2, speed: 150, color: '#e0b0ff', rate: 0.8, r: 7, type: 3, wobble: 55 },
-          { typeName: 'spray', n: 2, speed: 120, color: '#ffa8d8', rate: 0.12, r: 6, type: 3, arc: 1.3, weight: 0.7 },
+          { typeName: 'mine', n: 2, speed: 55, delay: 1.6, burstN: 9, color: '#e0b0ff', rate: 1.5, r: 6, type: 3, weight: 0.8 },
         ],
       },
       {
         name: '蝶符「花之舞」', hp: 1350, patterns: [
-          { typeName: 'fan', n: 9, spread: 1.4, speed: 155, color: '#ffa8d8', rate: 0.7, r: 6, type: 3, wobble: 70 },
+          { typeName: 'petal', petals: 4, n: 3, speed: 150, rate: 0.62, color: '#ffa8d8', r: 6, type: 3, curl: 0.5 },
           { typeName: 'spiral', arms: 4, speed: 135, color: '#d0a0ff', rate: 0.1, spin: 2.6, r: 5, type: 3 },
           { typeName: 'scatter', n: 8, speed: 140, color: '#e0b0ff', rate: 1.0, r: 6, type: 3, aimed: true, arc: 1.4, weight: 0.8 },
         ],
@@ -487,7 +706,7 @@ export const BOSS_DEFS = {
       {
         name: '蝶符「死蝶之华尔兹」', hp: 1500, patterns: [
           { typeName: 'spiral', arms: 6, speed: 150, color: '#ffa8d8', rate: 0.08, spin: -3.0, r: 5, type: 3 },
-          { typeName: 'ring', n: 22, speed: 130, color: '#e0b0ff', rate: 1.0, r: 7, type: 3, spinAngle: 0.4 },
+          { typeName: 'petal', petals: 5, n: 3, speed: 165, rate: 0.7, color: '#e0b0ff', r: 6, type: 3, curl: -0.55, spin: 1.2 },
           { typeName: 'homing', n: 3, speed: 110, color: '#ff8fd0', rate: 1.2, r: 7, type: 3, homing: 1.6, weight: 0.8 },
         ],
       },
@@ -495,7 +714,7 @@ export const BOSS_DEFS = {
         name: '亡乡「亡我乡 -宿罪-」', hp: 1650, patterns: [
           { typeName: 'ring', n: 24, speed: 120, color: '#ffa8d8', rate: 1.0, r: 8, type: 3, spinAngle: 0.35 },
           { typeName: 'ring', n: 10, speed: 70, color: '#d0a0ff', rate: 1.5, r: 12, type: 2, rings: 2, weight: 0.85 },
-          { typeName: 'scatter', n: 10, speed: 150, color: '#e0b0ff', rate: 1.05, r: 7, type: 3, aimed: true, arc: 1.5, weight: 0.8 },
+          { typeName: 'arc', n: 3, arcs: 2, gap: 0.5, speed: 160, rate: 0.85, color: '#e0b0ff', r: 6, type: 3, turn: 0.9, weight: 0.85 },
         ],
       },
       {
@@ -503,14 +722,14 @@ export const BOSS_DEFS = {
           { typeName: 'homing', n: 4, speed: 95, color: '#ff8fd0', rate: 0.95, r: 9, type: 2, homing: 1.8 },
           { typeName: 'spiral', arms: 5, speed: 140, color: '#d0a0ff', rate: 0.09, spin: -2.4, r: 6, type: 3 },
           { typeName: 'fan', n: 11, spread: 1.3, speed: 160, color: '#ffa8d8', rate: 0.7, r: 6, type: 3, wobble: 60, weight: 0.85 },
-          { typeName: 'cross', n: 3, dirs: 5, spread: 0.4, speed: 150, color: '#e0b0ff', rate: 0.85, r: 6, type: 3, weight: 0.8 },
+          { typeName: 'petal', petals: 4, n: 3, speed: 150, rate: 0.85, color: '#e0b0ff', r: 5, type: 3, curl: 0.6, spin: -1.0, weight: 0.8 },
         ],
       },
       {
         name: '反魂蝶「八分咲」', hp: 2100, patterns: [
           { typeName: 'ring', n: 30, speed: 130, color: '#ffa8d8', rate: 1.1, r: 8, type: 3, spinAngle: 0.5 },
           { typeName: 'homing', n: 5, speed: 110, color: '#ff8fd0', rate: 1.2, r: 8, type: 3, homing: 2.0, weight: 0.9 },
-          { typeName: 'spray', n: 3, speed: 160, color: '#e0b0ff', rate: 0.1, r: 6, type: 3, arc: 1.2, aimed: true, weight: 0.85 },
+          { typeName: 'petal', petals: 5, n: 4, speed: 170, rate: 0.55, color: '#e0b0ff', r: 5, type: 3, curl: 0.7, weight: 0.9 },
           { typeName: 'laser', n: 5, speed: 480, color: '#ffe0f0', rate: 0.9, angle: 0, weight: 0.9 },
           { typeName: 'bloom', n: 10, rings: 3, twist: 0.22, speed: 150, color: '#ffa8d8', rate: 1.9, r: 7, type: 3, typeAlt: 2, weight: 0.92 },
         ],
@@ -519,47 +738,47 @@ export const BOSS_DEFS = {
   },
 
   kaguya: {
-    name: '蓬莱山辉夜', title: '永远与须臾的罪人', hp: 16520, accent: '#ffe9b0',
+    name: '蓬莱山辉夜', title: '永远与须臾的罪人', hp: 16520, accent: '#ffe9b0', hpMul: 1.0, // 目标单场 ≈8:30（不跟随全局 +10%）
     phases: [
       {
         name: '难题「龙颈之玉 -五色的弹丸-」', hp: 1460, patterns: [
           { typeName: 'ring', n: 20, speed: 120, color: '#ffe9b0', rate: 1.0, r: 8, type: 3 },
           { typeName: 'fan', n: 9, spread: 1.0, speed: 170, color: '#fff8d0', rate: 0.7, r: 6, aimed: true },
-          { typeName: 'scatter', n: 9, speed: 165, color: '#fff8d0', rate: 1.0, r: 6, aimed: true, arc: 1.0, weight: 0.8 },
+          { typeName: 'arc', n: 4, arcs: 2, gap: 0.55, speed: 175, rate: 0.85, color: '#fff8d0', r: 5, turn: 1.0, aimed: true, weight: 0.85 },
         ],
       },
       {
         name: '神宝「耀眼的龙玉」', hp: 1620, patterns: [
           { typeName: 'laser', n: 5, speed: 500, color: '#fff8d0', rate: 0.8, angle: 0 },
           { typeName: 'ring', n: 26, speed: 125, color: '#ffe9b0', rate: 1.1, r: 6, type: 2, rings: 2, weight: 0.9 },
-          { typeName: 'aimed', n: 5, spread: 0.4, speed: 300, color: '#ffffff', rate: 0.8, r: 5, weight: 0.8 },
+          { typeName: 'spiralPulse', arms: 3, speed: 190, rate: 0.075, spin: 3.0, color: '#ffffff', r: 5, type: 1, weight: 0.85 },
         ],
       },
       {
         name: '难题「佛御石之钵 -不碎的意志-」', hp: 1790, patterns: [
           { typeName: 'ring', n: 18, speed: 90, color: '#fff8d0', rate: 1.3, r: 12, type: 2 },
           { typeName: 'ring', n: 30, speed: 130, color: '#ffe9b0', rate: 1.15, r: 7, type: 3, spinAngle: 0.4, weight: 0.9 },
-          { typeName: 'cross', n: 3, dirs: 6, spread: 0.35, speed: 200, color: '#ffffff', rate: 0.8, r: 5, weight: 0.8 },
+          { typeName: 'cage', n: 18, gaps: 3, radius: 250, speed: 100, rate: 1.6, color: '#ffffff', r: 4, weight: 0.85 },
         ],
       },
       {
         name: '神宝「佛体的金刚石」', hp: 1960, patterns: [
           { typeName: 'cross', n: 3, dirs: 8, spread: 0.3, speed: 230, color: '#fff8d0', rate: 0.7, r: 5 },
           { typeName: 'laser', n: 8, speed: 520, color: '#ffffff', rate: 0.7, angle: 0, weight: 0.9 },
-          { typeName: 'aimed', n: 6, spread: 0.42, speed: 320, color: '#ffe9b0', rate: 0.7, r: 4, weight: 0.85 },
+          { typeName: 'arc', n: 4, arcs: 4, gap: 0.4, speed: 220, rate: 0.7, color: '#ffe9b0', r: 4, turn: 1.25, weight: 0.9 },
         ],
       },
       {
         name: '难题「火鼠的皮衣 -不焦躁的内心-」', hp: 2130, patterns: [
           { typeName: 'spiral', arms: 5, speed: 150, color: '#ffe9b0', rate: 0.08, spin: 3.0, r: 6 },
           { typeName: 'rain', n: 5, speed: 260, color: '#ffd890', rate: 0.5, r: 6, spreadX: 800, weight: 0.9 },
-          { typeName: 'scatter', n: 10, speed: 180, color: '#fff8d0', rate: 0.95, r: 6, type: 2, aimed: true, arc: 1.2, weight: 0.8 },
+          { typeName: 'meteor', n: 2, delay: 1.25, spread: 170, burstN: 7, burstSpeed: 130, speed: 200, rate: 1.15, color: '#ffd890', r: 5, weight: 0.9 },
         ],
       },
       {
         name: '神宝「火蜥蜴之盾」', hp: 2300, patterns: [
           { typeName: 'ring', n: 24, speed: 130, color: '#ffe9b0', rate: 1.05, r: 8, rings: 2, spinAngle: 0.3 },
-          { typeName: 'fan', n: 13, spread: 1.3, speed: 190, color: '#ffd890', rate: 0.6, r: 5, weight: 0.9 },
+          { typeName: 'cage', n: 20, gaps: 2, radius: 260, speed: 105, rate: 1.7, color: '#ffd890', r: 4, weight: 0.9 },
           { typeName: 'homing', n: 4, speed: 140, color: '#fff8d0', rate: 1.0, r: 7, homing: 1.6, weight: 0.8 },
         ],
       },
@@ -567,7 +786,7 @@ export const BOSS_DEFS = {
         name: '难题「燕的子安贝 -永命线-」', hp: 2460, patterns: [
           { typeName: 'laser', n: 6, speed: 560, color: '#ffffff', rate: 0.6, angle: 0 },
           { typeName: 'spiral', arms: 6, speed: 180, color: '#ffe9b0', rate: 0.07, spin: -3.4, r: 5, type: 3, weight: 0.9 },
-          { typeName: 'aimed', n: 6, spread: 0.3, speed: 340, color: '#fff8d0', rate: 0.65, r: 4, weight: 0.85 },
+          { typeName: 'snake', n: 2, speed: 220, rate: 0.09, color: '#fff8d0', r: 4, amp: 0.85, freq: 2.0, weight: 0.9 },
         ],
       },
       {
@@ -576,7 +795,7 @@ export const BOSS_DEFS = {
           { typeName: 'spiral', arms: 7, speed: 190, color: '#fff8d0', rate: 0.06, spin: 3.6, r: 5, type: 3, weight: 0.9 },
           { typeName: 'laser', n: 10, speed: 580, color: '#ffffff', rate: 0.8, angle: 0, weight: 0.85 },
           { typeName: 'homing', n: 5, speed: 150, color: '#ffd890', rate: 1.0, r: 8, type: 3, homing: 1.8, weight: 0.8 },
-          { typeName: 'cross', n: 4, dirs: 6, spread: 0.4, speed: 210, color: '#ffe9b0', rate: 0.7, r: 5, weight: 0.75 },
+          { typeName: 'petal', petals: 6, n: 3, speed: 185, rate: 0.6, color: '#ffe9b0', r: 5, type: 3, curl: 0.65, weight: 0.8 },
           { typeName: 'sweep', n: 1, speed: 500, color: '#fff8d0', rate: 0.5, speedTurn: 1.7, weight: 0.88 },
         ],
       },
@@ -598,7 +817,7 @@ export const BOSS_DEFS = {
           { typeName: 'spiral', arms: 6, speed: 180, color: '#ff4d6a', rate: 0.055, spin: 3.8, r: 5, type: 3, weight: 0.95 },
           { typeName: 'aimed', n: 7, spread: 0.34, speed: 360, color: '#ff8fa8', rate: 0.52, r: 4, weight: 0.9 },
           { typeName: 'homing', n: 5, speed: 150, color: '#ffd0e0', rate: 0.95, r: 7, homing: 1.9, weight: 0.85 },
-          { typeName: 'scatter', n: 12, speed: 195, color: '#ff4d6a', rate: 0.85, r: 6, type: 2, aimed: true, arc: 1.4, weight: 0.8 },
+          { typeName: 'cage', n: 20, gaps: 2, radius: 240, speed: 100, rate: 1.45, color: '#ff4d6a', r: 4, weight: 0.9 },
         ],
       },
       {
@@ -607,7 +826,7 @@ export const BOSS_DEFS = {
           { typeName: 'cross', n: 4, dirs: 6, spread: 0.4, speed: 210, color: '#ff8fa8', rate: 0.68, r: 5 },
           { typeName: 'ring', n: 26, speed: 145, color: '#ffd0e0', rate: 0.95, r: 6, rings: 2, spinAngle: 0.35, weight: 0.9 },
           { typeName: 'spiral', arms: 4, speed: 165, color: '#ff4d6a', rate: 0.1, spin: -3.2, r: 5, type: 3, weight: 0.85 },
-          { typeName: 'fan', n: 13, spread: 1.3, speed: 200, color: '#ff8fa8', rate: 0.55, r: 5, weight: 0.85 },
+          { typeName: 'arc', n: 4, arcs: 4, gap: 0.45, speed: 205, rate: 0.62, color: '#ff8fa8', r: 5, turn: 1.2, weight: 0.9 },
         ],
       },
     ],
@@ -619,21 +838,21 @@ export const BOSS_DEFS = {
       {
         name: '禁忌「蔓越莓陷阱」', hp: 1790, patterns: [
           { typeName: 'ring', n: 20, speed: 130, color: '#ff8fa8', rate: 1.0, r: 7, spinAngle: 0.4 },
-          { typeName: 'scatter', n: 10, speed: 170, color: '#ff4d6a', rate: 0.95, r: 6, aimed: true, arc: 1.2, weight: 0.8 },
+          { typeName: 'mine', n: 3, speed: 50, delay: 1.5, burstN: 9, rate: 1.5, color: '#ff4d6a', r: 6, type: 2, weight: 0.85 },
         ],
       },
       {
         name: '禁忌「雷瓦汀」', hp: 1980, patterns: [
           { typeName: 'laser', n: 3, speed: 520, color: '#ffd0d8', rate: 0.9, angle: 0 },
           { typeName: 'laser', n: 3, speed: 520, color: '#ff4d6a', rate: 0.9, angle: Math.PI / 2 },
-          { typeName: 'ring', n: 18, speed: 140, color: '#ff8fa8', rate: 1.0, r: 7, spinAngle: 0.45, weight: 0.85 },
+          { typeName: 'meteor', n: 2, delay: 1.4, spread: 190, burstN: 8, rate: 1.1, color: '#ff8fa8', r: 5, weight: 0.9 },
           { typeName: 'fan', n: 11, spread: 1.1, speed: 200, color: '#ff8fa8', rate: 0.6, r: 5, weight: 0.8 },
         ],
       },
       {
         name: '禁忌「四重存在」', hp: 2180, patterns: [
           { typeName: 'cross', n: 3, dirs: 4, spread: 0.35, speed: 200, color: '#ff4d6a', rate: 0.7, r: 5 },
-          { typeName: 'ring', n: 16, speed: 150, color: '#ff8fa8', rate: 1.0, r: 6, rings: 4, spinAngle: 0.5, weight: 0.85 },
+          { typeName: 'petal', petals: 6, n: 3, speed: 165, rate: 0.75, color: '#ff8fa8', r: 6, type: 3, curl: 0.6, weight: 0.9 },
           { typeName: 'aimed', n: 6, spread: 0.5, speed: 330, color: '#ffffff', rate: 0.75, r: 4, weight: 0.8 },
         ],
       },
@@ -641,34 +860,34 @@ export const BOSS_DEFS = {
         name: '秘弹「然后就一个人都不剩了？」', hp: 2370, patterns: [
           { typeName: 'spiral', arms: 4, speed: 170, color: '#ff4d6a', rate: 0.08, spin: 3.4, r: 6, type: 3 },
           { typeName: 'ring', n: 24, speed: 150, color: '#ff8fa8', rate: 0.95, r: 6, rings: 2, weight: 0.85 },
-          { typeName: 'scatter', n: 12, speed: 190, color: '#ff4d6a', rate: 0.9, r: 6, type: 2, aimed: true, arc: 1.4, weight: 0.8 },
+          { typeName: 'mine', n: 3, speed: 55, delay: 1.35, burstN: 10, rate: 1.4, color: '#ff4d6a', r: 6, type: 2, weight: 0.85 },
         ],
       },
       {
         name: '禁弹「星弧破碎」', hp: 2560, patterns: [
           { typeName: 'spiral', arms: 8, speed: 185, color: '#ff4d6a', rate: 0.055, spin: 3.6, r: 6, type: 3 },
           { typeName: 'homing', n: 4, speed: 140, color: '#ff8fa8', rate: 1.0, r: 7, homing: 1.8, weight: 0.85 },
-          { typeName: 'ring', n: 20, speed: 160, color: '#ffd0d8', rate: 0.9, r: 6, rings: 2, spinAngle: -0.3, weight: 0.85 },
+          { typeName: 'arc', n: 3, arcs: 4, gap: 0.5, speed: 185, rate: 0.7, color: '#ffd0d8', r: 5, type: 3, turn: 1.15, weight: 0.9 },
         ],
       },
       {
         name: '禁弹「折反射」', hp: 2750, patterns: [
           { typeName: 'cross', n: 4, dirs: 8, spread: 0.3, speed: 210, color: '#ff8fa8', rate: 0.6, r: 5 },
           { typeName: 'laser', n: 6, speed: 560, color: '#ffffff', rate: 0.7, angle: 0, weight: 0.85 },
-          { typeName: 'fan', n: 13, spread: 1.4, speed: 210, color: '#ff4d6a', rate: 0.5, r: 4, weight: 0.8 },
+          { typeName: 'arc', n: 4, arcs: 2, gap: 0.6, speed: 215, rate: 0.65, color: '#ff4d6a', r: 4, turn: 1.0, weight: 0.85 },
         ],
       },
       {
         name: 'QED「495年的波纹」', hp: 2940, patterns: [
           { typeName: 'ring', n: 36, speed: 140, color: '#ff4d6a', rate: 1.0, r: 7, rings: 2, spinAngle: -0.4 },
           { typeName: 'ring', n: 18, speed: 80, color: '#ff8fa8', rate: 1.2, r: 11, type: 2, rings: 3, weight: 0.9 },
-          { typeName: 'cross', n: 4, dirs: 6, spread: 0.4, speed: 200, color: '#ffd0d8', rate: 0.75, r: 5, weight: 0.85 },
+          { typeName: 'spiralPulse', arms: 3, speed: 200, rate: 0.07, spin: 3.4, pulse: 2.2, color: '#ffd0d8', r: 5, type: 1, weight: 0.9 },
         ],
       },
       {
         name: '禁忌「吸血鬼之宴」', hp: 3200, patterns: [
           { typeName: 'spiral', arms: 6, speed: 200, color: '#ff4d6a', rate: 0.06, spin: 3.2, r: 5, type: 3 },
-          { typeName: 'rain', n: 6, speed: 300, color: '#ff8fa8', rate: 0.45, r: 6, spreadX: 900, weight: 0.85 },
+          { typeName: 'meteor', n: 2, delay: 1.2, spread: 220, burstN: 8, burstSpeed: 140, rate: 1.0, color: '#ff8fa8', r: 6, weight: 0.9 },
           { typeName: 'homing', n: 5, speed: 160, color: '#ffd0d8', rate: 0.95, r: 7, weight: 0.85 },
           { typeName: 'fan', n: 15, spread: 1.5, speed: 220, color: '#ff4d6a', rate: 0.45, r: 4, weight: 0.8 },
         ],
@@ -678,7 +897,7 @@ export const BOSS_DEFS = {
           { typeName: 'laser', n: 12, speed: 600, color: '#ffffff', rate: 0.7, angle: 0 },
           { typeName: 'ring', n: 30, speed: 150, color: '#ff4d6a', rate: 0.9, r: 6, rings: 2, spinAngle: 0.5, weight: 0.9 },
           { typeName: 'aimed', n: 8, spread: 0.35, speed: 360, color: '#ff8fa8', rate: 0.6, r: 4, weight: 0.85 },
-          { typeName: 'scatter', n: 14, speed: 200, color: '#ffd0d8', rate: 0.85, r: 6, type: 2, aimed: true, arc: 1.6, weight: 0.8 },
+          { typeName: 'cage', n: 18, gaps: 2, radius: 230, speed: 105, rate: 1.5, color: '#ffd0d8', r: 4, weight: 0.85 },
         ],
       },
       {
@@ -687,7 +906,7 @@ export const BOSS_DEFS = {
           { typeName: 'spiral', arms: 8, speed: 210, color: '#ff8fa8', rate: 0.05, spin: 4.0, r: 5, type: 3, weight: 0.95 },
           { typeName: 'laser', n: 10, speed: 620, color: '#ffffff', rate: 0.6, angle: 0, weight: 0.9 },
           { typeName: 'homing', n: 6, speed: 170, color: '#ffd0d8', rate: 0.9, r: 8, weight: 0.85 },
-          { typeName: 'cross', n: 4, dirs: 8, spread: 0.4, speed: 230, color: '#ff8fa8', rate: 0.6, r: 5, weight: 0.8 },
+          { typeName: 'petal', petals: 7, n: 4, speed: 195, rate: 0.55, color: '#ff8fa8', r: 5, type: 3, curl: 0.75, weight: 0.85 },
           { typeName: 'vortex', arms: 6, speed: 190, color: '#ff6b8a', rate: 0.42, r: 5, type: 3, turn: 1.0, weight: 0.92 },
         ],
       },
@@ -710,6 +929,8 @@ export class Boss {
   constructor(key, x, y, opts = {}) {
     const def = BOSS_DEFS[key] || BOSS_DEFS.rumia;
     this.key = key;
+    // Boss 战立绘走高优先级预加载：避免开场先看到占位剪影再被顶替
+    ensureBossArt(key);
     this.def = def;
     this.info = BOSS_INFO[key] || { name: def.name, title: def.title, accent: def.accent };
 
@@ -719,10 +940,17 @@ export class Boss {
     this.stageNumber = Number(opts.stageNumber) || 0;
     // 分面密度：2–6 面统一收薄（Extra 的 stageNumber = 0 → 1.00）
     this.stageDensity = stageDensityOf(this.stageNumber);
-    const trimmed = bossPhasesFor(def.phases, this.difficulty, this.stageNumber);
-    this.phases = scaleBossHp(trimmed, this.difficulty, def.hp);
+    // 血量倍率：默认用全局 BOSS_HP_MUL；def.hpMul 写了就按它（绝对倍率，不再乘全局），
+    // 用来把单个 Boss 的单场时长对齐到目标值。
+    const hpMul = def.hpMul != null ? Number(def.hpMul) : BOSS_HP_MUL;
+    const trimmed = bossPhasesFor(def.phases, this.difficulty, this.stageNumber)
+      // 每张符卡独立乘，比例不变
+      .map((p) => ({ ...p, hp: Math.max(1, Math.round((Number(p.hp) || def.hp) * hpMul)) }));
+    this.phases = scaleBossHp(trimmed, this.difficulty, def.hp * hpMul);
 
-    this.maxHp = Math.max(1, Math.round(scaleEnemyHp(def.hp * this.diff.hpScale)));
+    // 总血量 = 实际（可能被难度裁掉难符卡后的）各符卡血量之和，避免与独立的
+    // def.hp 倍率算出 ±1 的误差，也让 E/N 裁卡后 maxHp 与实际要打的血量一致。
+    this.maxHp = Math.max(1, this.phases.reduce((a, p) => a + p.hp, 0));
     this.hp = this.maxHp;
 
     this.x = x;
@@ -776,6 +1004,9 @@ export class Boss {
     this.fireT = 0;
     this._nextRate = 1;
     this._pat = null;
+    // 延迟弹幕队列：meteor / mine 这类「先飞、再爆/分裂」的招用它排队。
+    // 只存纯数据 + 闭包，全部由本 Boss 的确定性 firePattern 产生，无随机源外泄。
+    this._laterQ = [];
 
     // 随机移动：在出生点附近选点，平滑过去，偶尔短冲刺
     this._move = { sx: x, sy: y, tx: x, ty: y, t: 0, dur: 0, dashing: false };
@@ -791,6 +1022,29 @@ export class Boss {
     this.dead = false;
     this.drift = 0;
     this.volleys = 0;
+
+    /* ---------- 平台关近战系统（STG 关不启用） ----------
+     * 非 STG 的 Boss 战原本只有「站桩开枪 + 冲刺撞一下」，平台操作在 Boss 战里
+     * 没有战术意义。这里补三条主动手段：
+     *   踩踏：从上方落到 Boss 头顶，高伤 + 大量破势；
+     *   冲刺撞击：贴身冲过去，中等伤害 + 破势；
+     *   破势槽满 → Boss 坠地硬直，窗口内全伤害 x1.7；
+     *   俯冲：Boss 周期性蓄力砸向地面，落地冲击波要求玩家起跳，
+     *        落地后的硬直期又正好是踩踏 / 冲撞的窗口，形成攻防循环。
+     */
+    this.platformMelee = !!opts.platformMelee;
+    // 地面高度：俯冲落点用；stage 传关卡地表 y
+    this.groundY = Number(opts.groundY) || (y + 240);
+    this.poise = 0;
+    this.poiseMax = 100;
+    this.staggerT = 0;
+    this.staggerMax = 2.2;
+    this.staggerCount = 0;
+    this.poiseFlash = 0;
+    this.stompCd = 0;
+    this._dive = { state: 'idle', t: 0, fromX: x, fromY: y, tx: x, ty: y };
+    this._diveCd = this.rnd(4.5, 7.5);
+    this._diveCount = 0;
 
     // 开场也是随机一招，背板第一招不再固定
     this._startPattern(this.rndInt(0, this.phases[0].patterns.length - 1));
@@ -813,6 +1067,46 @@ export class Boss {
   rndInt(a, b) { return a + Math.floor(this._rnd() * (b - a + 1)); }
 
   chance(p) { return this._rnd() < p; }
+
+  /**
+   * 排队一个延迟弹幕动作（秒）。用于 meteor / mine：先发射「壳弹」，
+   * 到点再在壳弹当前位置爆开。队列长度有硬上限，避免慢速弹堆积时无限膨胀。
+   * @param {number} delay 延迟秒数
+   * @param {Function} fn 到点执行，签名 (api) => void
+   */
+  _scheduleLater(delay, fn) {
+    if (this._laterQ.length >= 64) this._laterQ.shift();
+    this._laterQ.push({ at: Math.max(0, delay), fn });
+  }
+
+  /** 推进延迟队列；调用方保证每帧只调一次（切卡 / 清屏时 queue 会被清空） */
+  _processLater(dt, api) {
+    if (!this._laterQ.length) return;
+    const due = [];
+    for (let i = this._laterQ.length - 1; i >= 0; i--) {
+      const it = this._laterQ[i];
+      it.at -= dt;
+      if (it.at <= 0) {
+        due.push(it);
+        this._laterQ.splice(i, 1);
+      }
+    }
+    // 倒序取出，按入队顺序执行，保证确定性
+    due.reverse();
+    for (const it of due) {
+      try {
+        it.fn(api);
+      } catch (e) {
+        // 单个回调出错不应打断整场战斗
+        if (typeof console !== 'undefined' && console.warn) console.warn('[boss] later callback failed', e);
+      }
+    }
+  }
+
+  /** 清空延迟队列（切符卡 / 击败 / 重开时清屏同步） */
+  _flushLater() {
+    this._laterQ.length = 0;
+  }
 
   get phaseCount() {
     return this.phases.length;
@@ -1018,6 +1312,8 @@ export class Boss {
    */
   _advanceSpell(bullets, fx, opts) {
     this.spellBroken = false;
+    // 切卡 / 击败会清屏，延迟弹幕队列也一并作废（否则旧壳弹会在新卡里炸开）
+    this._flushLater();
     const phases = this.phases;
 
     if (this.spellIdx >= phases.length - 1) {
@@ -1056,6 +1352,8 @@ export class Boss {
   /** 受到伤害：扣当前符卡血条，打空只置标记（切卡在 update 里统一处理） */
   damage(d) {
     if (this.state !== 'battle' || this.spellLock > 0) return false;
+    // 破势硬直是全伤害加成窗口：把「攒破势」变成正反馈
+    if (this.staggerT > 0) d *= 1.7;
     this.spellHp -= d;
     this.hp = Math.max(0, this.hp - d);
     this.hitFlash = Math.min(0.16, this.hitFlash + d * 0.01);
@@ -1113,6 +1411,25 @@ export class Boss {
       return;
     }
 
+    // 破势硬直：前 0.35 秒坠地，之后停在原地不动、不开火、不结算接触伤害
+    if (this.staggerT > 0) {
+      this.staggerT = Math.max(0, this.staggerT - dt);
+      this.poise = 0;
+      this.poiseFlash = 0;
+      const fallK = clamp((this.staggerMax - this.staggerT) / 0.35, 0, 1);
+      this.y = this.baseY + (this.groundY - this.baseY) * fallK;
+      if (this.staggerT <= 0) this._endStagger(fx);
+      return;
+    }
+
+    this.stompCd = Math.max(0, this.stompCd - dt);
+    this.poiseFlash = Math.max(0, this.poiseFlash - dt);
+    // 破势自然衰减：磨破势不是一劳永逸，得在衰减前接上后续手段
+    this.poise = Math.max(0, this.poise - (this.platformMelee ? 7 : 0) * dt);
+
+    // 平台关俯冲：占用移动/开火，形成「Boss 主动进攻 → 落地硬直 → 玩家反打」的循环
+    if (this._updateDive(dt, player, bullets, fx)) return;
+
     // 随机幅度：符卡越靠后、本张血越少，弹幕越乱
     this.wild = clamp(0.55 + this.spellIdx * 0.12 + (1 - this.hpRatio) * 0.3, 0.55, 1.4);
 
@@ -1125,6 +1442,12 @@ export class Boss {
 
     // 随机移动（替代原来的正弦漂浮）
     this._updateMovement(dt, fx);
+
+    // 延迟弹幕（meteor / mine 的壳弹到点爆裂）：每帧推进一次，和主开火共用同一帧时钟
+    if (this._laterQ.length) {
+      const pcq = this._playerCenter(player);
+      this._processLater(dt, { bullets, px: pcq.x, py: pcq.y });
+    }
 
     // 模式计时 / 开火（节奏也在抖动）
     const patterns = this.phases[this.spellIdx].patterns;
@@ -1154,7 +1477,9 @@ export class Boss {
     }
 
     // 接触伤害
-    if (this.hurtCd <= 0 && this._overlapPlayer(player)) {
+    // 落地硬直期不打身体伤害：这一段就是让玩家跳上头顶的奖励窗口，
+    // 否则玩家还没踩到就被撞飞（Boss 立绘比碰撞盒高得多，观感上本来就在「身上」）。
+    if (this.hurtCd <= 0 && this._dive.state !== 'land' && this._overlapPlayer(player)) {
       player.hurt(1, this.x);
       this.hurtCd = 0.6;
     }
@@ -1197,6 +1522,8 @@ export class Boss {
     // 传 this 作为 targetRef：穿透弹对 Boss 也只结算一次（同一条弹不会连续帧反复削血）
     shots.hitRect(this.x - hw, this.y - hh, hw * 2, hh, (dmg, hx, hy) => {
       this.damage(dmg);
+      // 射击也攒破势，但效率远低于踩踏 / 冲刺：持续输出能磨出硬直，主动近战才是捷径
+      this._addPoise(Math.min(2.5, dmg * 0.22), fx);
       fx?.sparkle(hx, hy, this.inmDefColor());
       onHit?.(dmg);
     }, this);
@@ -1206,19 +1533,243 @@ export class Boss {
     return this.def.accent || '#ffffff';
   }
 
-  /** 冲刺撞击 */
+  /** 冲刺撞击：平台关里伤害更高，并且额外削一截破势 */
   hitByDash(player, fx) {
+    if (!player) return false;
     if (this.state !== 'battle' || this.hurtCd > 0) return false;
+    if (this.spellLock > 0) return false;
     const hw = this.w * 0.42;
     const hh = this.h * 0.72;
     const p = player;
     if (this.x - hw < p.x + p.w && this.x + hw > p.x && this.y - hh < p.y + p.h && this.y > p.y) {
-      this.damage(scalePlayerDamage(28));
+      this.damage(scalePlayerDamage(this.platformMelee ? 64 : 28));
       this.hurtCd = 0.35;
+      if (this.platformMelee) this._addPoise(20, fx);
       fx?.shockwave(p.x + p.w / 2, p.y + p.h / 2, '#ffffff', 14, 480, 0.3);
       return true;
     }
     return false;
+  }
+
+  /* ============================================================
+     平台关近战：破势 / 踩踏 / 硬直 / 俯冲
+     ============================================================ */
+
+  /** 累积破势；满槽进入坠地硬直 */
+  _addPoise(n, fx) {
+    if (!this.platformMelee || this.state !== 'battle') return;
+    if (this.spellLock > 0 || this.staggerT > 0) return;
+    this.poise = Math.min(this.poiseMax, this.poise + n);
+    this.poiseFlash = 0.12;
+    if (this.poise >= this.poiseMax) this._startStagger(fx);
+  }
+
+  /** 破势打满：坠地硬直，破势槽上限随之提高（每场最多涨到 240） */
+  _startStagger(fx) {
+    this.staggerT = this.staggerMax;
+    this.poise = 0;
+    this.poiseMax = Math.min(240, this.poiseMax + 25);
+    this.staggerCount++;
+    // 俯冲/蓄力被打断，从当前高度坠向地面
+    this._dive.state = 'idle';
+    this._dive.t = 0;
+    this.hurtCd = Math.max(this.hurtCd, 0.15);
+    this._wildLeft = 0;
+    fx?.flash(this.x, this.y - this.h * 0.6, '#ffe66d', 26);
+    fx?.shockwave(this.x, this.y - this.h * 0.5, '#ffe66d', 24, 760, 0.5);
+    fx?.burst(this.x, this.y - this.h * 0.6, '#ffe66d', 18, 320);
+  }
+
+  /** 硬直结束：升空，重新开始巡游 */
+  _endStagger(fx) {
+    const d = this._dive;
+    d.state = 'rise';
+    d.t = 0;
+    d.tx = this.x;
+    d.ty = this.y;
+    d.fromX = this.x;
+    d.fromY = this.y;
+    this._move.dur = 0;
+    fx?.burst(this.x, this.y - 20, this.def.accent, 8, 200);
+  }
+
+  /**
+   * 平台关：玩家从上方落到 Boss 头顶。
+   * 返回 true 表示结算了踩踏（stage 用来播放音效 / 震屏）。
+   */
+  stompBy(player, fx) {
+    if (!this.platformMelee || this.state !== 'battle') return false;
+    if (this.spellLock > 0) return false;
+    if (this.stompCd > 0 || !player || player.alive === false) return false;
+    const pc = this._playerCenter(player);
+    if (Math.abs(pc.x - this.x) > this.w * 0.52) return false;
+    const headTop = this.y - this.h * 0.88;
+    const feet = player.y + (player.h || 0);
+    // 只在头顶上方一条薄带里结算：太高算没碰到，太低算身体撞击
+    if (feet > headTop + 30 || feet < headTop - 52) return false;
+    if ((player.vy || 0) < 40) return false; // 必须是下落中
+    this.stompCd = 0.9;
+    this.damage(scalePlayerDamage(96 + this.spellIdx * 18));
+    this._addPoise(34, fx);
+    this.hitFlash = Math.min(0.2, this.hitFlash + 0.14);
+    player.vy = -620;
+    player.jumpsLeft = 1;
+    // 踩完给半秒护身，避免落进刚生成的弹幕里挨打
+    player.invuln = Math.max(player.invuln || 0, 0.5);
+    fx?.burst(pc.x, headTop, '#ffe66d', 18, 400);
+    fx?.shockwave(pc.x, headTop, '#ffffff', 16, 560, 0.35);
+    return true;
+  }
+
+  /**
+   * 俯冲状态机：idle → charge（蓄力预警）→ dive（砸向地面）→ land（落地硬直）→ rise（升空）。
+   * 返回 true 表示正在俯冲中，本帧跳过常规移动与开火。
+   */
+  _updateDive(dt, player, bullets, fx) {
+    if (!this.platformMelee) return false;
+    const d = this._dive;
+
+    if (d.state === 'idle') {
+      this._diveCd -= dt;
+      if (this._diveCd > 0) return false;
+      const pc = this._playerCenter(player);
+      d.state = 'charge';
+      d.t = 0;
+      d.fromX = this.x;
+      d.fromY = this.y;
+      d.tx = clamp(pc.x, this.homeX - 300, this.homeX + 300);
+      d.ty = this.groundY;
+      fx?.flash(this.x, this.y - this.h * 0.6, this.def.accent, 16);
+      return true;
+    }
+
+    d.t += dt;
+
+    if (d.state === 'charge') {
+      // 0.8 秒蓄力：先上浮再压下来，视觉上「要砸了」，给玩家起跳时机
+      const k = Math.min(1, d.t / 0.8);
+      this.y = d.fromY - Math.sin(k * Math.PI) * 26;
+      if (k >= 1) { d.state = 'dive'; d.t = 0; d.fromX = this.x; d.fromY = this.y; }
+      return true;
+    }
+
+    if (d.state === 'dive') {
+      // 0.26 秒加速砸向落点
+      const k = Math.min(1, d.t / 0.26);
+      const e = k * k;
+      this.x = d.fromX + (d.tx - d.fromX) * e;
+      this.y = d.fromY + (d.ty - d.fromY) * e;
+      if (k >= 1) {
+        d.state = 'land';
+        d.t = 0;
+        this._onDiveLand(bullets, fx);
+      }
+      return true;
+    }
+
+    if (d.state === 'land') {
+      // 落地硬直窗口：头顶可踩、贴身可冲，0.85 秒后升空
+      if (d.t >= 0.85) { d.state = 'rise'; d.t = 0; d.tx = this.x; d.ty = this.y; }
+      return true;
+    }
+
+    // rise：升回悬停位
+    const k = Math.min(1, d.t / 0.65);
+    const e = 1 - Math.pow(1 - k, 2);
+    this.x = d.tx + (this.homeX - d.tx) * e;
+    this.y = d.ty + (this.baseY - d.ty) * e - Math.sin(k * Math.PI) * 18;
+    if (k >= 1) {
+      d.state = 'idle';
+      this.x = this.homeX;
+      this.y = this.baseY;
+      this._move.sx = this.x;
+      this._move.sy = this.y;
+      this._move.t = 0;
+      this._move.dur = 0;
+      this._moveWait = this.rnd(0.5, 1.1);
+      this._diveCd = this.rnd(5.5, 9);
+      this._diveCount++;
+    }
+    return true;
+  }
+
+  /** 俯冲落地：扬尘 + 贴地横向冲击波，要求玩家起跳躲 */
+  _onDiveLand(bullets, fx) {
+    const gy = this.y;
+    this.hurtCd = 0.25;
+    fx?.shockwave(this.x, gy - 4, '#ffffff', 30, 960, 0.5);
+    fx?.burst(this.x, gy - 6, this.def.accent, 26, 440);
+    if (!bullets) return;
+    for (let i = 1; i <= 3; i++) {
+      const speed = 170 + i * 46;
+      for (const dir of [-1, 1]) {
+        bullets.spawn({
+          x: this.x + dir * 40,
+          y: gy - 18,
+          vx: dir * speed,
+          vy: 0,
+          color: this.def.accent || '#ffffff',
+          r: 9,
+          type: 0,
+          life: 2.2,
+        });
+      }
+    }
+  }
+
+  /** Boss 头顶的破势槽 / 眩晕星（仅平台关） */
+  _drawMeleeUI(ctx) {
+    if (!this.platformMelee || this.state !== 'battle' || this.alpha < 0.5) return;
+    // 立绘高度（脚底原点向上）：碰撞盒 h 只有 132，立绘却有 236~256
+    const artH = bossArtHeight(this.key);
+    const y = -artH - 18;
+    const stompTop = -this.h * 0.88;
+
+    // 可踩窗口：在头顶高度闪一个向下的箭头，告诉玩家「现在能踩」
+    const canStomp = this._dive.state === 'land' || this.staggerT > 0;
+    if (canStomp) {
+      const pulse = 0.55 + 0.45 * Math.sin(this.t * 9);
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = '#ffe66d';
+      ctx.beginPath();
+      ctx.moveTo(-11, stompTop - 40);
+      ctx.lineTo(11, stompTop - 40);
+      ctx.lineTo(0, stompTop - 24);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    if (this.staggerT > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.92;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffe66d';
+      ctx.font = 'bold 15px "Microsoft YaHei", "PingFang SC", sans-serif';
+      ctx.fillText('STAGGER!', 0, y - 8);
+      for (let i = 0; i < 3; i++) {
+        const a = this.t * 6 + (i * TAU) / 3;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * 36, -artH + 58 + Math.sin(a) * 10, 4.5, 0, TAU);
+        ctx.fill();
+      }
+      ctx.restore();
+      return;
+    }
+
+    const w = 96;
+    const h = 7;
+    ctx.save();
+    ctx.fillStyle = 'rgba(8,10,24,0.62)';
+    ctx.fillRect(-w / 2, y, w, h);
+    const r = clamp(this.poise / this.poiseMax, 0, 1);
+    ctx.fillStyle = r > 0.72 ? '#ff6b8a' : r > 0.4 ? '#ffd166' : '#7fd6ff';
+    ctx.fillRect(-w / 2 + 1, y + 1, (w - 2) * r, h - 2);
+    ctx.strokeStyle = this.poiseFlash > 0 ? 'rgba(255,230,109,0.95)' : 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-w / 2 + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.restore();
   }
 
   draw(ctx, t) {
@@ -1248,8 +1799,66 @@ export class Boss {
       // 开火瞬间向前顶一下：让「发弹」这个动作在立绘上看得见，而不是站桩放弹幕
       cast: this.fireT < 0.22 ? 1 - this.fireT / 0.22 : 0,
     };
-    if (!drawGenBoss(ctx, bossArtOpts)) drawBoss(ctx, bossArtOpts);
+    if (!drawGenBoss(ctx, bossArtOpts)) drawBossPlaceholder(ctx, bossArtOpts, this.def.accent);
+
+    // 破势槽 / 眩晕星画在立绘之后，保证永远可见
+    this._drawMeleeUI(ctx);
 
     ctx.restore();
   }
+}
+
+/**
+ * AI 立绘未就绪时的占位：柔光 + 无细节剪影。
+ * 不用程序化小人（画风与 AI 立绘差距太大），只保证玩家能看见 Boss 的位置。
+ */
+function drawBossPlaceholder(ctx, o, accent = '#ffffff') {
+  const t = o.t || 0;
+  const alpha = (o.alpha == null ? 1 : o.alpha) * 0.92;
+  const bob = Math.sin(t * 1.6) * 4;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(0, bob);
+
+  // 背光
+  ctx.globalCompositeOperation = 'lighter';
+  const glow = ctx.createRadialGradient(0, -140, 6, 0, -140, 190);
+  glow.addColorStop(0, `${accent}30`);
+  glow.addColorStop(1, `${accent}00`);
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, -140, 190, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+
+  // 剪影：头 + 长发 + 斗篷下摆
+  const g = ctx.createLinearGradient(0, -230, 0, 10);
+  g.addColorStop(0, 'rgba(46,34,64,0.9)');
+  g.addColorStop(0.55, 'rgba(26,18,40,0.94)');
+  g.addColorStop(1, 'rgba(12,8,20,0.97)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(-46, -6);
+  ctx.bezierCurveTo(-68, -60, -64, -132, -34, -176);
+  ctx.bezierCurveTo(-22, -192, -18, -206, -20, -222);
+  ctx.bezierCurveTo(-14, -238, 14, -238, 20, -222);
+  ctx.bezierCurveTo(18, -206, 22, -192, 34, -176);
+  ctx.bezierCurveTo(64, -132, 68, -60, 46, -6);
+  ctx.quadraticCurveTo(0, 8, -46, -6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = `${accent}55`;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // 眼睛微光（让剪影一眼能认出是 Boss）
+  const blink = 0.55 + Math.sin(t * 2.1) * 0.25;
+  ctx.fillStyle = `rgba(255,120,120,${0.65 * blink})`;
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.arc(s * 9, -205, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
