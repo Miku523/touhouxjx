@@ -6,7 +6,10 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const STAGE = Number(process.argv[2] ?? 0);
+const CHAR = process.argv[6] || 'reimu';   // 主角：reimu / marisa
+// stage 参数可以是数字（主线关卡下标），也可以是 'extra'（EXTRA 关）
+const IS_EXTRA = String(process.argv[2] ?? '0') === 'extra';
+const STAGE = IS_EXTRA ? 0 : Number(process.argv[2] ?? 0);
 const TOTAL = Number(process.argv[3] ?? 12000);
 const MODE = process.argv[4] ?? 'run';
 const PORT = Number(process.argv[5] ?? 9460);
@@ -167,7 +170,12 @@ try {
   await sleep(900);
   console.log('setup:', await ev(SETUP));
 
-  await ev(`(() => { const g = window.__game; g.lives = 50; g.char = 'reimu'; g.startStage(${STAGE}); return g.state; })()`);
+  // EXTRA：解锁后直接把时间轴拨到中途 Boss（雷米莉亚）前，跳过十几分钟道中
+  await ev(`(() => { const g = window.__game; g.lives = 50; g.char = '${CHAR}'; ${
+    IS_EXTRA
+      ? `g.unlockedExtra = true; g.inExtra = true; g.carryPower = 0; g.continues = 0; g._startExtraStage({ resumeFrom: '${MODE === 'final' ? 'final' : 'midboss'}', skipIntro: true });`
+      : `g.startStage(${STAGE});`
+  } return g.state; })()`);
   await sleep(500);
   await ev(`(() => { const g = window.__game; let n = 0; while (g.state === 'dialogue' && n++ < 100) g.dialogue.advance(); return n; })()`);
   await sleep(250);
