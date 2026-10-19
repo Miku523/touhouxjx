@@ -1137,18 +1137,36 @@ class Game {
     this.audio.play?.('die');
     // 已经打到 Boss 的话，重挑战回 Boss 场地而不是从头跑一遍
     const atBoss = this._canResumeBoss();
+    // EXTRA 没有 platform Boss 检查点：_retryStage 会按时间轴回到 3:00 / 6:00 的检查点。
+    // 这里用与 _retryStage 完全相同的判定算出恢复点，按钮文案必须跟实际接关位置一致，
+    // 否则玩家看到「重新挑战本关」却直接从 3:00 雷米莉亚战开始，文案与行为不符。
+    // 文案保持精简（检查点细节放在脚注），避免长标签在 960 宽下压到右侧 ENTER 键帽。
+    const s = this.stage;
+    const extraResume = this.inExtra
+      ? ((s && s.midbossDone) ? 'final' : (s && s.bossStarted) ? 'midboss' : null)
+      : null;
+    const retryLabel = this.inExtra
+      ? (extraResume === 'final' ? '从芙兰战继续'
+        : extraResume === 'midboss' ? '从雷米莉亚战继续'
+          : '重新挑战本关')
+      : (atBoss ? '再战 Boss' : '重新挑战本关');
+    const extraFoot = extraResume === 'final'
+      ? '将从 6:00 芙兰战的检查点继续'
+      : extraResume === 'midboss'
+        ? '将从 3:00 雷米莉亚战的检查点继续'
+        : '整理好状态，再挑战一次';
     const canTrue = !this.inExtra && getDifficulty(this.difficulty).unlockExtra;
     const sub = this.inExtra
       ? '残机用尽 · EXTRA STAGE'
       : `残机用尽 · STAGE ${this.levelIndex + 1} · 续命 ${this.continues} 次`;
     const foot = this.inExtra
-      ? 'EXTRA 关失败不会触发结局\n整理好状态，再挑战一次'
+      ? `EXTRA 关失败不会触发结局\n${extraFoot}`
       : [
         atBoss ? '从 Boss 场地重新开始\n前面的进度不会丢失' : '',
         canTrue ? '续命将无法进入真结局，也无法解锁 EXTRA\n想要 TRUE ENDING 与 EXTRA，请一次通过' : 'EASY 难度没有真结局\nEXTRA 需要在 N/H/L 一次续命都不用地通关',
       ].filter(Boolean).join('\n');
     this._setPanel('游戏结束', sub, [
-      { label: atBoss ? '再战 Boss' : '重新挑战本关', key: 'ENTER', cls: 'primary', onPick: () => this._retryStage() },
+      { label: retryLabel, key: 'ENTER', cls: 'primary', onPick: () => this._retryStage() },
       { label: '返回标题', key: 'ESC', onPick: () => this.showTitle() },
     ], foot);
   }
