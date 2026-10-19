@@ -1,17 +1,19 @@
 /**
  * 关卡生成器
  *
- * 手写几百列地图不现实，这里按「地块模板」拼接出 3000+ 列的长关卡，
- * 同时保证可跳性：
- *   - 地面高度每列最多变 1 格，坡道成阶梯；
- *   - 坑宽 <= 4 格（单跳 4 格、二段跳 6 格），崩落砖桥宽 4~5；
- *   - 浮台与地面落差 <= 3 格（单跳上限），需要二段跳的高台另有落脚点；
- *   - 每关末尾留出 ~46 列平地当 Boss 场；
- *   - 检查点每 ~640 列一个，坑/砖桥前必有落脚点。
+ * 手写几千列地图不现实，这里按「地块模板」拼接出长关卡，同时保证可跳性：
+ *   - 地面高度每列最多变 1 格（slope / 阶梯），坑宽 <= 4 格；
+ *   - 浮台与上一落脚点落差 <= 3 格（单跳可及），平台宽 >= 3 列；
+ *   - 崩落砖桥 / 水面浮台 / 洞窟顶板都按同一套约束拼；
+ *   - 每关末尾留出 50 列平地当 Boss 场，出生点前 20 列清空；
+ *   - 检查点每 650 列一个，必须落在实地上（跳过水面 / 冰面 / 尖刺）。
+ *
+ * rows=34 的关卡（stage5/6）额外放开垂直空间：多层台地、塔楼、之字高地等
+ * 模板会给出可选的高低路线，但每一级台阶仍 <= 3 格，不需要超出二段跳能力。
  *
  * 输出仍是字符行数组，Level 的解析路径完全不变。
  * gen 配置：
- *   { kind:'platform', rows, ground, cols, seed, style }
+ *   { kind:'platform', rows, ground, cols, seed, style, collectStats? }
  *   { kind:'stg', rows, cols }
  */
 
@@ -33,29 +35,53 @@ function mulberry32(seed) {
 }
 
 /* ---------------- 风格地块权重 ----------------
- * 每个风格挑一组地块类型，重复权重。新机制（崩落砖桥 / 水域游泳）在所有风格里都会出现，
- * 只是频率和密度不同。
+ * 每个风格都有一种「签名地形」，权重最高；flat 只留 1 份当低频喘息，
+ * 其余旧模板与新增模板混排，避免出现长直平地。新机制（崩落砖桥 / 水域游泳）
+ * 在所有风格里都会出现，只是频率和密度不同。
+ *
+ * 新增模板：
+ *   terraces    多层台地（shrine 签名）
+ *   canopy      树冠+藤蔓高地（forest 签名）
+ *   waterfall   水面+浮台（lake 签名）
+ *   tower       垂直塔楼（nether 签名）
+ *   bridgeChain 连续碎裂桥（moon 签名）
+ *   canyon      深谷
+ *   cave        洞窟钟乳石
+ *   gauntlet    尖刺+坑组合
+ *   zigzag      之字高地
+ *   floorHoles  地板多坑
+ *   overhang    岩檐
  */
 const STYLE_CHUNKS = {
+  // 博丽神社：石阶、鸟居、庭院水与岩檐；不出现洞窟和尖刺走廊（神社后山没那么凶）
   shrine: [
-    ['flat', 3], ['hill', 3], ['pit', 2], ['platforms', 3], ['stairs', 2],
-    ['crumble', 2], ['spikes', 2], ['tunnel', 2], ['gate', 1], ['water', 1],
+    ['flat', 1], ['hill', 2], ['pit', 1], ['terraces', 4], ['platforms', 2],
+    ['stairs', 2], ['crumble', 2], ['spikes', 1], ['gate', 1], ['water', 1],
+    ['overhang', 2], ['zigzag', 1],
   ],
+  // 魔法森林：树冠、蘑菇、藤蔓、树根洞与荆棘
   forest: [
-    ['flat', 2], ['hill', 3], ['pit', 2], ['platforms', 3], ['mushroom', 2],
-    ['vine', 2], ['crumble', 2], ['spikes', 1], ['water', 2], ['tunnel', 1],
+    ['flat', 1], ['hill', 2], ['pit', 1], ['canopy', 4], ['platforms', 2],
+    ['mushroom', 2], ['vine', 2], ['crumble', 1], ['spikes', 1], ['water', 1],
+    ['tunnel', 1], ['zigzag', 2], ['floorHoles', 2], ['gauntlet', 1],
   ],
+  // 雾之湖：瀑布水潭、浮冰与冰洞；湖面平坦，不放深谷
   lake: [
-    ['flat', 2], ['hill', 2], ['pit', 2], ['platforms', 2], ['water', 3],
-    ['ice', 3], ['crumble', 3], ['spikes', 1], ['tunnel', 1],
+    ['flat', 1], ['hill', 1], ['pit', 1], ['waterfall', 4], ['water', 3],
+    ['ice', 2], ['crumble', 2], ['platforms', 2], ['floorHoles', 1],
+    ['spikes', 1], ['bridgeChain', 1],
   ],
+  // 白玉楼：楼阁、黄泉洞、庭园与墓门
   nether: [
-    ['flat', 2], ['hill', 3], ['pit', 2], ['platforms', 3], ['stairs', 2],
-    ['crumble', 3], ['spikes', 2], ['tunnel', 2], ['water', 1], ['gate', 1],
+    ['flat', 1], ['hill', 2], ['pit', 1], ['tower', 4], ['platforms', 2],
+    ['stairs', 2], ['crumble', 2], ['spikes', 1], ['gauntlet', 2],
+    ['cave', 2], ['canyon', 2], ['water', 1], ['gate', 1], ['overhang', 1],
   ],
+  // 月都：永远亭的碎裂桥、月面砖、竹台与月门；不用雾之湖的冰面
   moon: [
-    ['flat', 2], ['hill', 2], ['pit', 2], ['platforms', 3], ['bricks', 3],
-    ['crumble', 3], ['spikes', 2], ['ice', 1], ['gate', 1],
+    ['flat', 1], ['hill', 1], ['pit', 1], ['bridgeChain', 4], ['bricks', 2],
+    ['crumble', 2], ['platforms', 2], ['spikes', 1], ['gate', 1],
+    ['terraces', 2], ['overhang', 1], ['tower', 2], ['floorHoles', 1],
   ],
 };
 
@@ -71,15 +97,20 @@ class Builder {
     this.surface = new Array(this.cols).fill(GRASS);
     this.cells = Array.from({ length: this.rows }, () => new Array(this.cols).fill(AIR));
     this.crumble = [];
+    this.chunkStats = Object.create(null);
+    this.chunkLog = [];
+    this.stepCount = 0;
     this.cursor = 0;
-    this.nextCheckpoint = 620; // 第一段之后每 ~640 列一个
+    // 第一个存档点到出生点的距离：太远会让开局失误代价过高（原 620 列 ≈ 52 秒）
+    this.nextCheckpoint = 200;
+    // 之后每隔多少列放一个存档点（原 650 列 ≈ 55 秒，死亡退回成本过高）
+    this.checkpointGap = 260;
     this.lastTop = this.ground;
   }
 
   /* ---------- 随机助手 ---------- */
   rnd() { return this.rng(); }
   ri(a, b) { return a + Math.floor(this.rng() * (b - a + 1)); }
-  pick(arr) { return arr[Math.floor(this.rng() * arr.length)]; }
   chance(p) { return this.rng() < p; }
 
   /* ---------- 基础写入 ---------- */
@@ -139,9 +170,32 @@ class Builder {
     return this.lastTop;
   }
 
-  /** 可用的向上空间（22 行关 4 格，34 行关 10 格）。 */
-  skyRoom() {
-    return this.rows >= 34 ? 10 : 4;
+  /** 当前块起点处的地表高度（上一列）。 */
+  groundTop() {
+    return this.cursor > 0 ? this.top[this.cursor - 1] : this.lastTop;
+  }
+
+  /** 把高度夹到本关允许的地形高度范围内。 */
+  clampTop(row) {
+    const minTop = Math.max(3, this.ground - (this.rows >= 34 ? 8 : 3));
+    return Math.max(minTop, Math.min(this.ground, row));
+  }
+
+  /** 连续铺 len 列平整地面，并同步 lastTop。 */
+  bed(start, len, topRow, surface = GRASS) {
+    for (let i = 0; i < len; i++) this.commit(start + i, topRow, surface);
+    this.lastTop = topRow;
+  }
+
+  /** 开一段无底坑：只登记 gap，不写地面。 */
+  hole(start, len, topRow) {
+    for (let i = 0; i < len; i++) {
+      const c = start + i;
+      if (c >= this.cols) break;
+      this.top[c] = topRow;
+      this.gap[c] = 1;
+    }
+    this.lastTop = topRow;
   }
 
   /** 天空平台（单向），x 为起始列，y 为目标行，宽 w 列。 */
@@ -174,7 +228,7 @@ class Builder {
     if (this.get(cx, cy) === AIR) this.set(cx, cy, 'p');
   }
 
-  /* ---------- 地块模板 ---------- */
+  /* ---------- 旧地块模板 ---------- */
   flat(len) {
     const t = this.lastTop;
     for (let i = 0; i < len; i++) this.commit(this.cursor + i, t);
@@ -214,6 +268,7 @@ class Builder {
     this.coinArc(c0 + Math.floor(n / 2), t - 2, Math.max(1, Math.floor(n / 2)));
     // 收尾 1~2 列平地
     for (let i = n; i < len; i++) this.commit(c0 + i, t);
+    this.lastTop = t;
     return len;
   }
 
@@ -229,21 +284,27 @@ class Builder {
     }
     this.set(c0 + Math.floor(n / 2), t - 3, 'o');
     for (let i = n; i < len; i++) this.commit(c0 + i, t);
+    this.lastTop = t;
     return len;
   }
 
   platforms(len) {
     const t = this.lastTop;
-    for (let i = 0; i < len; i++) this.commit(this.cursor + i, t);
     const c0 = this.cursor;
-    const n = this.ri(1, 3);
-    for (let k = 0; k < n; k++) {
-      const px = c0 + 3 + Math.floor((k * (len - 6)) / Math.max(1, n));
-      const pw = this.ri(3, 5);
-      const ph = t - this.ri(2, this.rows >= 34 ? 6 : 3);
-      this.platform(px, ph, pw);
-      this.coins(px, ph - 1, pw, 1);
-      if (this.chance(0.25)) this.power(px + 1, ph - 1);
+    this.bed(c0, len, t);
+    // 34 行关铺 2~3 层阶梯状浮台，每层只比上一层高 2~3 格（单跳可及）
+    const tiers = this.rows >= 34 ? this.ri(2, 3) : 1;
+    // 浮台高度按「离地 2~3 格」算；不能夹到 minTop，否则在抬升地形上会被压回地面
+    let y = Math.max(2, t - this.ri(2, 3));
+    let px = c0 + 2;
+    for (let k = 0; k < tiers; k++) {
+      const pw = this.ri(3, 4);
+      if (px + pw > c0 + len - 1) break;
+      this.platform(px, y, pw);
+      this.coins(px, y - 1, pw);
+      if (this.chance(0.2)) this.power(px + 1, y - 1);
+      px += pw + this.ri(2, 3);
+      y = Math.max(2, y - this.ri(2, 3));
     }
     return len;
   }
@@ -252,8 +313,9 @@ class Builder {
     const t = this.lastTop;
     for (let i = 0; i < len; i++) this.commit(this.cursor + i, t);
     const c0 = this.cursor;
-    const h = this.ri(3, this.rows >= 34 ? 6 : 4);
-    this.brickColumn(c0 + this.ri(2, len - 6), t - h, t - 1, this.ri(1, 2));
+    const h = this.ri(2, 3);
+    // 砖柱与左侧浮台错开，避免两段装饰叠在一起
+    this.brickColumn(c0 + this.ri(6, Math.max(6, len - 4)), t - h, t - 1, this.ri(1, 2));
     const px = c0 + 2;
     this.platform(px, t - h, this.ri(3, 4));
     this.coins(px, t - h - 1, 3);
@@ -266,8 +328,10 @@ class Builder {
     const c0 = this.cursor;
     const n = this.ri(2, 4);
     for (let i = 0; i < n; i++) this.set(c0 + 2 + i, t - 1, '^');
-    // 尖刺上方给一块落脚平台，鼓励跳过去
-    this.platform(c0 + 2, t - 4, n);
+    // 尖刺上方给一块落脚平台（比地面高 3 格、宽度 >=3），鼓励跳过去
+    const pw = Math.max(3, n);
+    this.platform(c0 + 2, t - 3, pw);
+    this.coins(c0 + 2, t - 4, pw);
     return len;
   }
 
@@ -293,29 +357,35 @@ class Builder {
     return len;
   }
 
+  /**
+   * 水面：岸 -> 浅水 -> 深水池 -> 浅水 -> 岸，池底每列只降 1 格。
+   * 水面与岸齐平，池底最深 2 格；水面列 surface 记为 'W'，检查点不会落进去。
+   */
   water(len) {
-    const t = this.lastTop;
     const c0 = this.cursor;
-    const n = Math.min(len - 4, this.ri(4, 9));
-    const off = 2;
+    const t = this.groundTop();
+    const n = Math.min(len - 6, this.ri(4, 9));
     for (let i = 0; i < len; i++) {
       const c = c0 + i;
-      if (i >= 2 && i < 2 + n) {
-        // 池底比岸低 2 格，水面与岸齐平
-        this.commit(c, t + off);
-        for (let r = t; r < t + off; r++) this.set(c, r, 'W');
-      } else {
-        this.commit(c, t);
+      let top = t;
+      if (i >= 2 && i <= n + 1) top = t + 1;      // 浅水边
+      if (i >= 3 && i <= n) top = t + 2;          // 深水池底
+      this.commit(c, top);
+      if (top > t) {
+        this.set(c, top - 1, 'W');
+        if (top === t + 2) this.set(c, top - 2, 'W');
+        this.surface[c] = 'W';
       }
     }
-    this.coins(c0 + 2 + Math.floor(n / 2), t - 1, 2);
+    this.lastTop = t;
+    this.coins(c0 + 3, t - 1, 3);
     return len;
   }
 
   ice(len) {
     const t = this.lastTop;
     const c0 = this.cursor;
-    for (let i = 0; i < len; i++) this.commit(c0 + i, t, 'I');
+    this.bed(c0, len, t, 'I');
     this.coins(c0 + 3, t - 1, 4);
     return len;
   }
@@ -326,8 +396,8 @@ class Builder {
     const c0 = this.cursor;
     const mx = c0 + Math.floor(len / 2);
     this.commit(mx, t, 'M');
-    this.platform(mx - 2, t - 6, 4);
-    this.coins(mx - 2, t - 7, 4);
+    this.platform(mx - 2, t - 3, 4);
+    this.coins(mx - 2, t - 4, 4);
     this.set(mx + 1, t - 1, 'o');
     return len;
   }
@@ -353,13 +423,340 @@ class Builder {
     for (let i = 0; i < len; i++) this.commit(this.cursor + i, t);
     const c0 = this.cursor;
     const gx = c0 + Math.floor(len / 2);
-    for (let r = t - 6; r < t; r++) {
+    // 门柱必须让出地面通道：旧版柱子 6 行直插地面，门楣又盖在柱顶，
+    // 二段跳最大上升约 223px，够不到 224px 的门楣顶，等于一堵不可通过的软锁墙。
+    // 现在柱子只从门楣往下垂 2 行（离地 96px），玩家可以从门下走过；
+    // 门楣顶 192px 仍在二段跳射程内，想上房梁也上得去。
+    for (let r = t - 5; r < t - 3; r++) {
       this.set(gx - 2, r, 'B');
       this.set(gx + 2, r, 'B');
     }
-    for (let i = -3; i <= 3; i++) this.set(gx + i, t - 7, 'B');
-    this.set(gx, t - 8, 'B');
+    for (let i = -3; i <= 3; i++) this.set(gx + i, t - 6, 'B');
+    this.set(gx, t - 7, 'B');
     this.coins(gx - 1, t - 2, 3);
+    return len;
+  }
+
+  /* ---------- 新增地块模板 ---------- */
+
+  /**
+   * 多层台地：一级一级往上抬（每列 <=1），台面 4~6 列，可回头下折。
+   * 34 行关最多叠 4 级，形成可选的上下层路线；22 行关 1~2 级。
+   */
+  terraces(len) {
+    const c0 = this.cursor;
+    const base = this.groundTop();
+    const tiers = this.rows >= 34 ? this.ri(2, 4) : this.ri(1, 2);
+    let used = 0;
+    let top = base;
+    for (let k = 0; k < tiers; k++) {
+      if (len - used < 8) break;
+      const rise = this.ri(2, 3);
+      const ramp = Math.min(rise + 1, len - used - 4);
+      this.slope(c0 + used, ramp, this.clampTop(top - rise));
+      used += ramp;
+      top = this.top[c0 + used - 1];
+      const ledge = Math.min(this.ri(4, 6), len - used - 4);
+      if (ledge < 3) break;
+      this.bed(c0 + used, ledge, top);
+      this.coins(c0 + used - ledge + 1, top - 1, Math.min(4, ledge - 1));
+      // 台地边缘再放一级可选小平台（高 3 格，宽 3 列）
+      if (ledge >= 4) this.platform(c0 + used - 3, Math.max(2, top - 3), 3);
+      used += ledge;
+      if (k + 1 < tiers && len - used >= 6) {
+        this.slope(c0 + used, 2, this.clampTop(top + this.ri(1, 2)));
+        used += 2;
+        top = this.top[c0 + used - 1];
+      }
+    }
+    if (used < len) this.slope(c0 + used, len - used, base);
+    return len;
+  }
+
+  /** 深谷：先下坡到谷底（最多 3/5 格深），走一段谷底再上坡；可下水可跳台。 */
+  canyon(len) {
+    const c0 = this.cursor;
+    const base = this.groundTop();
+    const maxDepth = this.rows >= 34 ? 5 : 3;
+    const depth = this.ri(2, maxDepth);
+    const floor = this.clampTop(base + depth);
+    const realDepth = floor - base;
+    if (realDepth <= 0) {
+      this.bed(c0, len, base);
+      return len;
+    }
+    const ramp = Math.min(realDepth + 1, Math.floor(len / 3));
+    this.slope(c0, ramp, floor);
+    let used = ramp;
+    const bottom = this.top[c0 + used - 1];
+    const flat = Math.min(len - used - ramp, this.ri(6, 10));
+    if (flat >= 3) {
+      this.bed(c0 + used, flat, bottom);
+      this.coins(c0 + used + 1, bottom - 1, Math.min(4, flat - 1));
+      if (this.chance(0.5)) this.power(c0 + used + Math.floor(flat / 2), bottom - 1);
+      used += flat;
+    }
+    if (used < len) this.slope(c0 + used, len - used, base);
+    return len;
+  }
+
+  /**
+   * 垂直塔楼：主路平地照走，头顶叠 2~3 层单向浮台（每层只高 2~3 格、
+   * 水平错开 1~2 列），是可选的爬高路线，顶层放补给。
+   */
+  tower(len) {
+    const c0 = this.cursor;
+    const base = this.groundTop();
+    this.bed(c0, len, base);
+    const steps = this.rows >= 34 ? this.ri(2, 3) : this.ri(1, 2);
+    let x = c0 + this.ri(4, 6);
+    let y = Math.max(2, base - 2);
+    for (let k = 0; k < steps; k++) {
+      const w = this.ri(3, 4);
+      if (x + w > c0 + len - 2) break;
+      this.platform(x, y, w);
+      this.coins(x, y - 1, w);
+      if (k === steps - 1) this.power(x + 1, y - 1);
+      const dir = this.chance(0.5) ? 1 : -1;
+      const nx = x + dir * (w + this.ri(1, 2));
+      const ny = Math.max(2, y - this.ri(2, 3));
+      if (nx < c0 + 2 || nx + 3 > c0 + len - 2) break;
+      x = nx;
+      y = ny;
+    }
+    return len;
+  }
+
+  /** 连续碎裂桥：碎砖段 3~4 列 + 实心小岛 3~4 列，反复 2~3 次。 */
+  bridgeChain(len) {
+    const c0 = this.cursor;
+    const base = this.groundTop();
+    let used = 0;
+    this.bed(c0, 2, base);
+    used = 2;
+    const rounds = this.ri(2, 3);
+    for (let k = 0; k < rounds; k++) {
+      const bw = this.ri(3, 4);
+      const island = this.ri(3, 4);
+      if (used + bw + island > len - 2) break;
+      for (let i = 0; i < bw; i++) {
+        const c = c0 + used + i;
+        this.top[c] = base;
+        this.gap[c] = 1;
+        this.set(c, base, 'B');
+        this.crumble.push([c, base]);
+      }
+      this.coinArc(c0 + used + Math.floor(bw / 2), base - 2, 1);
+      used += bw;
+      this.bed(c0 + used, island, base);
+      used += island;
+    }
+    if (used < len) this.bed(c0 + used, len - used, base);
+    this.lastTop = base;
+    return len;
+  }
+
+  /**
+   * 洞窟：地面微抬，上方铺顶板并垂下钟乳石；钟乳石最低到头顶上方 2 格，
+   * 不会把通路堵死。34 行关顶更高，允许在洞内加一块可选平台。
+   */
+  cave(len) {
+    const c0 = this.cursor;
+    const base = this.groundTop();
+    const rise = this.rows >= 34 ? this.ri(1, 3) : this.ri(0, 2);
+    const top = this.clampTop(base - rise);
+    const lead = Math.max(2, rise + 1);
+    this.slope(c0, lead, top);
+    let used = lead;
+    const inner = len - lead * 2;
+    if (inner < 8) {
+      if (used < len) this.slope(c0 + used, len - used, base);
+      return len;
+    }
+    this.bed(c0 + used, inner, top);
+    used += inner;
+    const ceil = Math.max(2, top - (this.rows >= 34 ? 7 : 5));
+    const x0 = c0 + lead + 1;
+    const x1 = c0 + len - lead - 2;
+    // 顶板（中段加厚一层）
+    for (let x = x0; x < x1; x++) {
+      this.set(x, ceil, DIRT);
+      if ((x - x0) % 3 !== 0) this.set(x, ceil - 1, DIRT);
+    }
+    // 钟乳石：最低不超过 top-4，保证头顶留出通行空间
+    const maxHang = Math.max(0, Math.min(2, (top - 4) - ceil));
+    for (let x = x0 + 2; x < x1 - 1; x += this.ri(3, 5)) {
+      const hang = Math.min(maxHang, this.ri(0, 2));
+      for (let j = 1; j <= hang; j++) {
+        this.set(x, ceil + j, this.chance(0.35) ? 'V' : DIRT);
+      }
+    }
+    // 两端单向木梁支撑（可穿过）
+    for (const px of [c0 + lead, c0 + len - lead - 1]) {
+      for (let r = ceil; r < top - 1; r++) this.set(px, r, '=');
+    }
+    if (this.rows >= 34) {
+      this.platform(c0 + used - Math.floor(inner / 2), Math.max(2, top - 3), 3);
+    }
+    this.coins(c0 + lead + 2, top - 2, 4);
+    if (used < len) this.slope(c0 + used, len - used, base);
+    return len;
+  }
+
+  /** 尖刺+坑组合：踩尖刺前有踏板，坑前有落脚点，坑宽 <=3。 */
+  gauntlet(len) {
+    const c0 = this.cursor;
+    const base = this.groundTop();
+    let used = 0;
+    this.bed(c0, 3, base);
+    used = 3;
+    const rounds = this.rows >= 34 ? this.ri(2, 3) : this.ri(2, 2);
+    for (let k = 0; k < rounds; k++) {
+      const sw = this.ri(2, 3);
+      if (used + sw + 6 > len) break;
+      // 尖刺列的地面也要铺：它们位于前一段平地之后
+      this.bed(c0 + used, sw, base);
+      for (let i = 0; i < sw; i++) this.set(c0 + used + i, base - 1, '^');
+      const pw = Math.max(3, sw);
+      this.platform(c0 + used, base - 3, pw);
+      this.coins(c0 + used, base - 4, pw);
+      used += sw;
+      this.bed(c0 + used, 2, base);
+      used += 2;
+      const gapW = this.ri(2, 3);
+      if (used + gapW + 3 > len) break;
+      this.hole(c0 + used, gapW, base);
+      used += gapW;
+      this.bed(c0 + used, 3, base);
+      used += 3;
+    }
+    if (used < len) this.bed(c0 + used, len - used, base);
+    this.lastTop = base;
+    return len;
+  }
+
+  /** 瀑布/水面+浮台：池底逐列下潜 1 格，水面上方架宽 3 的单向浮台。 */
+  waterfall(len) {
+    const c0 = this.cursor;
+    const t = this.groundTop();
+    const n = Math.min(len - 10, this.ri(6, 9));
+    for (let i = 0; i < len; i++) {
+      const c = c0 + i;
+      let top = t;
+      if (i >= 3 && i <= n + 2) top = t + 1;
+      if (i >= 4 && i <= n + 1) top = t + 2;
+      this.commit(c, top);
+      if (top > t) {
+        this.set(c, top - 1, 'W');
+        if (top === t + 2) this.set(c, top - 2, 'W');
+        this.surface[c] = 'W';
+      }
+    }
+    this.lastTop = t;
+    // 水面上方 2 格的成串浮台，落差 2 格、宽 3 列，替代游泳的快速路线
+    for (let px = 3; px + 3 <= n + 3; px += 5) {
+      this.platform(c0 + px, t - 2, 3);
+      this.coins(c0 + px, t - 3, 3);
+    }
+    if (this.chance(0.5)) this.power(c0 + 2, t - 1);
+    return len;
+  }
+
+  /** 之字高地：在两档高度之间来回折，每档台面 3 列，全程每列 <=1。 */
+  zigzag(len) {
+    const c0 = this.cursor;
+    const base = this.groundTop();
+    const high = this.clampTop(base - (this.rows >= 34 ? this.ri(3, 4) : 2));
+    const low = base;
+    let used = 0;
+    if (len >= 8) {
+      this.slope(c0, 2, high);
+      used = 2;
+    }
+    let goingUp = false;
+    while (len - used >= 7) {
+      const seg = Math.min(3, len - used - 3);
+      this.slope(c0 + used, seg, goingUp ? high : low);
+      used += seg;
+      const top = this.top[c0 + used - 1];
+      this.bed(c0 + used, 3, top);
+      this.coins(c0 + used, top - 1, 3);
+      used += 3;
+      goingUp = !goingUp;
+    }
+    if (used < len) this.slope(c0 + used, len - used, base);
+    return len;
+  }
+
+  /** 地板多坑：平地 + 2~4 个 1~3 列宽的坑，坑与坑之间留 3 列落脚。 */
+  floorHoles(len) {
+    const c0 = this.cursor;
+    const base = this.groundTop();
+    let used = 0;
+    this.bed(c0, 3, base);
+    used = 3;
+    const holes = this.rows >= 34 ? this.ri(3, 4) : this.ri(2, 3);
+    for (let k = 0; k < holes; k++) {
+      const w = this.ri(1, this.rows >= 34 ? 3 : 2);
+      if (used + w + 3 > len - 1) break;
+      this.hole(c0 + used, w, base);
+      this.coinArc(c0 + used + Math.floor(w / 2), base - 2, Math.max(1, Math.floor(w / 2)));
+      used += w;
+      const land = Math.min(this.ri(3, 5), len - used - 1);
+      if (land <= 0) break;
+      this.bed(c0 + used, land, base);
+      used += land;
+    }
+    if (used < len) this.bed(c0 + used, len - used, base);
+    this.lastTop = base;
+    return len;
+  }
+
+  /** 岩檐：头顶横出一段岩板，下方留 3 格通行；檐下塞金币和小 P 点。 */
+  overhang(len) {
+    const c0 = this.cursor;
+    const base = this.groundTop();
+    this.bed(c0, len, base);
+    const w = Math.min(len - 6, this.ri(5, 8));
+    // 岩檐在头顶 4 格处，不夹到 minTop，抬升地形上也能保持通行空间
+    const row = Math.max(2, base - 4);
+    for (let i = 0; i < w; i++) {
+      this.set(c0 + 2 + i, row, DIRT);
+      if (i < w - 2) this.set(c0 + 2 + i, row - 1, DIRT);
+    }
+    this.coins(c0 + 3, base - 2, Math.min(4, w - 2));
+    if (this.chance(0.5)) this.power(c0 + 4, base - 2);
+    return len;
+  }
+
+  /** 树冠高地：土丘抬 1~3 格，头顶铺藤蔓树冠，树冠下留 3 格通行。 */
+  canopy(len) {
+    const c0 = this.cursor;
+    const base = this.groundTop();
+    const rise = this.rows >= 34 ? this.ri(2, 3) : this.ri(1, 2);
+    const top = this.clampTop(base - rise);
+    const ramp = rise + 1;
+    this.slope(c0, ramp, top);
+    let used = ramp;
+    const mound = Math.min(len - used - ramp, this.ri(7, 11));
+    if (mound < 4) {
+      if (used < len) this.slope(c0 + used, len - used, base);
+      return len;
+    }
+    this.bed(c0 + used, mound, top);
+    used += mound;
+    const crown = Math.max(2, top - (this.rows >= 34 ? 8 : 5));
+    const maxHang = Math.max(0, Math.min(2, top - 4 - crown));
+    const x0 = c0 + 2;
+    const x1 = c0 + len - 2;
+    for (let x = x0; x < x1; x += this.ri(3, 5)) {
+      const w = Math.min(this.ri(2, 3), x1 - x);
+      for (let i = 0; i < w; i++) this.set(x + i, crown, 'V');
+      const hang = Math.min(maxHang, this.ri(0, 2));
+      for (let j = 1; j <= hang; j++) this.set(x + Math.floor(w / 2), crown + j, 'V');
+    }
+    this.coins(c0 + used - mound + 2, top - 1, Math.min(4, mound - 1));
+    if (used < len) this.slope(c0 + used, len - used, base);
     return len;
   }
 
@@ -367,17 +764,31 @@ class Builder {
   placeEntities() {
     const lastSafe = this.cols - 70;
     let lastBest = -1;
-    // 检查点：等距放在平地上
-    for (let target = this.nextCheckpoint; target < lastSafe; target += 650) {
+    // 检查点：等距放在平地上；尖刺/水面/冰面/已有装饰占位的列跳过
+    for (let target = this.nextCheckpoint; target < lastSafe; target += (this.checkpointGap || 260)) {
       let best = -1;
-      for (let d = 0; d < 40; d++) {
+      // 在 160 列内找一块干净的实地；真正找不到时兜底占用第一个非水面实地列
+      for (let d = 0; d < 160; d++) {
         const c = target + d;
-        if (c < lastSafe && !this.gap[c] && this.surface[c] !== 'W' && this.surface[c] !== 'I') { best = c; break; }
+        if (c >= lastSafe) break;
+        if (this.gap[c]) continue;
+        const surf = this.surface[c];
+        if (surf === 'W' || surf === 'I') continue;
+        const row = this.top[c] - 1;
+        if (row <= 1) continue;
+        if (this.get(c, row) !== AIR) continue;
+        best = c;
+        break;
+      }
+      if (best < 0) {
+        for (let c = target; c < Math.min(target + 160, lastSafe); c++) {
+          if (!this.gap[c] && this.surface[c] !== 'W') { best = c; this.set(c, this.top[c] - 1, AIR); break; }
+        }
       }
       if (best < 0) continue;
       lastBest = best;
       const row = this.top[best] - 1;
-      if (row > 1 && this.get(best, row) === AIR) this.set(best, row, 'C');
+      this.set(best, row, 'C');
       this.coins(best + 2, this.top[best] - 1, 3);
     }
     // 最后一个检查点之后，玩家要一路走到 Boss 场，不能再掉出地图。
@@ -410,7 +821,7 @@ class Builder {
       }
     }
 
-    // 出生点：开头清出 18 列平地
+    // 出生点：开头清出 20 列平地
     for (let c = 0; c < Math.min(20, this.cols); c++) {
       this.commit(c, this.ground);
       for (let r = 0; r < this.ground; r++) this.set(c, r, AIR);
@@ -418,7 +829,7 @@ class Builder {
     this.set(2, this.ground - 1, 'P');
     this.coins(6, this.ground - 2, 4);
 
-    // Boss 场：最后 46 列平地，终点旗在前一点的位置
+    // Boss 场：最后 50 列平地，终点旗在前一点的位置
     const bossStart = Math.max(0, this.cols - 50);
     const entryTop = bossStart > 0 ? this.top[bossStart - 1] : this.ground;
     for (let c = bossStart; c < this.cols; c++) {
@@ -439,13 +850,16 @@ class Builder {
     const chunks = STYLE_CHUNKS[this.gen.style] || STYLE_CHUNKS.shrine;
     const total = chunks.reduce((s, [, w]) => s + w, 0);
     const end = this.cols - 70;
+    // 出生点前 24 列固定平地：清场后不会在出生点右侧留下台阶
+    this.bed(0, Math.min(24, this.cols), this.ground);
+    this.cursor = Math.min(24, this.cols);
     while (this.cursor < end) {
       let roll = this.rnd() * total;
       let name = 'flat';
       for (const [n, w] of chunks) { roll -= w; if (roll <= 0) { name = n; break; } }
       let len = 0;
       switch (name) {
-        case 'flat': len = this.ri(8, 14); this.flat(len); break;
+        case 'flat': len = this.ri(8, 12); this.flat(len); break;
         case 'hill': len = this.ri(10, 16); this.hill(len); break;
         case 'stairs': len = this.ri(8, 12); this.stairs(len); break;
         case 'pit': len = this.ri(5, 7); this.pit(len); break;
@@ -459,14 +873,48 @@ class Builder {
         case 'mushroom': len = this.ri(9, 12); this.mushroom(len); break;
         case 'vine': len = this.ri(9, 12); this.vine(len); break;
         case 'gate': len = this.ri(9, 12); this.gate(len); break;
+        // 新增模板
+        case 'terraces': len = this.ri(18, 26); this.terraces(len); break;
+        case 'canyon': len = this.ri(16, 22); this.canyon(len); break;
+        case 'tower': len = this.ri(14, 18); this.tower(len); break;
+        case 'bridgeChain': len = this.ri(14, 20); this.bridgeChain(len); break;
+        case 'cave': len = this.ri(16, 22); this.cave(len); break;
+        case 'gauntlet': len = this.ri(15, 21); this.gauntlet(len); break;
+        case 'waterfall': len = this.ri(14, 18); this.waterfall(len); break;
+        case 'zigzag': len = this.ri(16, 22); this.zigzag(len); break;
+        case 'floorHoles': len = this.ri(14, 18); this.floorHoles(len); break;
+        case 'overhang': len = this.ri(12, 16); this.overhang(len); break;
+        case 'canopy': len = this.ri(18, 24); this.canopy(len); break;
         default: len = 10; this.flat(len);
       }
       this.cursor += len;
+      this.chunkStats[name] = (this.chunkStats[name] || 0) + 1;
+      this.chunkLog.push({ name, start: this.cursor - len, len });
       if (len <= 0) break;
+      // 地块之间加 1 列 ±1 的微台阶：打断连续平地，也避免「长直跑道」；
+      // 台阶本身满足每列高差 <=1，不会影响可跳性。
+      if (this.cursor < end - 1) {
+        const cur = this.top[this.cursor - 1];
+        const minT = this.clampTop(-999);
+        let dir = cur >= this.ground ? -1 : cur <= minT ? 1 : (this.chance(0.5) ? -1 : 1);
+        let target = this.clampTop(cur + dir);
+        if (target === cur) {
+          dir = -dir;
+          target = this.clampTop(cur + dir);
+        }
+        if (target !== cur) {
+          this.slope(this.cursor, 1, target);
+          this.cursor += 1;
+          this.stepCount += 1;
+          this.chunkLog.push({ name: 'step', start: this.cursor - 1, len: 1 });
+        }
+      }
     }
     // 尾巴：先补平地到结尾
     while (this.cursor < this.cols) { this.flat(1); this.cursor++; }
     this.placeEntities();
+    // 清场/收尾可能抹掉个别崩落砖，只保留仍真实存在的砖块坐标
+    this.crumble = this.crumble.filter(([cx, cy]) => this.cells[cy] && this.cells[cy][cx] === 'B');
     return this.cells.map((row) => row.join(''));
   }
 }
@@ -474,7 +922,7 @@ class Builder {
 /**
  * 生成关卡字符行。
  * @param {object} gen 关卡生成配置
- * @returns {{rows:string[], crumble:[number,number][]}}
+ * @returns {{rows:string[], crumble:[number,number][], chunkStats?:object}}
  */
 export function buildLevelRows(gen) {
   if (!gen) return { rows: [], crumble: [] };
@@ -484,5 +932,10 @@ export function buildLevelRows(gen) {
   }
   const b = new Builder(gen);
   const rows = b.build();
-  return { rows, crumble: b.crumble };
+  const out = { rows, crumble: b.crumble };
+  if (gen.collectStats) {
+    out.chunkStats = b.chunkStats;
+    out.debug = { top: Array.from(b.top), gap: Array.from(b.gap), chunks: b.chunkLog, steps: b.stepCount };
+  }
+  return out;
 }
