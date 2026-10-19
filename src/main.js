@@ -10,6 +10,7 @@ import { setPriority, preloadWhenIdle } from './engine/lazy_preload.js';
 import { AudioEngine } from './engine/audio.js';
 import { LEVELS } from './assets/levels.js';
 import { Stage, EXTRA_TIMELINE } from './game/stage.js';
+import { prewarmSpriteCache } from './game/bullets.js';
 import { Hud } from './game/hud.js';
 import { SpellCutin } from './game/spellCutin.js';
 import { MusicRoom } from './game/musicRoom.js';
@@ -124,6 +125,8 @@ class Game {
     this.frameCap = 0;
     this.musicOn = true;
     this.screenShake = true;
+    // 画质档位：'auto' 跟随硬件检测，'high' / 'low' 玩家强制覆盖（设置页「画质」行）
+    this.quality = 'auto';
     this._pendingTimeout = 0;
     this.menuIndex = 0;
     this.menuButtons = [];
@@ -144,6 +147,8 @@ class Game {
     this._loadMusicMemory();
     this.audio.onSongStart = (name) => this._rememberSong(name);
     this._applyAudio();
+    // 画质档位必须在 _loadSettings 之后生效（高/低档会重建 backing store）
+    this.renderer.setQuality?.(this.quality);
 
     /* ---------- 标题画面素材：插画背景 + 两套主角立绘 ---------- */
     // 这三张是首屏唯一必需的图：给最高优先级，其余预加载会自动让路（见 engine/lazy_preload.js）
@@ -169,6 +174,13 @@ class Game {
     this._bootEl = document.getElementById('boot');
     this._bootDone = false;
     this._waitTitleArt();
+
+    // 一次性尖峰预算：
+    // ① AudioContext 创建要 50~120ms，直接放在启动幕还在盖屏的时候同步付掉，
+    //    绝不能留给第一次按键（那时玩家正盯着难度页，卡一下最明显）；
+    // ② 弹幕精灵烘焙（~12ms 总量）排到标题页之后，分片跑，不和首屏抢带宽。
+    this._prewarmAudio();
+    this._prewarmBulletSprites();
 
     window.addEventListener('keydown', (e) => {
       // 只用键盘启动的玩家也要解锁音频：浏览器策略只认用户手势，按键同样算
@@ -744,7 +756,7 @@ class Game {
 
     this._setPanel('操作说明', '键位可在「设置 → 按键设置」中修改',
       rows,
-      '设置页内：K 按键设置　F 帧率　M 静音　X 重置进度　ESC 返回',
+      '设置页内：K 按键设置　G 画质　F 帧率　M 静音　X 重置进度　ESC 返回',
       { screen: true, en: 'HOW TO PLAY', page: 'help', grid: 'help-grid', scene: 'forest', select: rows.length - 1 }
     );
   }
@@ -772,6 +784,35 @@ class Game {
     const next = (at + (dir > 0 ? 1 : caps.length - 1)) % caps.length;
     this.frameCap = caps[next];
     this.loop.setFrameCap(this.frameCap);
+    this._saveSettings();
+  }
+
+  /* ---------------- 画质档位（自动 / 高 / 低） ---------------- */
+
+  /** 画质档位顺序：自动跟随硬件检测 → 高 → 低 */
+  static QUALITIES = ['auto', 'high', 'low'];
+
+  cycleQuality(fromSettings = false, index = this.menuIndex) {
+    const qs = Game.QUALITIES;
+    const at = Math.max(0, qs.indexOf(this.quality || 'auto'));
+    this._applyQuality(qs[(at + 1) % qs.length]);
+    if (fromSettings) this._showSettings(index, this._settingsOrigin);
+  }
+
+  /** ←→ 调画质（dir = ±1） */
+  _adjustQuality(dir) {
+    const qs = Game.QUALITIES;
+    const at = Math.max(0, qs.indexOf(this.quality || 'auto'));
+    this._applyQuality(qs[(at + (dir > 0 ? 1 : qs.length - 1)) % qs.length]);
+  }
+
+  /**
+   * 写入画质档位并立即生效：渲染器重建 backing store / 后期档，
+   * 随后把窗口上的诊断信息与本地存档同步。
+   */
+  _applyQuality(q) {
+    this.quality = q === 'high' || q === 'low' ? q : 'auto';
+    this.renderer.setQuality?.(this.quality);
     this._saveSettings();
   }
 
@@ -853,6 +894,10 @@ class Game {
       power: this.carryPower,
       onEvent: (type, data) => this._onStageEvent(type, data),
     });
+    // 切场景 / 开新关：前两帧先不做后期，把 bloom 的冷启动成本挪出可见卡顿
+    this.renderer.skipPostFrames?.(2);
+    // 关卡会在接下来几秒里喷新变体：空闲帧先把常见的 (型, 色, 尺寸) 烤好
+    this._prewarmBulletSprites();
     this.stage.onEvent = (type, data) => this._onStageEvent(type, data);
     // 本关会出场的 AI 立绘（玩家 + Boss）现在就开始下载：
     // 等跑到 Boss 触发对话时已经就绪，不会闪回旧的矢量立绘。
@@ -1434,6 +1479,10 @@ class Game {
       const txt = cap === 0 ? '∞' : String(cap);
       return `<b class="${cap === this.frameCap ? 'on' : ''}">${txt}</b>`;
     }).join('')}</span>`;
+    // 画质：自动 / 高 / 低（分段控件，与帧率上限同一套皮肤）
+    const qseg = `<span class="seg">${[['auto', '自动'], ['high', '高'], ['low', '低']].map(([k, txt]) =>
+      `<b class="${k === (this.quality || 'auto') ? 'on' : ''}">${txt}</b>`).join('')}</span>`;
+    const qi = this.renderer?.qualityInfo?.() || { label: '自动', detail: '' };
     const row = (text, ctl, key) =>
       `<span class="set-label">${text}</span><span class="set-ctl">${ctl}</span>` +
       (key ? `<span class="k">${key}</span>` : '');
@@ -1489,6 +1538,21 @@ class Game {
       /* ---- 画面 ---- */
       {
         group: 'display', groupTitle: '画面', glyph: '畫',
+        cls: 'set-row', key: 'G', hotkey: 'KeyG',
+        html: row('画质', qseg, 'G'),
+        adjust: (d) => {
+          this._adjustQuality(d);
+          this._showSettings(this.menuIndex, origin);
+        },
+        onPick: (i) => this.cycleQuality(true, i),
+      },
+      {
+        // 只读行：让玩家看得见当前到底跑在什么渲染模式上（软件光栅 / GPU、实际 backing、辉光开关）
+        group: 'display', cls: 'set-row info',
+        html: row('当前渲染', `<span class="qinfo">${qi.label} · ${qi.detail}</span>`, ''),
+      },
+      {
+        group: 'display',
         cls: 'set-row', key: 'H', hotkey: 'KeyH',
         html: row('屏幕震动', sw(this.screenShake), 'H'),
         onPick: (i) => {
@@ -1754,6 +1818,7 @@ class Game {
       if (Number.isFinite(s.frameCap)) this.frameCap = s.frameCap;
       if (typeof s.musicOn === 'boolean') this.musicOn = s.musicOn;
       if (typeof s.screenShake === 'boolean') this.screenShake = s.screenShake;
+      if (s.quality === 'auto' || s.quality === 'high' || s.quality === 'low') this.quality = s.quality;
       if (Number.isFinite(s.lives)) this.lives = Math.max(1, Math.min(4, Math.round(s.lives)));
       if (typeof s.difficulty === 'string' && DIFFICULTIES[s.difficulty]) this.difficulty = s.difficulty;
       if (typeof s.muted === 'boolean') this._settingsMuted = s.muted;
@@ -1771,6 +1836,7 @@ class Game {
         frameCap: this.frameCap,
         musicOn: this.musicOn !== false,
         screenShake: this.screenShake !== false,
+        quality: this.quality || 'auto',
         lives: Math.max(1, Math.min(4, this.lives)),
         difficulty: this.difficulty,
         muted: !!this.audio.muted,
@@ -1875,6 +1941,56 @@ class Game {
     const hadCtx = !!this.audio.ctx;
     this.audio.unlock?.();
     if (!hadCtx && this.audio.ctx) this._applyAudio();
+  }
+
+  /**
+   * 空闲预热音频上下文：`new AudioContext()` 在部分环境要 50~120ms，
+   * 提前到标题页空闲帧里付掉，第一个按键就不会卡一下。
+   * 预建失败（隐私模式 / 老浏览器）就退回「等手势再建」，与以前行为一致。
+   */
+  _prewarmAudio() {
+    if (this.audio.ctx) return;
+    try {
+      if (!this.audio.prewarm?.()) return;
+      // 只灌音量 / 静音 / 音效开关这类总线设置：BGM 的启动仍留给第一次手势后的
+      // unlock()，否则「听过的曲子」会在玩家还没真正听到时就被记进回忆室。
+      this.audio.setMuted?.(this._settingsMuted);
+      this.audio.setMusicVolume?.(this._settingsMusicVolume);
+      this.audio.setSfxVolume?.(this._settingsSfxVolume);
+      this.audio.setSfxEnabled?.(this._settingsSfxOn);
+      if (typeof window !== 'undefined') {
+        (window.__prewarmInfo || (window.__prewarmInfo = {})).audio = Math.round(performance.now());
+      }
+    } catch (e) {
+      // 预热失败不影响运行
+    }
+  }
+
+  /**
+   * 空闲分片预热弹幕精灵：每轮最多 6ms、最多 10 轮（200 个常见变体，实测 <15ms 烤完）。
+   * 单张精灵烘焙很便宜，但一帧里同时遇到几十个新变体就会顶出长帧。
+   */
+  _prewarmBulletSprites(rounds = 10, budgetMs = 6) {
+    if (this._spritePrewarmStarted) return;
+    this._spritePrewarmStarted = true;
+    let left = rounds;
+    const step = () => {
+      let done = true;
+      try {
+        done = prewarmSpriteCache({ budgetMs }).done;
+      } catch (e) {
+        done = true;   // 预热失败不影响运行：绘制时还会惰性烘焙
+      }
+      if (done) {
+        if (typeof window !== 'undefined') {
+          (window.__prewarmInfo || (window.__prewarmInfo = {})).spritesDone = true;
+        }
+        return;
+      }
+      if (--left > 0) setTimeout(step, 16);
+    };
+    // 标题揭幕后 1.5s 再开始：首屏先把自己的活干完
+    setTimeout(step, 1500);
   }
 
   /** 全局静音开关：引擎状态为准，同时同步持久化快照 */

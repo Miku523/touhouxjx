@@ -36,12 +36,39 @@ try {
   chk(p.title === '设置' && p.page === 'settings' && p.state === 'paused', 'C1 标题 S 进入设置页', {
     title: p.title, page: p.page, state: p.state,
   });
-  chk(p.buttons.length === 11, 'C2 设置页 11 个按钮（9 项 + 底部 2 项）', { n: p.buttons.length });
-  const wantRows = ['全部静音', '背景音乐', '音乐音量', '音效', '音效音量', '屏幕震动', '帧率上限', '残机', '按键设置', '重置进度', '返回标题'];
+  chk(p.buttons.length === 13, 'C2 设置页 13 个按钮（11 项 + 底部 2 项）', { n: p.buttons.length });
+  const wantRows = ['全部静音', '背景音乐', '音乐音量', '音效', '音效音量', '画质', '当前渲染', '屏幕震动', '帧率上限', '残机', '按键设置', '重置进度', '返回标题'];
   chk(JSON.stringify(p.buttons.map((b) => b.label)) === JSON.stringify(wantRows), 'C3 设置行标签顺序正确', p.buttons.map((b) => b.label));
-  chk(ui0[6].seg === '∞' && ui0[7].pips === 3 && ui0[0].sw === false, 'C4 默认 UI：帧率∞ / 3 残机 / 静音关', {
-    seg: ui0[6].seg, pips: ui0[7].pips, muteSw: ui0[0].sw,
+  chk(ui0[8].seg === '∞' && ui0[9].pips === 3 && ui0[0].sw === false, 'C4 默认 UI：帧率∞ / 3 残机 / 静音关', {
+    seg: ui0[8].seg, pips: ui0[9].pips, muteSw: ui0[0].sw,
   });
+
+  // ---- 画质档位（自动 / 高 / 低）----
+  let ri = await T.eval('window.__rendererInfo');
+  chk(ri.quality === 'auto' && ri.qualityPicked === (ri.softwareRaster ? 'low' : 'high'),
+    'C4a 默认画质=自动，档位跟随硬件检测', ri);
+  chk(ui0[5].seg === '自动' && /软件光栅|GPU 加速/.test(ui0[6].ctl || ''),
+    'C4b 只读行「当前渲染」显示渲染模式与档位', { seg: ui0[5].seg, ctl: ui0[6].ctl });
+
+  await T.key('KeyG'); await sleep(280);
+  ri = await T.eval('window.__rendererInfo');
+  let qs = await settingsSnap(T); let qui = await settingsUi(T);
+  chk(qs.quality === 'high' && ri.quality === 'high' && ri.postLevel === 2 && qui[5].seg === '高',
+    'C4c G 热键 → 画质高（后期全开 + UI 同步）', { quality: qs.quality, ri, seg: qui[5].seg });
+  chk(qs.settings?.quality === 'high', 'C4d 画质档位写盘 hks.settings.v1', qs.settings?.quality);
+
+  await T.key('ArrowLeft'); await sleep(280);   // 高 → 自动
+  qs = await settingsSnap(T); qui = await settingsUi(T);
+  chk(qs.quality === 'auto' && qui[5].seg === '自动', 'C4e ← 高 → 自动', { quality: qs.quality, seg: qui[5].seg });
+  await T.key('ArrowLeft'); await sleep(280);   // 自动 → 低
+  ri = await T.eval('window.__rendererInfo');
+  qs = await settingsSnap(T); qui = await settingsUi(T);
+  chk(qs.quality === 'low' && ri.quality === 'low' && ri.postLevel === 0 && qui[5].seg === '低',
+    'C4f ← 自动 → 低（后期全关 + UI）', { quality: qs.quality, ri, seg: qui[5].seg });
+  chk(ri.backing <= 1.25 + 1e-6, 'C4g 低画质 backing 压到 ≤1.25×', { backing: ri.backing });
+  await T.key('ArrowRight'); await sleep(280);  // 低 → 自动
+  qs = await settingsSnap(T);
+  chk(qs.quality === 'auto', 'C4h → 低 → 自动（轮换闭合）', { quality: qs.quality });
 
   // ---- 帧率上限 ----
   await clickText(T, '帧率上限');
@@ -49,18 +76,18 @@ try {
   let s = await settingsSnap(T);
   let ui = await settingsUi(T);
   await snapShot('51-frame-cap.png');
-  chk(s.frameCap === 60 && s.loopCap === 60 && ui[6].seg === '60', 'C5 点击帧率行 → 60（loop 同步 + UI）', {
-    frameCap: s.frameCap, loopCap: s.loopCap, seg: ui[6].seg,
+  chk(s.frameCap === 60 && s.loopCap === 60 && ui[8].seg === '60', 'C5 点击帧率行 → 60（loop 同步 + UI）', {
+    frameCap: s.frameCap, loopCap: s.loopCap, seg: ui[8].seg,
   });
   chk(s.settings?.frameCap === 60, 'C6 帧率 60 立即写盘 hks.settings.v1', s.settings);
   await T.key('KeyF'); await sleep(250);
   s = await settingsSnap(T); ui = await settingsUi(T);
-  chk(s.frameCap === 120 && s.loopCap === 120 && ui[6].seg === '120', 'C7 KeyF hotkey → 120', {
-    frameCap: s.frameCap, loopCap: s.loopCap, seg: ui[6].seg,
+  chk(s.frameCap === 120 && s.loopCap === 120 && ui[8].seg === '120', 'C7 KeyF hotkey → 120', {
+    frameCap: s.frameCap, loopCap: s.loopCap, seg: ui[8].seg,
   });
   await T.key('ArrowLeft'); await sleep(250);
   s = await settingsSnap(T); ui = await settingsUi(T);
-  chk(s.frameCap === 60 && ui[6].seg === '60', 'C8 ← 调整帧率档位 120→60', { frameCap: s.frameCap, seg: ui[6].seg });
+  chk(s.frameCap === 60 && ui[8].seg === '60', 'C8 ← 调整帧率档位 120→60', { frameCap: s.frameCap, seg: ui[8].seg });
 
   // ---- 音乐音量 ----
   const mv0 = initial.musicVolume;
@@ -95,13 +122,13 @@ try {
   await clickText(T, '残机');
   await sleep(250);
   s = await settingsSnap(T); ui = await settingsUi(T);
-  chk(s.lives === 4 && ui[7].pips === 4, 'C14 点击残机 3→4（pips 4）', { lives: s.lives, pips: ui[7].pips });
+  chk(s.lives === 4 && ui[9].pips === 4, 'C14 点击残机 3→4（pips 4）', { lives: s.lives, pips: ui[9].pips });
   chk(s.settings?.lives === 4, 'C15 残机写盘', s.settings);
   await T.key('ArrowLeft'); await sleep(160);
   await T.key('ArrowLeft'); await sleep(200);
   s = await settingsSnap(T); ui = await settingsUi(T);
-  chk(s.lives === 2 && ui[7].pips === 2 && s.settings?.lives === 2, 'C16 ←← 残机 4→2（UI+写盘）', {
-    lives: s.lives, pips: ui[7].pips, stored: s.settings?.lives,
+  chk(s.lives === 2 && ui[9].pips === 2 && s.settings?.lives === 2, 'C16 ←← 残机 4→2（UI+写盘）', {
+    lives: s.lives, pips: ui[9].pips, stored: s.settings?.lives,
   });
   await snapShot('52-settings-adjusted.png');
 
@@ -112,8 +139,8 @@ try {
   let ui2 = await settingsUi(T);
   chk(s2.frameCap === 60 && s2.lives === 2 && Math.abs(s2.musicVolume - mv1) < 1e-6,
     'C17 Esc 回标题再进设置：值保持一致', { frameCap: s2.frameCap, lives: s2.lives, musicVolume: s2.musicVolume });
-  chk(ui2[6].seg === '60' && ui2[7].pips === 2 && ui2[2].sldNum === `${Math.round(mv1 * 100)}%`,
-    'C18 再进设置 UI 一致', { seg: ui2[6].seg, pips: ui2[7].pips, vol: ui2[2].sldNum });
+  chk(ui2[8].seg === '60' && ui2[9].pips === 2 && ui2[2].sldNum === `${Math.round(mv1 * 100)}%`,
+    'C18 再进设置 UI 一致', { seg: ui2[8].seg, pips: ui2[9].pips, vol: ui2[2].sldNum });
 
   await reloadWait(T);
   await enterSettings(T);
@@ -123,8 +150,24 @@ try {
   chk(s2.lives === 2 && Math.abs(s2.musicVolume - mv1) < 1e-6, 'C20 reload 后残机 2 / 音乐音量保持', {
     lives: s2.lives, musicVolume: s2.musicVolume,
   });
-  chk(ui2[6].seg === '60' && ui2[7].pips === 2 && ui2[2].sldNum === `${Math.round(mv1 * 100)}%`,
-    'C21 reload 后设置 UI 与写盘一致', { seg: ui2[6].seg, pips: ui2[7].pips, vol: ui2[2].sldNum });
+  chk(ui2[8].seg === '60' && ui2[9].pips === 2 && ui2[2].sldNum === `${Math.round(mv1 * 100)}%`,
+    'C21 reload 后设置 UI 与写盘一致', { seg: ui2[8].seg, pips: ui2[9].pips, vol: ui2[2].sldNum });
+
+  // 画质档位也要跨 reload 记住（持久化字段 quality）
+  await T.key('KeyG'); await sleep(260);              // 自动 → 高
+  await T.key('KeyG'); await sleep(260);              // 高 → 低
+  const qLow = await settingsSnap(T);
+  chk(qLow.quality === 'low' && qLow.settings?.quality === 'low', 'C21a 设置低画质并写盘', qLow.quality);
+  await reloadWait(T);
+  await enterSettings(T);
+  const qRe = await T.eval('window.__rendererInfo');
+  const qUi = await settingsUi(T);
+  chk(qRe.quality === 'low' && qUi[5].seg === '低', 'C21b reload 后低画质保持（__rendererInfo + UI）', {
+    quality: qRe.quality, seg: qUi[5].seg,
+  });
+  await T.key('KeyG'); await sleep(280);              // 低 → 自动（恢复默认，别影响后续用例）
+  const qBack = await settingsSnap(T);
+  chk(qBack.quality === 'auto', 'C21c 恢复自动档', qBack.quality);
 
   // ---- 设置生效：开局 HUD 残机 / frameCap ----
   await toTitle(T);
@@ -161,6 +204,9 @@ try {
   await T.key('Escape'); await sleep(300);
   const pauseP = await pageInfo(T);
   chk(pauseP.title === '暂停', 'C30 Esc 打开暂停菜单', { title: pauseP.title });
+  await T.key('KeyQ'); await sleep(420);
+  const quitP = await pageInfo(T);
+  chk(quitP.title === '退出到标题', 'C30b 暂停菜单 Q 弹出退出确认', { title: quitP.title });
   await T.key('KeyQ'); await sleep(420);
   await waitTitle(T);
   await enterSettings(T);
@@ -289,8 +335,8 @@ try {
   chk(sAfter.settings?.frameCap === 60 && sAfter.settings?.lives === 2, 'D16 重置不影响设置（帧率/残机保留）', sAfter.settings);
   await T.key('KeyS'); await sleep(320);
   const sUi = await settingsUi(T);
-  chk(sUi.length === 9 && sUi[6].seg === '60' && sUi[7].pips === 2, 'D17 重置后设置页 UI 正常', {
-    rows: sUi.length, seg: sUi[6].seg, pips: sUi[7].pips,
+  chk(sUi.length === 11 && sUi[5].seg === '自动' && sUi[8].seg === '60' && sUi[9].pips === 2, 'D17 重置后设置页 UI 正常', {
+    rows: sUi.length, quality: sUi[5].seg, seg: sUi[8].seg, pips: sUi[9].pips,
   });
   await T.key('Escape'); await sleep(340);
   await waitTitle(T);

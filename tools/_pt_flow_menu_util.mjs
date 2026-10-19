@@ -118,6 +118,8 @@ export async function settingsSnap(T) {
     for (const a of acts) { const b = g.input.binds.get(a); binds[a] = { primary: b.primary, alt: b.alt }; }
     return {
       frameCap: g.frameCap, loopCap: g.loop?.frameCap,
+      quality: g.quality || 'auto',
+      rendererInfo: (() => { try { return window.__rendererInfo; } catch (e) { return null; } })(),
       musicOn: g.musicOn !== false, screenShake: g.screenShake !== false, lives: g.lives,
       difficulty: g.difficulty,
       muted: !!g.audio.muted, musicVolume: g.audio.musicVolume, sfxVolume: g.audio.sfxVolume,
@@ -143,6 +145,7 @@ export async function settingsUi(T) {
       sldWidth: r.querySelector('.sld i')?.style.width || '',
       pips: r.querySelectorAll('.pips i.on').length,
       seg: r.querySelector('.seg b.on')?.textContent || '',
+      ctl: (r.querySelector('.set-ctl')?.textContent || '').replace(/\s+/g, ' ').trim(),
       keycap: r.querySelector('.k')?.textContent || '',
       capturing: r.classList.contains('capturing'),
       cls: r.className,
@@ -264,10 +267,12 @@ export async function advanceToPlay(T, max = 80) {
   return (await T.eval('window.__game.state')) === 'play';
 }
 
-/** 从 play 回标题：Esc 暂停 → Q 退出到标题（暂停菜单 hotkey） */
+/** 从 play 回标题：Esc 暂停 → Q 打开退出确认 → Q 确认（二次确认后直接回标题） */
 export async function playToTitle(T) {
   await T.key('Escape');
   await sleep(220);
+  await T.key('KeyQ');
+  await sleep(260);
   await T.key('KeyQ');
   await sleep(350);
   await waitMenu(T, 8000).catch(() => {});

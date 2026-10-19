@@ -647,6 +647,52 @@ function getSprites(type, color, size) {
   return s;
 }
 
+/* ---------------- 空闲预热 ---------------- */
+
+/** 关卡 / Boss 里出现频率最高的弹幕颜色（粗取样后刻意保留冷暖各几支） */
+const PREWARM_COLORS = [
+  '#ffffff', '#ffd23f', '#ff5ea8', '#6ee7ff',
+  '#ff4d6a', '#ff8fa8', '#ffe9b0', '#bfeaff',
+];
+/** 常见判定半径（实际 draw 会 round 到整数，这里只烤整数档） */
+const PREWARM_SIZES = [4, 5, 6, 7, 8];
+
+/**
+ * 空闲预热精灵缓存：把最常见的 (类型, 颜色, 尺寸) 变体提前烘焙。
+ *
+ * 首次遇到新变体时要在主线程里烤两张渐变画布（实测约 0.06ms/张），
+ * 一帧里突然冒出几十个新变体就会顶出一次长帧。提前在标题 / 进关的空闲帧里
+ * 付掉这笔钱，budgetMs 之外的留给下一次空闲继续。
+ * @param {{types?:number[],colors?:string[],sizes?:number[],budgetMs?:number}} [opts]
+ * @returns {{baked:number,done:boolean}} baked=本次新烤数量，done=是否已经全烤完
+ */
+export function prewarmSpriteCache(opts = {}) {
+  const types = opts.types || [B_CIRCLE, B_RICE, B_BIG, B_STAR, B_LASER];
+  const colors = opts.colors || PREWARM_COLORS;
+  const sizes = opts.sizes || PREWARM_SIZES;
+  const budget = Number.isFinite(opts.budgetMs) ? opts.budgetMs : 4;
+  const total = types.length * colors.length * sizes.length;
+  let baked = 0;
+  let seen = 0;
+
+  const t0 = performance.now();
+  for (const type of types) {
+    for (const color of colors) {
+      for (const size of sizes) {
+        seen++;
+        const key = `${type}|${color}|${size}`;
+        if (spriteCache.has(key)) continue;
+        getSprites(type, color, size);
+        baked++;
+        if (performance.now() - t0 >= budget) {
+          return { baked, done: seen >= total };
+        }
+      }
+    }
+  }
+  return { baked, done: true };
+}
+
 /* ---------------- 弹幕池 ---------------- */
 
 function makeBullet() {

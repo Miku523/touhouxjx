@@ -67,6 +67,10 @@ export class Renderer {
     // 与其固定降质，不如量一下这次刷新到底花多久：贵就隔帧刷新（辉光本身是软的，
     // 30Hz/15Hz 的刷新肉眼看不出），便宜就每帧刷新，弱机与强机各自跑在自己的预算里。
     this.postLevel = this.lowSpec ? 0 : 2;   // 2=全开 1=关 bloom 0=关全部（软件光栅直接关全部后期）
+    // 画质档位：'auto' 跟随硬件检测，'high' / 'low' 由玩家强制覆盖（设置页可改）
+    this.quality = 'auto';
+    this.autoDegrade = true;     // 'high' 档时禁止自适应降档悄悄把辉光拿走
+    this.skipPost = 0;           // 首帧 / 切场景后跳过的后期帧数（跳帧不参与自适应判定）
     this.bloomEmaMs = 0;         // bloom 刷新耗时 EMA
     this._bloomTick = 0;
     this.bloomInterval = 1;      // 每 N 帧刷新一次
@@ -158,14 +162,70 @@ export class Renderer {
 
   /** 诊断信息快照（供测试断言，不影响渲染逻辑） */
   _syncInfo() {
+    const info = this.qualityInfo();
     window.__rendererInfo = {
       mode: this.lowSpec ? 'soft' : 'gpu',
       backing: this.backing,
       postLevel: this.postLevel,
       canvasW: this.canvas.width,
       canvasH: this.canvas.height,
+      // 画质档位的来源与结果：设置页 / 测试脚本都用这几个字段判断「降质是否可见」
+      quality: info.quality,
+      qualityPicked: info.picked,
+      qualityLabel: info.label,
+      hardware: info.hardware,
+      softwareRaster: !!this.softwareRaster,
+      bloom: this.postLevel >= 2,
     };
   }
+
+  /**
+   * 画质档位：'auto'（跟随硬件检测）/ 'high'（强制全后期 + 高倍超采样）/
+   * 'low'（强制低画质：关后期、backing 降到 1.0~1.25）。
+   * 设置页改档后立即生效：重建 backing store、重置 bloom 预热计数。
+   * @returns {{quality:string,picked:string,label:string,detail:string,hardware:string,backing:number,postLevel:number}}
+   */
+  setQuality(q) {
+    const mode = (q === 'high' || q === 'low') ? q : 'auto';
+    this.quality = mode;
+    const low = mode === 'low' || (mode === 'auto' && this.softwareRaster);
+    this.lowSpec = low;
+    // 玩家手选「高」时不再让自适应把辉光收走，否则「高」看起来跟「自动」一样
+    this.autoDegrade = mode !== 'high';
+    this.postLevel = low ? 0 : 2;
+    this._bloomWarm = 0;
+    this._bloomIdle = 0;
+    this._bloomDirty = true;
+    this.bloomEmaMs = 0;
+    this.bloomInterval = 1;
+    this._grainPattern = null;
+    this.fit();
+    this._syncInfo();
+    return this.qualityInfo();
+  }
+
+  /** 当前画质档位的人话描述：设置页只读行 + 诊断共用 */
+  qualityInfo() {
+    const auto = this.quality !== 'high' && this.quality !== 'low';
+    const hw = this.softwareRaster ? '软件光栅' : 'GPU 加速';
+    const post = this.postLevel >= 2 ? '辉光开' : (this.postLevel === 1 ? '辉光关' : '后期关');
+    const picked = auto ? (this.softwareRaster ? 'low' : 'high') : this.quality;
+    return {
+      quality: auto ? 'auto' : this.quality,
+      picked,
+      label: auto ? (this.softwareRaster ? '自动 → 低' : '自动 → 高') : (this.quality === 'high' ? '高（强制）' : '低（强制）'),
+      detail: `${hw} · ${this.backing.toFixed(2)}× · ${post}`,
+      hardware: this.softwareRaster ? 'software' : 'gpu',
+      backing: this.backing,
+      postLevel: this.postLevel,
+    };
+  }
+
+  /** 切场景 / 首帧：跳过 n 帧后期，把一次性的着色器与首帧成本挪出可见卡顿 */
+  skipPostFrames(n = 2) {
+    this.skipPost = Math.max(this.skipPost, Math.max(0, n | 0));
+  }
+
 
   /** 每帧绘制前重置状态，返回以逻辑坐标工作的 ctx */
   begin(bgColor) {
@@ -193,6 +253,8 @@ export class Renderer {
    */
   present(t = 0) {
     if (!this.postEnabled || this.postLevel === 0) return;
+    // 首帧 / 切场景后的几帧先不做后期：bloom 的读回与着色器冷启动最容易在这里顶出长帧
+    if (this.skipPost > 0) { this.skipPost--; return; }
     const ctx = this.ctx;
     const cw = this.canvas.width, ch = this.canvas.height;
 
@@ -290,14 +352,14 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** 用实测耗时决定 bloom 刷新间隔；贵到离谱就直接关掉 bloom 层 */
+  /** 用实测耗时决定 bloom 刷新间隔；贵到离谱就直接关掉 bloom 层（玩家手选「高」时不降档） */
   _tuneBloom(ms) {
     if (!(ms >= 0)) ms = 0;
     // 前两次刷新含着色器编译/布局预热，只用来估初值，不做降级判断
     if (this._bloomWarm < 2) {
       this._bloomWarm++;
       this.bloomEmaMs = ms;
-      if (this._bloomWarm === 2 && ms > 30) { this.postLevel = 1; this._syncInfo(); }  // 读回成本离谱，直接放弃 bloom
+      if (this.autoDegrade && this._bloomWarm === 2 && ms > 30) { this.postLevel = 1; this._syncInfo(); }  // 读回成本离谱，直接放弃 bloom
       return;
     }
     this.bloomEmaMs = this.bloomEmaMs > 0 ? this.bloomEmaMs * 0.7 + ms * 0.3 : ms;
@@ -307,7 +369,7 @@ export class Renderer {
     else if (e < 5) this.bloomInterval = 3;
     else this.bloomInterval = 4;
 
-    if (e > 10 && ++this._bloomIdle >= 3) { this.postLevel = 1; this._syncInfo(); }
+    if (this.autoDegrade && e > 10 && ++this._bloomIdle >= 3) { this.postLevel = 1; this._syncInfo(); }
   }
 
   /** 屏幕（client）坐标 -> 逻辑坐标，供鼠标/触摸用 */

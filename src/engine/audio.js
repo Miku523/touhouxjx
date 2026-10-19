@@ -74,27 +74,57 @@ export class AudioEngine {
   unlock() {
     // Node / 无浏览器环境下直接安全退出
     if (typeof window === 'undefined') return;
+    if (!this._ensureCtx()) return;
+    this._resumeCtx();
+  }
+
+  /**
+   * 空闲预热：赶在第一个用户手势之前把 AudioContext 建好。
+   *
+   * `new AudioContext()` 在不少环境要 50~120ms（音频后端初始化），如果拖到
+   * 「按 Enter 开始游戏」那一刻才建，玩家会看到一次明显卡顿。这里在标题页
+   * 的空闲帧里先付掉这笔钱：浏览器允许无手势创建，只是上下文处于 suspended，
+   * 真正发声仍要等手势里的 resume()。
+   * @returns {boolean} 上下文是否就绪
+   */
+  prewarm() {
+    return this._ensureCtx();
+  }
+
+  /** 建好 AudioContext 与各总线（幂等；失败静默，不影响游戏） */
+  _ensureCtx() {
+    if (typeof window === 'undefined') return false;
+    if (this.ctx) return true;
     const Ctor = window.AudioContext || window.webkitAudioContext;
-    if (!Ctor) return;
+    if (!Ctor) return false;
 
     try {
-      if (!this.ctx) {
-        this.ctx = new Ctor();
-        // 总输出：1.0；静音时拉到 0
-        this._master = this.ctx.createGain();
-        this._master.gain.value = this._muted ? 0 : 1;
-        this._master.connect(this.ctx.destination);
-        // 音效总线：独立音量与开关
-        this._sfxGain = this.ctx.createGain();
-        this._sfxGain.gain.value = this._sfxOn ? this._sfxVolume : 0;
-        this._sfxGain.connect(this._master);
-        // BGM 总线：整体再压一层，确保 BGM 足够轻
-        this._musicGain = this.ctx.createGain();
-        this._musicGain.gain.value = 0.9 * this._musicVolume;
-        this._musicGain.connect(this._master);
-        this._buildSoftBus();
-        this._ensureNoiseBuffer();
-      }
+      this.ctx = new Ctor();
+      // 总输出：1.0；静音时拉到 0
+      this._master = this.ctx.createGain();
+      this._master.gain.value = this._muted ? 0 : 1;
+      this._master.connect(this.ctx.destination);
+      // 音效总线：独立音量与开关
+      this._sfxGain = this.ctx.createGain();
+      this._sfxGain.gain.value = this._sfxOn ? this._sfxVolume : 0;
+      this._sfxGain.connect(this._master);
+      // BGM 总线：整体再压一层，确保 BGM 足够轻
+      this._musicGain = this.ctx.createGain();
+      this._musicGain.gain.value = 0.9 * this._musicVolume;
+      this._musicGain.connect(this._master);
+      this._buildSoftBus();
+      this._ensureNoiseBuffer();
+      return true;
+    } catch (e) {
+      // 音频初始化失败不应影响游戏
+      this.ctx = null;
+      return false;
+    }
+  }
+
+  /** 浏览器策略下 ctx 可能处于 suspended，需要 resume；unlock 之前请求过音乐则补启动 */
+  _resumeCtx() {
+    try {
       // 浏览器策略下 ctx 可能处于 suspended，需要 resume
       if (this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
         const p = this.ctx.resume();
@@ -103,8 +133,7 @@ export class AudioEngine {
       // unlock 之前请求过音乐，这里补启动
       if (this._musicRequested) this._startMusic();
     } catch (e) {
-      // 音频初始化失败不应影响游戏
-      this.ctx = null;
+      // 恢复失败保持静音，不影响游戏
     }
   }
 

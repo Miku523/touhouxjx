@@ -68,7 +68,7 @@ try {
   await T.key('KeyS'); await sleep(350);
   p = await pageInfo(T);
   chk(p.title === '设置' && p.page === 'settings' && p.state === 'paused', '标题按 S 进入设置页', p);
-  chk(p.buttons.length === 11, '设置页共 11 行（含重置进度与返回）', p.buttons.map((b) => b.label));
+  chk(p.buttons.length === 13, '设置页共 13 行（含画质/当前渲染、重置进度与返回）', p.buttons.map((b) => b.label));
   chk(p.hint.includes('ESC 返回'), '设置页 hint 提示 Esc 返回', p.hint);
   layoutLog['settings-1280'] = await layoutCheck(T);
   chk(layoutLog['settings-1280'].badCount === 0, '设置页 1280x720 无裁切/出界元素',
@@ -199,9 +199,12 @@ try {
   await T.key('Escape'); await sleep(400);
   p = await pageInfo(T);
   chk(p.title === '暂停', 'pause 来源的设置页 Esc 返回暂停菜单', p.title);
+  await T.key('KeyQ'); await sleep(420);
+  p = await pageInfo(T);
+  chk(p.title === '退出到标题', '暂停菜单按 Q 先弹二次确认（KeyQ 双语义）', p);
   await T.key('KeyQ'); await sleep(500);
   p = await pageInfo(T);
-  chk(p.title.includes('東方新紀行') && !p.overlayHidden, '暂停菜单按 Q 退出到标题（KeyQ 双语义）', p);
+  chk(p.title.includes('東方新紀行') && !p.overlayHidden, '确认页再按 Q 才退出到标题', p);
 
   consolePhases.play = await T.report();
   savePhase('difficulty+play+pause');

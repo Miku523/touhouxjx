@@ -2003,6 +2003,20 @@ body {
   border-top: 1px solid rgba(255, 255, 255, .045);
 }
 
+/* 只读信息行（设置页「当前渲染」）：左标题右数值，别居中成一句话，也无按钮手感 */
+.overlay.screen-mode .set-row.info {
+  justify-content: space-between;
+  cursor: default;
+  pointer-events: none;
+}
+.overlay.screen-mode .set-row.info .set-label { color: var(--dim); }
+.overlay.screen-mode .set-row.info .set-ctl {
+  color: rgba(242, 233, 216, .62);
+  font-size: calc(var(--s) * 11px);
+  letter-spacing: .04em;
+}
+.overlay.screen-mode .set-row.info .qinfo { white-space: nowrap; }
+
 /* ---------- 选中态：描金左柱，不再是一条红底 ---------- */
 .overlay.screen-mode .btn:hover,
 .overlay.screen-mode .btn.sel {
