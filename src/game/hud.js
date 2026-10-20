@@ -24,6 +24,10 @@ export class Hud {
     this.elBossName = document.getElementById('bossName');
     this.elBossPhase = document.getElementById('bossPhase');
     this.elBossFill = document.getElementById('bossFill');
+    // 符卡计时/模式行（spec 3.5）：只有带 limit 的卡（stage1-6）才显示，EXTRA 保持原样
+    this.elBossCardTimer = document.getElementById('bossCardTimer');
+    this.elBossCardMode = document.getElementById('bossCardMode');
+    this.elBossCardText = document.getElementById('bossCardText');
     this.elBanner = document.getElementById('banner');
 
     this._lives = -1;
@@ -42,6 +46,12 @@ export class Hud {
     this._time = -1;
     this._bossRatio = -1;
     this._bossName = '';
+    this._bossSurvive = false;
+    this._bossTimerShown = false;
+    this._bossTimerKey = '';
+    this._bossTimerModeLabel = '';
+    this._bossTimerPhase = '';
+    this._bossTimerAcc = 0;
     this._bannerT = 0;
     this._bannerDur = 0;
     this._bossVisible = false;
@@ -198,20 +208,40 @@ export class Hud {
         if (this.elBossName) this.elBossName.textContent = b.name;
       }
       // 符卡名 + 序号（如「难题「燕的子安贝 -永命线-」 · 7/8」）
-      const phaseLabel = b.spellCount > 1 ? `${b.phase} · ${b.spell}/${b.spellCount}` : b.phase;
+      // spell/spellCount 缺失时退回新字段 cardIndex(0 起)/cardTotal，避免老/新 stageState 混用时丢序号
+      const spellNo = Number.isFinite(b.spell)
+        ? b.spell
+        : (Number.isFinite(b.cardIndex) ? b.cardIndex + 1 : 0);
+      const spellTotal = Number.isFinite(b.spellCount)
+        ? b.spellCount
+        : (Number.isFinite(b.cardTotal) ? b.cardTotal : 0);
+      const phaseLabel = spellTotal > 1
+        ? `${b.phase || ''}${b.phase ? ' · ' : ''}${spellNo}/${spellTotal}`
+        : (b.phase || '');
       if (this.elBossPhase && this.elBossPhase.textContent !== phaseLabel) {
         this.elBossPhase.textContent = phaseLabel;
       }
-      const r = Math.round(b.ratio * 100);
+      // survival 卡 Boss 免疫伤害，血条填充改用 cardRatio（= 剩余时间比例），并给青蓝色 + SURVIVE 标记
+      const survival = b.mode === 'survival';
+      if (survival !== this._bossSurvive) {
+        this._bossSurvive = survival;
+        this.elBossBar?.classList.toggle('survive', survival);
+      }
+      const rawRatio = survival && Number.isFinite(b.cardRatio) ? b.cardRatio : b.ratio;
+      const r = Math.round((Number.isFinite(rawRatio) ? rawRatio : 0) * 100);
       if (r !== this._bossRatio) {
         this._bossRatio = r;
         if (this.elBossFill) this.elBossFill.style.width = r + '%';
       }
+      this._updateBossCardTimer(b, survival, dt);
     } else if (this._bossVisible) {
       this._bossVisible = false;
       this.elBossBar?.classList.add('hidden');
       this._bossRatio = -1;
       this._bossName = '';
+      this._setBossTimerVisible(false);
+      this._bossSurvive = false;
+      this.elBossBar?.classList.remove('survive');
     }
 
     // banner 淡出
@@ -221,6 +251,76 @@ export class Hud {
         this.elBanner?.classList.add('hidden');
         this.elBanner?.classList.remove('show');
       }
+    }
+  }
+
+  /**
+   * 符卡计时行（spec 3.5）：
+   * - damage 卡：「限时 剩余 12.4s」；超时后改成「超时 · 击破 +10 点」
+   * - survival 卡：「坚持 12.4s」+ SURVIVE 标记（血条填充在主 update 里换成 cardRatio）
+   * - limit 为空（EXTRA 等）：整行隐藏，保持原有 HUD 不变
+   * 文本按 10Hz 节流（默认 60fps 下每 6 帧最多写一次），并缓存上一次文案避免无谓 DOM 写入。
+   */
+  _updateBossCardTimer(b, survival, dt) {
+    if (!this.elBossCardTimer) return;
+    const limit = Number.isFinite(b.cardLimit) && b.cardLimit > 0 ? b.cardLimit : null;
+    if (!limit) {
+      this._setBossTimerVisible(false);
+      return;
+    }
+    this._setBossTimerVisible(true);
+    const elapsed = Number.isFinite(b.cardElapsed) ? Math.max(0, b.cardElapsed) : 0;
+    const remain = Number.isFinite(b.cardRemain)
+      ? Math.max(0, b.cardRemain)
+      : Math.max(0, limit - elapsed);
+    const over = !survival && elapsed > limit;
+    const phase = survival ? 'survival' : (over ? 'over' : 'damage');
+
+    // 超过 100ms 才刷新数值（10Hz）；但「换卡 / 换模式 / 刚开卡」这类离散状态变化立即生效
+    if (phase === this._bossTimerPhase) {
+      this._bossTimerAcc += dt;
+      if (this._bossTimerAcc < 0.1) return;
+    }
+    this._bossTimerAcc = 0;
+    this._bossTimerPhase = phase;
+
+    let key;
+    let text;
+    if (survival) {
+      key = `s:${elapsed.toFixed(1)}`;
+      text = `坚持 ${elapsed.toFixed(1)}s`;
+    } else if (over) {
+      key = 'over';
+      text = '超时 · 击破 +10 点';
+    } else {
+      key = `d:${remain.toFixed(1)}`;
+      text = `限时 剩余 ${remain.toFixed(1)}s`;
+    }
+    const modeLabel = survival ? 'SURVIVE' : '';
+    if (key === this._bossTimerKey && modeLabel === this._bossTimerModeLabel) return;
+    this._bossTimerKey = key;
+    this._bossTimerModeLabel = modeLabel;
+    if (this.elBossCardText) this.elBossCardText.textContent = text;
+    if (this.elBossCardMode) {
+      this.elBossCardMode.textContent = modeLabel;
+      this.elBossCardMode.classList.toggle('hidden', !modeLabel);
+    }
+    this.elBossCardTimer.classList.toggle('overtime', over);
+    this.elBossCardTimer.classList.toggle('survive', survival);
+  }
+
+  _setBossTimerVisible(show) {
+    if (show === this._bossTimerShown) return;
+    this._bossTimerShown = show;
+    this.elBossCardTimer?.classList.toggle('hidden', !show);
+    if (!show) {
+      // 归零缓存：下次开卡（或下一场 Boss 战）第一帧就能立刻写上正确文案
+      this._bossTimerKey = '';
+      this._bossTimerModeLabel = '';
+      this._bossTimerPhase = '';
+      this._bossTimerAcc = 0;
+      this.elBossCardTimer?.classList.remove('overtime', 'survive');
+      if (this.elBossCardMode) this.elBossCardMode.classList.add('hidden');
     }
   }
 
@@ -246,7 +346,10 @@ export class Hud {
     this._bossVisible = false;
     this._bossRatio = -1;
     this._bossName = '';
+    this._bossSurvive = false;
+    this._setBossTimerVisible(false);
     this.elBossBar?.classList.add('hidden');
+    this.elBossBar?.classList.remove('survive');
   }
 
   /** POWER 浮字：短促提示涨/降与火力等级变化 */

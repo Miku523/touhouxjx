@@ -100,6 +100,14 @@ const MONSTER_SPAWN = {
   moon: { perScreen: 2.18, groundRatio: 1.84 },
 };
 
+/**
+ * P 点（火力道具）掉落率倍率。
+ * 0.5 = 掉落总量砍半；配合 POWER.pickup = 3，把前两面的火力总供给
+ * 压在「满打满吃约 2.8 条满槽」附近：P 变稀少，但每一颗都能看见血条跳一截。
+ * 想整体调稠/调稀只改这一个数（1 = 恢复旧密度）。
+ */
+export const P_DROP_SCALE = 0.5;
+
 class Builder {
   constructor(gen) {
     this.gen = gen;
@@ -127,6 +135,9 @@ class Builder {
   rnd() { return this.rng(); }
   ri(a, b) { return a + Math.floor(this.rng() * (b - a + 1)); }
   chance(p) { return this.rng() < p; }
+
+  /** P 点掉落判定 = 原始概率 × P_DROP_SCALE（掉落率统一走这里） */
+  pDrop(base) { return this.rng() < base * P_DROP_SCALE; }
 
   /* ---------- 基础写入 ---------- */
   set(cx, cy, ch) {
@@ -317,7 +328,7 @@ class Builder {
       if (px + pw > c0 + len - 1) break;
       this.platform(px, y, pw);
       this.coins(px, y - 1, pw);
-      if (this.chance(0.2)) this.power(px + 1, y - 1);
+      if (this.pDrop(0.2)) this.power(px + 1, y - 1);
       px += pw + this.ri(2, 3);
       y = Math.max(2, y - this.ri(2, 3));
     }
@@ -508,7 +519,7 @@ class Builder {
     if (flat >= 3) {
       this.bed(c0 + used, flat, bottom);
       this.coins(c0 + used + 1, bottom - 1, Math.min(4, flat - 1));
-      if (this.chance(0.5)) this.power(c0 + used + Math.floor(flat / 2), bottom - 1);
+      if (this.pDrop(0.5)) this.power(c0 + used + Math.floor(flat / 2), bottom - 1);
       used += flat;
     }
     if (used < len) this.slope(c0 + used, len - used, base);
@@ -673,7 +684,7 @@ class Builder {
       this.platform(c0 + px, t - 2, 3);
       this.coins(c0 + px, t - 3, 3);
     }
-    if (this.chance(0.5)) this.power(c0 + 2, t - 1);
+    if (this.pDrop(0.5)) this.power(c0 + 2, t - 1);
     return len;
   }
 
@@ -740,7 +751,7 @@ class Builder {
       if (i < w - 2) this.set(c0 + 2 + i, row - 1, DIRT);
     }
     this.coins(c0 + 3, base - 2, Math.min(4, w - 2));
-    if (this.chance(0.5)) this.power(c0 + 4, base - 2);
+    if (this.pDrop(0.5)) this.power(c0 + 4, base - 2);
     return len;
   }
 
@@ -823,7 +834,7 @@ class Builder {
       }
       const t = this.top[c];
       if (this.chance(0.55)) this.coins(c, t - 2, this.ri(2, 4));
-      if (this.chance(0.30)) this.power(c + 1, t - 1);
+      if (this.pDrop(0.30)) this.power(c + 1, t - 1);
     }
 
     // 小怪刷点：先收集合法地面格，再按「每屏目标数」等距取样（旧版按列随机步进，各面波动 ±15%）。

@@ -40,7 +40,9 @@ export const DIFFICULTIES = {
     cn: '昨日行',
     stageCount: 5,
     unlockExtra: false,
-    trimHardCards: [4, 5],
+    // 2026-10-20 逐卡限时改造：每张符卡都有独立时长与结算奖励，裁卡会让 Boss 少卡/缺 finale，
+    // 因此 E/N 不再裁掉高血量符卡（时长改由 bossTuning.js 的逐卡 limit 控制）。
+    trimHardCards: [],
     hpScale: 0.85,
     // 弹幕：弹数砍掉三成多、弹速压到八成，开火间隔拉长
     bulletCountScale: 0.64,
@@ -65,7 +67,8 @@ export const DIFFICULTIES = {
     cn: '现在行',
     stageCount: 6,
     unlockExtra: true,
-    trimHardCards: [4, 5, 6],
+    // 同上：逐卡限时改造后取消 N 的裁卡，保证每张符卡都能被玩家看到并结算
+    trimHardCards: [],
     hpScale: 1,
     // 弹幕：比满配略稀一点点，弹速保持正常
     bulletCountScale: 0.96,

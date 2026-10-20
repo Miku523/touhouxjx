@@ -21,6 +21,10 @@ import { scalePlayerDamage } from './balance.js';
 import { StgPlayer, StgStage } from './stg.js';
 import { POWER, powerLevel } from './power.js';
 import { drawSky, drawParallax, drawTiles, drawAmbient } from '../art/scenes.js';
+// 符卡表现层：卡面叠加（屏幕空间）与逐卡玩家效果，只有纯函数、不反向 import stage，
+// 所以这里静态引入不会形成循环依赖（docs/BOSS_TIMING_SPEC.md §3.4）。
+import { drawCardFx } from './cardfx.js';
+import { updateCardEffect } from './cardEffects.js';
 
 /**
  * EXTRA 关的时间轴（秒）。
@@ -39,7 +43,7 @@ export const EXTRA_TIMELINE = Object.freeze({
   midbossKey: 'remilia', // 中途 Boss 的键：时间轴与「再战」共用，别两处写死
   midbossAt: 180,   // 3:00 雷米莉亚
   finalAt: 360,     // 6:00 芙兰登场（中途 Boss 击破后还有 3 分钟道中）
-  retryPower: 12,   // 中途 / 终盘再战时的起手火力（Lv.4 缺一颗，别让复习从零开始）
+  retryPower: 48,   // 中途 / 终盘再战时的起手火力（Lv.4 起手，别让复习从零开始）
 });
 
 /* ------------------------------------------------------------------
@@ -122,6 +126,15 @@ const TIME_SHIFT = {
 
 export const VIEW_W = 1280;
 export const VIEW_H = 720;
+
+// 符卡卡面暗幕的「玩家亮区半径」（px）：spec §3.4 要求 darkSpot 在玩家周围留 150–180px 亮区。
+// 注意 cardfx.js 里 playerR 是亮区半径（r1 ≈ 2.5×，做柔边），不是判定半径，
+// 所以这里不能用 playerHitPoint.r（只有几像素，会把整屏糊黑）。
+const CARD_FX_LIGHT_R = 168;
+
+// 「萤火虫之夜」黑暗处是否连 Boss/敌弹/自机弹一起藏掉（用户 2026-10-21 要求：黑暗处不可见）。
+// 改成 false 就退回旧行为：暗幕只压世界层，Boss 与弹幕始终可见（可读性优先）。
+const DARKSPOT_HIDE_ENTITIES = true;
 
 /* ---------- 离屏精灵：拾取物 / 检查点（零图片，运行时只 drawImage） ---------- */
 const _spriteCache = new Map();
@@ -410,6 +423,9 @@ export class Stage {
     // 进出关卡时由 main.js 带着走，跨关不清零（否则 99 点永远攒不满）。
     this.extendPts = Math.max(0, Math.min(POWER.extend - 1, opts.extendPts || 0));
     this.extendCount = 0;
+    // 上一帧施加过的符卡玩家效果键：Boss 退场/切出时用它补一次 'none' 复位，
+    // 避免移速类修饰残留到下一张卡或结算之后（见 update() 里的调用）。
+    this._cardEffectKey = null;
     this.deathT = 0; // 死亡→复活倒计时（用逻辑帧计时，暂停/切后台时冻结）
 
     // 崩落砖：0 待机 / 1 抖动（踩上 0.5s 后塌）/ 2 消失（3s 后复原）
@@ -535,6 +551,21 @@ export class Stage {
     const p = this.player;
     p.shootCd = Math.max(0, (p.shootCd || 0) - dt);
 
+    // 逐卡玩家效果（docs/BOSS_TIMING_SPEC.md §3.3）：必须在本帧玩家移动之前施加，
+    // 否则移速/判定半径这类修饰会晚一帧生效。effect 只在当前符卡内有效：
+    // battle 期间每帧推进（空键传 'none'，让实现有机会把上一张卡的修饰复位），
+    // Boss 不在 battle 时若之前施加过效果，补一帧 'none' 收尾。
+    const cardEff = this.boss
+      ? (this.boss.state === 'battle' ? (this.boss.cardEffect || 'none') : null)
+      : null;
+    if (cardEff) {
+      updateCardEffect(p, cardEff, dt);
+      this._cardEffectKey = cardEff;
+    } else if (this._cardEffectKey) {
+      updateCardEffect(p, 'none', dt);
+      this._cardEffectKey = null;
+    }
+
     // 符卡：输入与 POWER 扣除由玩家类处理（Player / StgPlayer 都会 emit 'cast'），
     // 这里只负责在收到事件后清弹幕、结算伤害，避免同一次按键被扣两次 POWER。
 
@@ -591,6 +622,9 @@ export class Stage {
           this.camera.shake(14, 0.4);
           this.onEvent('bossPhase', { phase: i, name });
         },
+        // 限时符卡结算（spec §3.2）：Boss 在「血条打空 / 生存到点」时回调一次，
+        // 只报结果不碰奖励；POWER/残机/1UP 记账统一在 stage 侧完成。
+        onCardResult: (res) => this._onBossCardResult(res),
       });
       if (this.bossMid) {
         // 中途 Boss 被击破：不算过关，清场后继续推道中
@@ -980,6 +1014,38 @@ export class Stage {
       this.fx.burst(hp.x, hp.y, '#ffd23f', 18, 420);
       this.onEvent('extend', { lives: p.lives, count: this.extendCount });
     }
+  }
+
+  /**
+   * 限时符卡结算（docs/BOSS_TIMING_SPEC.md §2 规则 4/5、§3.3）。
+   * boss.js 只报「这张卡结束 + 是否按时」，奖励与 1UP 记账全部在 stage 侧完成：
+   *  - ok（按时打完）：火力未满 → +POWER.perLevel（走 _addPower，顺带推进 1UP 进度）；
+   *                  火力已满 → 残机 +1（走 _addExtend 的既有 1UP 通道，表现/事件全复用）。
+   *  - !ok（超时没打完）：+10 点 extend 进度，即既有「99 点 → 1 命」的奖励系统。
+   * 最后一张卡也会正常结算，之后 boss 自己进入 defeat（stage 不改它的状态机）。
+   */
+  _onBossCardResult(res) {
+    if (!res) return;
+    const p = this.player;
+    if (!p) return;
+    let reward;
+    if (res.ok) {
+      if ((p.power || 0) >= (p.maxPower || POWER.max)) {
+        // 满槽转残机：用 _addExtend(POWER.extend) 而不是手写 lives/maxLives，
+        // 这样冲击波/音效/extend 事件（main.js 的 1UP 横幅）与拾取满 99 点走同一条路径；
+        // extendPts 恒为 0..98 的余数，+99 恰好只 +1 命，已有进度不丢。
+        this._addExtend(POWER.extend);
+        reward = 'life';
+      } else {
+        this._addPower(POWER.perLevel);
+        reward = 'power';
+      }
+    } else {
+      this._addExtend(10);
+      reward = 'points';
+    }
+    // reward 交给 main.js 决定横幅文案：'power'（+火力）/ 'life'（1UP）/ 'points'（+10 点 extend）
+    this.onEvent('cardResult', { ...res, reward });
   }
 
   _onPlayerEvent(ev) {
@@ -1643,6 +1709,37 @@ export class Stage {
     // STG 敌机
     if (this.mode === 'stg') this.stg.draw(ctx);
 
+    // 符卡卡面叠加（cardfx.js，spec §3.3/§3.4）。
+    // 位置在 Boss / 玩家 / 自机弹 / 敌弹之前：世界层（地形、道具、敌人）泡在卡面气氛里，
+    // 但 Boss、玩家和弹幕永远画在暗幕之上——否则「萤火虫之夜」的全屏暗幕会把敌弹盖住，
+    // 玩家在亮区外完全看不见判定，卡就变成不可读而非难。窗口/天气类 fx 在弹幕下层也更自然。
+    if (this.boss && this.boss.state === 'battle') {
+      const cardFxKey = this.boss.cardFx;
+      if (cardFxKey && cardFxKey !== 'none') {
+        const hp = this.playerHitPoint;
+        // camera.apply 只做 translate(-round(cam.x), -round(cam.y))，而 cam.viewAt() 已含震屏 ox/oy：
+        // 在 world 变换里再 translate 回来，就能用屏幕坐标绘制卡面层，同时保留外层 DPR 缩放。
+        const sx = Math.round(cam.x);
+        const sy = Math.round(cam.y);
+        const px = hp.x - sx;
+        const py = hp.y - sy;
+        ctx.save();
+        if (Number.isFinite(px) && Number.isFinite(py)) {
+          ctx.translate(sx, sy);
+          drawCardFx(ctx, cardFxKey, {
+            w: VIEW_W,
+            h: VIEW_H,
+            px,
+            py,
+            playerR: CARD_FX_LIGHT_R,
+            time: this.t,
+            accent: this.boss.cardAccent,
+          });
+        }
+        ctx.restore();
+      }
+    }
+
     // Boss
     if (this.boss) this.boss.draw(ctx, this.t);
 
@@ -1661,6 +1758,30 @@ export class Stage {
     this.fx.draw(ctx);
 
     ctx.restore();
+
+    // 「萤火虫之夜」二次压暗：亮区之外的 Boss / 敌弹 / 自机弹一律不可见（用户要求「黑暗处不可见」）。
+    // 第一次绘制在 Boss/弹幕之前，只让世界层泡在暗里；这一层盖在它们之上，亮区中心是透明的，
+    // 所以玩家周围仍全亮，亮区外连血条敌弹都藏进黑里——只留环境萤火（drawAmbient 在这之后画）。
+    if (DARKSPOT_HIDE_ENTITIES
+      && this.mode === 'platform'
+      && this.boss && this.boss.state === 'battle' && this.boss.cardFx === 'darkSpot') {
+      const hp2 = this.playerHitPoint;
+      const px2 = hp2.x - cam.x;
+      const py2 = hp2.y - cam.y;
+      if (Number.isFinite(px2) && Number.isFinite(py2)) {
+        ctx.save();
+        drawCardFx(ctx, 'darkSpot', {
+          w: VIEW_W,
+          h: VIEW_H,
+          px: px2,
+          py: py2,
+          playerR: CARD_FX_LIGHT_R,
+          time: this.t,
+          accent: this.boss.cardAccent,
+        });
+        ctx.restore();
+      }
+    }
 
     // STG 玩家在屏幕坐标绘制
     if (this.mode === 'stg') {
@@ -2089,6 +2210,22 @@ export class Stage {
           spellCount: this.boss.spellCount,
           ratio: this.boss.hpRatio,
           phases: this.boss.phaseCount,
+          // ---- 限时符卡（docs/BOSS_TIMING_SPEC.md §3.3）----
+          // 字段来自 boss.js；Lead 的 boss.js 改动未合入时全部走兜底，
+          // HUD 靠 cardLimit == null 判断「本卡没有限时」，不显示计时条。
+          // 注意 cardIndex 按 spec 用 0-based spellIdx；1-based 的显示序号仍看上面的 spell。
+          // 只有 battle 中才显示计时行：intro 演出 / defeat 收尾时计时不推进，别显示冻住的倒计时。
+          mode: this.boss.mode || 'damage',
+          cardLimit: this.boss.state === 'battle' ? (this.boss.cardLimit ?? null) : null,
+          cardElapsed: this.boss.cardElapsed || 0,
+          cardRemain: this.boss.cardRemain ?? null,
+          cardRatio: this.boss.cardRatio ?? this.boss.hpRatio,
+          cardFx: this.boss.cardFx || 'none',
+          cardEffect: this.boss.cardEffect || 'none',
+          cardAccent: this.boss.cardAccent || this.boss.def.accent || '#b48cff',
+          cardIndex: this.boss.spellIdx || 0,
+          cardTotal: this.boss.spellCount || 0,
+          lastResult: this.boss.lastCardResult || null,
         }
         : null,
     };

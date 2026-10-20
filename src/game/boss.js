@@ -22,6 +22,11 @@ import { BOSS_INFO } from '../art/roster.js';
 import { drawGenBoss, ensureBossArt, bossArtHeight, bossArtReady } from '../art/genboss.js';
 import { getDifficulty, bossPhasesFor, scaleBossHp, stageDensityOf } from './difficulty.js';
 import { scalePlayerDamage } from './balance.js';
+// 逐卡限时 / 生存模式 / 卡面数据（28 张符卡的目标时长与创作数据）
+import { cardTuningFor } from './bossTuning.js';
+// 创造模式弹幕设计（每卡专属 pattern 表 + 自定义弹型注册表）
+import { patternsFor } from './bossPatternDesigns.js';
+import { CUSTOM_PATTERNS } from './bossBullets.js';
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -96,14 +101,17 @@ function firePattern(p, boss, api, fireT) {
   const py = api.py;
   const pat = boss._pat;
   const wild = boss.wild;
-  const color = p.color || boss.accent;
+  // 卡面主色（创造模式逐卡配色）：没写逐卡色才回落到角色主色
+  const color = p.color || boss.cardAccent || boss.accent;
   const r = p.r || 6;
   const life = p.life || 7;
   const type = p.type !== undefined ? p.type : 0;
 
-  // 速度：招式变体倍率 + 每发小抖动，再夹到难度给出的单发速度上限
+  // 速度：招式变体倍率 + 每发小抖动，再夹到难度给出的单发速度上限。
+  // 逐卡弹速倍率（如文「风神少女」的加速卡）允许把上限放宽 15%，保证「明显更快」手感。
+  const speedCap = boss.speedCap * ((boss.cardSpeedMul || 1) > 1 ? 1.15 : 1);
   const varySpeed = (base, k = 1) =>
-    Math.min(boss.speedCap, Math.max(20, (base || 120) * pat.speedScale * k * boss.rnd(0.9, 1.08)));
+    Math.min(speedCap, Math.max(20, (base || 120) * pat.speedScale * k * (boss.cardSpeedMul || 1) * boss.rnd(0.9, 1.08)));
   // 瞄准抖动：wild 越高越飘，但上限 0.2 rad（约 11°），不会变成无解散射
   const aimJitter = clamp(0.04 + wild * 0.09, 0.04, 0.2);
   const aim = () => Math.atan2(py - boss.y, px - boss.x) + boss.rnd(-aimJitter, aimJitter);
@@ -116,6 +124,21 @@ function firePattern(p, boss, api, fireT) {
     const n = count(base, lo, hi);
     return clamp(n, lo, Math.min(hi, boss.ringLimit));
   };
+
+  // 创造模式自定义弹型：注册在 bossBullets.js 的 CUSTOM_PATTERNS 里，
+  // 命中即整招交给自定义实现；统一 helpers 保证弹数预算 / 环缝 / 弹速上限这些护栏仍然生效。
+  const customFn = p.typeName ? CUSTOM_PATTERNS[p.typeName] : null;
+  if (typeof customFn === 'function') {
+    try {
+      customFn(p, boss, {
+        bullets: b, px, py, color, r, life, type, pat, wild, fireT,
+        helpers: { TAU, clamp, rnd: (a, b) => boss.rnd(a, b), rndInt: (a, b) => boss.rndInt(a, b), aim, varySpeed, count, ringN },
+      }, fireT);
+    } catch (e) {
+      if (typeof console !== 'undefined' && console.warn) console.warn('[boss] custom pattern failed', p.typeName, e);
+    }
+    return;
+  }
 
   if (p.typeName === 'ring') {
     const n = ringN(p.n || 12, 1, 56);
@@ -956,6 +979,45 @@ export class Boss {
       .map((p) => ({ ...p, hp: Math.max(1, Math.round((Number(p.hp) || def.hp) * hpMul)) }));
     this.phases = scaleBossHp(trimmed, this.difficulty, def.hp * hpMul);
 
+    /* ---------- 逐卡数据：限时 / 生存模式 / 卡面特效 / 密度与弹速倍率 ----------
+     * 数据来自 bossTuning.js（28 张符卡的目标时长）与 bossPatternDesigns.js（创造模式弹幕表）。
+     * 有逐卡 dps 设定了目标时长，就反推出该卡血量：
+     *   目标有效血量 = limit × dps（不乘难度血量倍率，保证限时奖励跨难度公平）；
+     * 生存卡不吃 dps（Boss 不可击破，只按时间切卡），保留原有血量做血条底。
+     */
+    const tune = cardTuningFor(this.key);
+    this.cardTune = tune;
+    const tuneCards = tune && Array.isArray(tune.cards) ? tune.cards : null;
+    if (tuneCards) {
+      for (let i = 0; i < this.phases.length && i < tuneCards.length; i++) {
+        const ph = this.phases[i];
+        const t = tuneCards[i];
+        if (!ph || !t) continue;
+        const limit = Number(t.limit);
+        const dps = Number(t.dps);
+        const mode = t.mode === 'survival' ? 'survival' : 'damage';
+        if (mode === 'damage' && Number.isFinite(dps) && dps > 0 && Number.isFinite(limit) && limit > 0) {
+          // 逐卡限时卡的时长必须跨难度一致：若再乘 hpScale，Easy 会提前 ~15%、Hard 必然
+          // 超时 ~15%，限时奖励在 Hard 上系统性拿不到。难度差异交给弹幕预算/弹速承担。
+          ph.hp = Math.max(1, Math.round(limit * dps));
+        }
+        ph.mode = mode;
+        ph.limit = Number.isFinite(limit) && limit > 0 ? limit : null;
+        ph.fx = t.fx || null;
+        ph.accent = t.accent || null;
+        ph.effect = t.effect || null;
+        ph.densityMul = Number(t.densityMul) > 0 ? Number(t.densityMul) : 1;
+        ph.speedMul = Number(t.speedMul) > 0 ? Number(t.speedMul) : 1;
+        // 弹幕：优先用创造模式的逐卡设计，否则保留 BOSS_DEFS 原表
+        if (Array.isArray(t.patterns) && t.patterns.length) {
+          ph.patterns = t.patterns;
+        } else {
+          const pats = patternsFor(this.key, i);
+          if (Array.isArray(pats) && pats.length) ph.patterns = pats;
+        }
+      }
+    }
+
     // 总血量 = 实际（可能被难度裁掉难符卡后的）各符卡血量之和，避免与独立的
     // def.hp 倍率算出 ±1 的误差，也让 E/N 裁卡后 maxHp 与实际要打的血量一致。
     this.maxHp = Math.max(1, this.phases.reduce((a, p) => a + p.hp, 0));
@@ -1013,6 +1075,19 @@ export class Boss {
     this.fireT = 0;
     this._nextRate = 1;
     this._pat = null;
+    // 逐卡计时 / 生存模式 / 卡面（constructor 末尾由 _applyCard(0) 套用第一张卡）
+    this._baseDensity = this.density;
+    this.mode = 'damage';        // damage | survival
+    this.cardLimit = null;       // 限时（秒）；null = 不限时（EXTRA 等）
+    this.cardElapsed = 0;        // 本卡已用时间（符卡宣言无敌结束后开始累计）
+    this.cardRemain = null;      // 剩余秒数
+    this.cardRatio = 1;          // 本卡进度：damage = 血条剩余；survival = 坚持进度
+    this.cardFx = null;          // 卡面特效 key（cardfx.js）
+    this.cardEffect = null;      // 玩家效果 key（cardEffects.js）
+    this.cardAccent = def.accent;
+    this.cardSpeedMul = 1;
+    this.lastCardResult = null;  // 最近一张卡的结算快照（验收 / 调试可读）
+    this._cardResultCb = null;
     // 延迟弹幕队列：meteor / mine 这类「先飞、再爆/分裂」的招用它排队。
     // 只存纯数据 + 闭包，全部由本 Boss 的确定性 firePattern 产生，无随机源外泄。
     this._laterQ = [];
@@ -1090,6 +1165,7 @@ export class Boss {
     this._coreFlash = 0;
 
     // 开场也是随机一招，背板第一招不再固定
+    this._applyCard(0);
     this._startPattern(this.rndInt(0, this.phases[0].patterns.length - 1));
   }
 
@@ -1159,6 +1235,71 @@ export class Boss {
   get hpRatio() {
     if (this.spellMaxHp <= 0) return 0;
     return Math.max(0, this.spellHp / this.spellMaxHp);
+  }
+
+  /* ---------------- 逐卡限时 / 生存模式 ---------------- */
+
+  /**
+   * 进入第 i 张符卡：套用该卡的限时 / 生存 / 卡面 / 密度与弹速倍率。
+   * constructor 与 _advanceSpell 共用，保证首卡与后续卡行为完全一致。
+   */
+  _applyCard(i) {
+    const ph = this.phases[i] || {};
+    this.mode = ph.mode === 'survival' ? 'survival' : 'damage';
+    const lim = Number(ph.limit);
+    this.cardLimit = Number.isFinite(lim) && lim > 0 ? lim : null;
+    this.cardElapsed = 0;
+    this.cardRemain = this.cardLimit;
+    this.cardFx = ph.fx || null;
+    this.cardEffect = ph.effect || null;
+    this.cardAccent = ph.accent || this.def.accent;
+    this.cardSpeedMul = Number(ph.speedMul) > 0 ? Number(ph.speedMul) : 1;
+    // 逐卡弹量倍率：只乘弹数（nScale / armScale），不碰弹速
+    this.density = this._baseDensity * (Number(ph.densityMul) > 0 ? Number(ph.densityMul) : 1);
+    if (ph.name) {
+      this.spellName = ph.name;
+      this.phaseName = ph.name;
+    }
+    this.spellMaxHp = Math.max(1, Number(ph.hp) || this.spellMaxHp || 100);
+    this.spellHp = this.spellMaxHp;
+    this.cardRatio = 1;
+  }
+
+  /** 每帧推进卡计时；生存卡到点即置 spellBroken，走统一切卡流程（= 玩家坚持成功） */
+  _tickCardTimer(dt, opts) {
+    if (opts && typeof opts.onCardResult === 'function') this._cardResultCb = opts.onCardResult;
+    this.cardElapsed += dt;
+    if (this.mode === 'survival') {
+      if (this.cardLimit) {
+        this.cardRemain = Math.max(0, this.cardLimit - this.cardElapsed);
+        this.cardRatio = clamp(1 - this.cardElapsed / this.cardLimit, 0, 1);
+        // 兼容旧的 hpRatio 血条读数：生存卡把血条画成「坚持进度」
+        this.spellHp = Math.max(0, this.spellMaxHp * this.cardRatio);
+        if (this.cardElapsed >= this.cardLimit) this.spellBroken = true;
+      } else {
+        this.cardRemain = null;
+        this.cardRatio = 1;
+      }
+      return;
+    }
+    this.cardRemain = this.cardLimit != null ? Math.max(0, this.cardLimit - this.cardElapsed) : null;
+    this.cardRatio = this.spellMaxHp > 0 ? clamp(this.spellHp / this.spellMaxHp, 0, 1) : 0;
+  }
+
+  /** 本卡结算快照：damage 卡在限时内打空才算成功；生存卡坚持到点即成功 */
+  _cardResultSnapshot() {
+    const limit = this.cardLimit;
+    let ok = true;
+    if (this.mode !== 'survival' && limit != null) ok = this.cardElapsed <= limit + 1e-6;
+    return {
+      index: this.spellIdx,
+      name: this.spellName,
+      mode: this.mode,
+      ok,
+      elapsed: Number(this.cardElapsed.toFixed(3)),
+      limit,
+      last: this.spellIdx >= this.phases.length - 1,
+    };
   }
 
   /* ---------------- 招式随机化 ---------------- */
@@ -1354,6 +1495,18 @@ export class Boss {
    * 切入时清屏 + 0.6 秒符卡宣言无敌，并重抽招式。
    */
   _advanceSpell(bullets, fx, opts) {
+    // 结算当前卡：必须在切卡前快照（限时内打空 = 成功；生存卡坚持到点 = 成功）
+    const result = this._cardResultSnapshot();
+    this.lastCardResult = result;
+    // 只有带逐卡调参数据的 Boss（stage1–6）才上报结算：EXTRA（remilia / flandre）保持旧行为，
+    // 既不显示限时、也不发限时奖励（用户要求 EXTRA 本轮不动）。
+    if (this.cardTune && typeof this._cardResultCb === 'function') {
+      try {
+        this._cardResultCb(result);
+      } catch (e) {
+        if (typeof console !== 'undefined' && console.warn) console.warn('[boss] onCardResult failed', e);
+      }
+    }
     this.spellBroken = false;
     // 切卡 / 击败会清屏，延迟弹幕队列也一并作废（否则旧壳弹会在新卡里炸开）
     this._flushLater();
@@ -1380,10 +1533,8 @@ export class Boss {
     this.spellIdx++;
     this.phase = this.spellIdx;
     const next = phases[this.spellIdx];
-    this.spellName = next.name;
-    this.phaseName = next.name;
-    this.spellMaxHp = next.hp || 100;
-    this.spellHp = this.spellMaxHp;
+    // 套用新卡数据（限时 / 生存 / 卡面 / 密度·弹速倍率），并重置血条与计时
+    this._applyCard(this.spellIdx);
     this.spellLock = 0.6;
 
     // 新符卡重新随机抽招 + 立刻换位
@@ -1404,6 +1555,8 @@ export class Boss {
   /** 受到伤害：扣当前符卡血条，打空只置标记（切卡在 update 里统一处理） */
   damage(d) {
     if (this.state !== 'battle' || this.spellLock > 0) return false;
+    // 生存卡：Boss 不可击破，玩家只能坚持到计时结束（射击 / 踩踏 / 冲撞全部无效）
+    if (this.mode === 'survival') return false;
     // 破势硬直是全伤害加成窗口：把「攒破势」变成正反馈
     if (this.staggerT > 0) d *= 1.7;
     this.spellHp -= d;
@@ -1471,6 +1624,9 @@ export class Boss {
       this.spellLock = Math.max(0, this.spellLock - dt);
       return;
     }
+
+    // 卡计时（符卡宣言结束后才开始）：damage 卡只记超时评级，生存卡到点自动切卡
+    this._tickCardTimer(dt, opts);
 
     // 破势硬直：前 0.35 秒坠地，之后停在原地不动、不开火、不结算接触伤害
     if (this.staggerT > 0) {
@@ -1585,6 +1741,8 @@ export class Boss {
   /** 玩家子弹命中检测 */
   damageWithShots(shots, fx, onHit) {
     if (this.state !== 'battle' || !shots) return;
+    // 生存卡里射击不结算伤害/破势/核心，避免玩家误以为「在削血」
+    if (this.mode === 'survival') return;
     const hw = this.w * 0.46;
     const hh = this.h * 0.78;
     // 传 this 作为 targetRef：穿透弹对 Boss 也只结算一次（同一条弹不会连续帧反复削血）

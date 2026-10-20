@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>符卡 fx / 效果预览 —— HKS</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #07080d; color: #e8ecf5; font: 14px/1.5 "Microsoft YaHei", system-ui, sans-serif; }
+  header { padding: 14px 18px 8px; }
+  h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; letter-spacing: .04em; }
+  .hint { color: #8b93a7; font-size: 12px; }
+  .wrap { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 14px; padding: 10px 18px 22px; align-items: start; }
+  .panel { background: #0d1019; border: 1px solid #1e2433; border-radius: 10px; padding: 12px; }
+  .panel h2 { margin: 0 0 8px; font-size: 13px; color: #9fb0d0; font-weight: 600; letter-spacing: .06em; }
+  #stage { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; border: 1px solid #232a3c; display: block; cursor: crosshair; }
+  .fxgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  button { appearance: none; border: 1px solid #263048; background: #121828; color: #cfd8ea; border-radius: 7px; padding: 6px 8px; font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
+  button:hover { border-color: #3b4c72; background: #172036; }
+  button.on { border-color: #6f8fd8; background: #1b2745; color: #fff; }
+  button .tag { display: block; color: #7f8ca6; font-size: 10px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12px; color: #aab6cd; }
+  .kv b { color: #e8ecf5; font-weight: 500; }
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  th, td { padding: 4px 6px; border-bottom: 1px solid #1b2232; text-align: left; vertical-align: top; }
+  th { color: #7f8ca6; font-weight: 500; }
+  .sw { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 6px; }
+  .sw button { display: flex; align-items: center; gap: 6px; padding: 4px 6px; font-size: 11px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 0 8px currentColor; }
+  #err { display: none; margin: 0 18px; padding: 12px 14px; border: 1px solid #5c2a2a; background: #1a0f10; color: #f0b6b6; border-radius: 9px; white-space: pre-wrap; font-size: 13px; }
+  #err code { color: #ffd479; }
+  .muted { color: #78839b; }
+</style>
+</head>
+<body>
+<header>
+  <h1>符卡画面 fx / 玩家效果预览</h1>
+  <div class="hint">左栏点 fx 切换 · 鼠标在画布上移动 = 玩家位置（darkSpot 亮区会跟着走）· 空格暂停 · 点色块换主色</div>
+</header>
+<div id="err"></div>
+<div class="wrap">
+  <div>
+    <div class="panel">
+      <h2>FX_KEYS（cardfx.js）</h2>
+      <div class="fxgrid" id="fxbtns"></div>
+      <div class="row">
+        <button id="pause">暂停 / 继续</button>
+        <button id="reset">回到中心</button>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <h2>EFFECT_KEYS（cardEffects.js）</h2>
+      <table id="efftable"><thead><tr><th>key</th><th>move</th><th>判定</th><th>开火</th></tr></thead><tbody></tbody></table>
+      <div class="hint" style="margin-top:8px">数值为倍率 / 判定增量；所有效果切走即还原。</div>
+    </div>
+  </div>
+  <div class="panel">
+    <canvas id="stage" width="1280" height="720"></canvas>
+    <div class="kv" style="margin-top:10px">
+      <span>当前 fx</span><b id="curfx">darkSpot</b>
+      <span>主色 accent</span><b id="curcol">#a8ff8f</b>
+      <span>玩家位置</span><b id="curpos">640, 600</b>
+      <span>状态</span><b id="curstate">running</b>
+    </div>
+    <h2 style="margin-top:14px">28 卡主色（点击 = 把该卡 accent 用到预览）</h2>
+    <div class="sw" id="accents"></div>
+    <div class="hint" id="cardhint" style="margin-top:8px">点击色块查看该卡的 fx / effect 建议。</div>
+  </div>
+</div>
+
+<script type="module">
+/* ============================================================
+   动态 import：预览页允许 file:// 直接打开（此时 import 会失败，
+   给出「起一个本地 http 服务」的提示，而不是白屏）。
+   ============================================================ */
+let drawCardFx = null;
+let FX_KEYS = [];
+let EFFECT_INFO = {};
+let effectStats = () => null;
+
+try {
+  const fx = await import('../src/game/cardfx.js');
+  drawCardFx = fx.drawCardFx;
+  FX_KEYS = fx.FX_KEYS || [];
+} catch (e) {
+  const box = document.getElementById('err');
+  box.style.display = 'block';
+  box.innerHTML =
+    '无法 import ../src/game/cardfx.js（浏览器禁止 file:// 的模块加载）。\n' +
+    '请在项目根目录起一个本地静态服务后访问本页，例如：\n\n' +
+    '    cd ' + location.pathname.replace(/\/tools\/.*$/, '') + '\n' +
+    '    python -m http.server 8080\n\n' +
+    '然后打开 <code>http://127.0.0.1:8080/tools/fx_preview.html</code>。\n\n' +
+    '原始错误：' + (e && e.message ? e.message : e);
+}
+try {
+  const eff = await import('../src/game/cardEffects.js');
+  EFFECT_INFO = eff.EFFECT_INFO || {};
+  effectStats = eff.effectStats || effectStats;
+} catch (_) { /* fx 已失败时上面已提示，这里静默 */ }
+
+/* ============================================================
+   28 卡清单（与 docs/BOSS_CREATIVE_DESIGN.md 一致）
+   ============================================================ */
+const CARDS = [
+  ['露米娅', '宵暗「月之暗面」', '#b48cff', 'moon', '—'],
+  ['露米娅', '暗符「黑暗吞噬」', '#8f6bd8', 'night', 'devourPull'],
+  ['莉格露', '灯符「萤火虫现象」', '#a8ff8f', 'fireflies', '—'],
+  ['莉格露', '蠢符「小虫风暴」', '#a8ff8f', 'fireflies', '—'],
+  ['莉格露', '隐虫「萤火虫之夜」', '#a8ff8f', 'darkSpot', 'darkSpot'],
+  ['琪露诺', '冰符「冰柱落下」', '#bfeaff', 'hail', '—'],
+  ['琪露诺', '雹符「冰雹风暴」', '#bfeaff', 'hail', '—'],
+  ['琪露诺', '冻符「完美冻结」', '#a8e8ff', 'freeze', 'frostSlide'],
+  ['琪露诺', '雪符「钻石风暴」', '#bfeaff', 'freeze', 'diamondFocus'],
+  ['射命丸文', '风符「风神一扇」', '#ff9a9a', 'wind', '—'],
+  ['射命丸文', '疾风「风神少女」', '#ff6b6b', 'wind', 'tailwind'],
+  ['射命丸文', '岐符「天之八衢」', '#ff9a9a', 'wind', '—'],
+  ['射命丸文', '风神「天狗颪」', '#ff6b6b', 'wind', '—'],
+  ['射命丸文', '「幻想风靡」', '#ff6b6b', 'wind', 'stormEye'],
+  ['西行寺幽幽子', '幽雅「死出诱蛾灯」', '#ffa8d8', 'night', '—'],
+  ['西行寺幽幽子', '蝶符「花之舞」', '#ffa8d8', 'petals', '—'],
+  ['西行寺幽幽子', '蝶符「死蝶之华尔兹」', '#ffa8d8', 'petals', '—'],
+  ['西行寺幽幽子', '亡乡「亡我乡 -宿罪-」', '#ffa8d8', 'night', 'sinGravity'],
+  ['西行寺幽幽子', '冥符「常夜樱」', '#ff8fd0', 'petals', '—'],
+  ['西行寺幽幽子', '反魂蝶「八分咲」', '#ffa8d8', 'petals', 'bloomGrace'],
+  ['蓬莱山辉夜', '难题「龙颈之玉 -五色的弹丸-」', '#ffe9b0', 'moon', 'jewelGaze'],
+  ['蓬莱山辉夜', '神宝「耀眼的龙玉」', '#fff8d0', 'night', '—'],
+  ['蓬莱山辉夜', '难题「佛御石之钵 -不碎的意志-」', '#fff8d0', 'darkVeil', '—'],
+  ['蓬莱山辉夜', '神宝「佛体的金刚石」', '#fff8d0', 'freeze', '—'],
+  ['蓬莱山辉夜', '难题「火鼠的皮衣 -不焦躁的内心-」', '#ffe9b0', 'voidFlame', '—'],
+  ['蓬莱山辉夜', '神宝「火蜥蜴之盾」', '#ffe9b0', 'voidFlame', '—'],
+  ['蓬莱山辉夜', '难题「燕之子安贝 -不死之药-」', '#ffe9b0', 'wind', '—'],
+  ['蓬莱山辉夜', '神宝「蓬莱的玉枝 -梦色之乡-」', '#ffe9b0', 'fairyDust', 'dreamBough'],
+];
+
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+let fxKey = 'darkSpot';
+let accent = '#a8ff8f';
+let px = 640, py = 600;
+let time = 0;
+let paused = false;
+let last = performance.now();
+
+const POOL = FX_KEYS.length ? FX_KEYS : ['none', 'darkSpot', 'fireflies', 'hail', 'wind', 'petals', 'night'];
+
+/* ---------- fx 按钮 ---------- */
+const btns = document.getElementById('fxbtns');
+POOL.forEach((k) => {
+  const b = document.createElement('button');
+  b.dataset.key = k;
+  b.innerHTML = k + '<span class="tag">' + (k === 'darkSpot' ? '全屏黑 + 玩家周围亮' : k) + '</span>';
+  b.onclick = () => { fxKey = k; syncBtns(); };
+  btns.appendChild(b);
+});
+function syncBtns() {
+  [...btns.children].forEach((b) => b.classList.toggle('on', b.dataset.key === fxKey));
+  document.getElementById('curfx').textContent = fxKey;
+  document.getElementById('curcol').textContent = accent;
+}
+syncBtns();
+
+/* ---------- accent 色块 ---------- */
+const sw = document.getElementById('accents');
+CARDS.forEach(([boss, name, col, fx, eff], i) => {
+  const b = document.createElement('button');
+  b.innerHTML = '<span class="dot" style="background:' + col + ';color:' + col + '"></span>' + boss.replace('西行寺', '').replace('蓬莱山', '') + '·' + (i + 1);
+  b.title = name;
+  b.onclick = () => {
+    accent = col;
+    if (POOL.includes(fx)) fxKey = fx;
+    document.getElementById('curcol').textContent = col;
+    document.getElementById('cardhint').textContent =
+      '第 ' + (i + 1) + ' 卡 ' + name + ' → fx: ' + fx + ' / effect: ' + eff +
+      (eff !== '—' && EFFECT_INFO[eff] ? '（' + EFFECT_INFO[eff] + '）' : '');
+    syncBtns();
+  };
+  sw.appendChild(b);
+});
+
+/* ---------- effect 表 ---------- */
+const tbody = document.querySelector('#efftable tbody');
+Object.keys(EFFECT_INFO).forEach((k) => {
+  const s = effectStats(k);
+  const tr = document.createElement('tr');
+  tr.innerHTML = '<td>' + k + '</td><td>' + (s && s.moveMul != null ? '×' + s.moveMul : '—') +
+    '</td><td>' + (s && s.hitAdd != null ? (s.hitAdd > 0 ? '+' : '') + s.hitAdd : '—') +
+    '</td><td>' + (s && s.fireMul != null ? '×' + s.fireMul : '—') + '</td>';
+  tr.title = (s && s.note) || '';
+  tbody.appendChild(tr);
+});
+
+/* ---------- 鼠标 = 玩家位置 ---------- */
+function toCanvas(e) {
+  const r = canvas.getBoundingClientRect();
+  px = ((e.clientX - r.left) / r.width) * W;
+  py = ((e.clientY - r.top) / r.height) * H;
+  document.getElementById('curpos').textContent = Math.round(px) + ', ' + Math.round(py);
+}
+canvas.addEventListener('pointermove', toCanvas);
+canvas.addEventListener('pointerdown', toCanvas);
+document.getElementById('reset').onclick = () => { px = W / 2; py = H * 0.8; document.getElementById('curpos').textContent = px + ', ' + py; };
+document.getElementById('pause').onclick = () => {
+  paused = !paused;
+  document.getElementById('curstate').textContent = paused ? 'paused' : 'running';
+};
+addEventListener('keydown', (e) => { if (e.code === 'Space') { e.preventDefault(); document.getElementById('pause').click(); } });
+
+/* ---------- 主循环 ---------- */
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (!paused) time += dt;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#05060a';
+  ctx.fillRect(0, 0, W, H);
+
+  if (drawCardFx) {
+    try {
+      drawCardFx(ctx, fxKey, { w: W, h: H, px, py, playerR: 160, time, accent });
+    } catch (err) {
+      ctx.fillStyle = '#f0b6b6';
+      ctx.font = '16px monospace';
+      ctx.fillText('fx ' + fxKey + ' 绘制出错: ' + err.message, 24, 36);
+    }
+  } else {
+    ctx.fillStyle = '#8b93a7';
+    ctx.font = '16px monospace';
+    ctx.fillText('未能加载 cardfx.js（请用 http 服务打开本页）', 24, 36);
+  }
+
+  // 玩家位置十字标（预览用，游戏内没有）
+  ctx.strokeStyle = 'rgba(255,255,255,.55)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(px, py, 18, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(px - 26, py); ctx.lineTo(px - 8, py);
+  ctx.moveTo(px + 8, py); ctx.lineTo(px + 26, py);
+  ctx.moveTo(px, py - 26); ctx.lineTo(px, py - 8);
+  ctx.moveTo(px, py + 8); ctx.lineTo(px, py + 26);
+  ctx.stroke();
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
