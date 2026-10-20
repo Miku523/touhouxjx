@@ -540,10 +540,10 @@ function firePattern(p, boss, api, fireT) {
  * 所以整体血量上调 10% 抵掉这部分额外伤害，Boss 战时长仍按原来数量级。
  * 只乘 Boss 本体，不动杂兵 / 道中（那套走 balance.js 的 ENEMY_HP_SCALE）。
  *
- * 单个 Boss 想单独拉长 / 缩短，在它的 def 上写 `hpMul`（绝对倍率，不再乘全局）即可，
- * 用来对齐「目标单场时长」：下方各 Boss 的 hpMul 是按 docs/BALANCE_TARGETS.md 表 1 的
- * Boss-only 秒数（1面128s / 2面163s / 3面198s / 4面210s / 5面245s / 6面280s）反推的，
- * 口径 = 自动玩家 / god / Normal / --startX 直达 Boss 场。EX（芙兰、蕾米莉亚）不按主线加长。
+ * 单个 Boss 想单独拉长 / 缩短，在它的 def 上写 `hpMul`（绝对倍率，不再乘全局）即可。
+ * 原标定：按 docs/BALANCE_TARGETS.md 表 1 的 Boss-only 秒数反推（口径 = 自动玩家 / god /
+ * Normal / --startX 直达 Boss 场）。试玩反馈「Boss 血量偏高」后六面统一 ×0.8（每面 −20%），
+ * 不再锁定 70% 时长占比；EX（芙兰、蕾米莉亚）不参与本次下调。
  */
 export const BOSS_HP_MUL = 1.1;
 
@@ -552,7 +552,7 @@ export const BOSS_DEFS = {
      每张符卡独立血条（phases[i].hp），弹幕参数随符卡序号递增，难度有序。 */
 
   rumia: {
-    name: '露米娅', title: '宵暗的妖怪', hp: 1920, accent: '#c9a6ff', hpMul: 15.92, // 目标单场 ≈128s（1面；2张卡各≈63/65s）
+    name: '露米娅', title: '宵暗的妖怪', hp: 1920, accent: '#c9a6ff', hpMul: 12.74, // 目标单场 ≈108s（1面；2张卡各≈53/55s）
     phases: [
       {
         name: '宵暗「月之暗面」', hp: 950, patterns: [
@@ -574,7 +574,7 @@ export const BOSS_DEFS = {
   },
 
   wriggle: {
-    name: '莉格露', title: '暗中蠢动的光虫', hp: 2880, accent: '#8ef07a', hpMul: 13.77, // 目标单场 ≈163s（2面；3张卡各≈45/54/63s）
+    name: '莉格露', title: '暗中蠢动的光虫', hp: 2880, accent: '#8ef07a', hpMul: 11.02, // 目标单场 ≈138s（2面；3张卡各≈36/43/50s）
     phases: [
       {
         name: '灯符「萤火虫现象」', hp: 800, patterns: [
@@ -606,7 +606,7 @@ export const BOSS_DEFS = {
   },
 
   cirno: {
-    name: '琪露诺', title: '冰之妖精', hp: 4120, accent: '#7fd8ff', hpMul: 11.24, // 目标单场 ≈198s（3面；4张卡各≈40/46/52/60s）
+    name: '琪露诺', title: '冰之妖精', hp: 4120, accent: '#7fd8ff', hpMul: 8.99, // 目标单场 ≈157s（3面；4张卡各≈32/37/42/48s）
     phases: [
       {
         name: '冰符「冰柱落下」', hp: 840, patterns: [
@@ -645,7 +645,7 @@ export const BOSS_DEFS = {
   },
 
   aya: {
-    name: '射命丸文', title: '最速的记者', hp: 5720, accent: '#ff6b6b', hpMul: 8.90, // 目标单场 ≈210s（4面 STG 互动收益高、整关实测偏快 ~11%，按 8.90 标定；N 裁掉一张后3张卡各≈49/56/63s）
+    name: '射命丸文', title: '最速的记者', hp: 5720, accent: '#ff6b6b', hpMul: 7.12, // 目标单场 ≈177s（4面；N 裁掉一张后3张卡各≈39/45/50s）
     phases: [
       {
         name: '风符「风神一扇」', hp: 880, patterns: [
@@ -690,7 +690,7 @@ export const BOSS_DEFS = {
 
   yuyuko: {
     name: '西行寺幽幽子', title: '幽冥楼阁的亡灵少女', hp: 9650, accent: '#ffa8d8',
-    hpMul: 7.24, // 目标单场 ≈245s（5面；N 裁掉一张后5张卡各≈39/44/49/54/60s）
+    hpMul: 5.79, // 目标单场 ≈193s（5面；N 裁掉一张后5张卡各≈31/35/39/43/48s）
     phases: [
       {
         name: '幽雅「死出诱蛾灯」', hp: 1200, patterns: [
@@ -741,7 +741,7 @@ export const BOSS_DEFS = {
   },
 
   kaguya: {
-    name: '蓬莱山辉夜', title: '永远与须臾的罪人', hp: 16520, accent: '#ffe9b0', hpMul: 4.52, // 目标单场 ≈280s（6面；N 裁掉「蓬莱的玉枝」后7张卡各≈40s）
+    name: '蓬莱山辉夜', title: '永远与须臾的罪人', hp: 16520, accent: '#ffe9b0', hpMul: 3.62, // 目标单场 ≈223s（6面；N 裁掉「蓬莱的玉枝」后7张卡各≈32s）
     phases: [
       {
         name: '难题「龙颈之玉 -五色的弹丸-」', hp: 1900, patterns: [

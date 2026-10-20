@@ -105,3 +105,11 @@ node tools/_sim_player.mjs --stage 0 --diff N --god 1 --maxSteps 60000 --out _pt
 2. lead 集成：起服务器 + `_sim_player` 全流程 + 截图，检查无 console error、无卡死。
 3. verifier 独立复跑（不改 src）：7 条逐项 PASS/FAIL + 回归（流程、性能、EX）。
 4. lead 写 `docs/QA_BALANCE_REPORT.md` 收尾，不提交 git（用户未要求）。
+
+## 6. 追加调整（2026-10-20 晚，用户试玩反馈）
+
+用户反馈「Boss 血量下降」，并明确「不锁时长」。据此：
+
+- 六个主线 Boss 的 `hpMul` 统一 ×0.8（每面 −20%），EX（芙兰 / 蕾米莉亚）不动；`poiseMax 140`、互动机制、非 EX 密度 ×1.18 均保持不变。
+- 第 1 节的「道中 30% : Boss 70%」不再作为验收约束；按新血量，占比约 64–66%（道中未改）。
+- 新增验收：主线 Boss 血量落「首版 ×0.8 ±1%」，破势次数仍 2–4 次/场，同屏峰值 ≤ 难度预算；实测数据见 `docs/QA_BALANCE_REPORT.md` 第 8 节。
