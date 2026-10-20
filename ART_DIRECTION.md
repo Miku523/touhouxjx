@@ -4,6 +4,8 @@
 不是换风格、不是换玩法；是把**细节密度、光照层次、色彩关系、动感、画面质感**做到位。
 玩家第一眼的评价标准是「这画面值不值得我玩」，请按这个标准动手。
 
+> **2026-10-20 更新：人物一律 AI 立绘。** 已删除 `src/art/chars.js`、`src/art/bosses.js`、`src/assets/sprites.js` 及所有矢量小人预览页 / 备份；`src/art/roster.js` 只保留 Boss 文案数据。自机、Boss、对白、妖精全部走 `src/art/gen/` 的 AI 素材，缺图时只铺柔光，不再回退任何程序化人物轮廓。回归守卫：`python tools/check_no_vector_people.py`。
+
 ---
 
 ## 一、当前画面为什么显得劣质（逐条对症）
@@ -54,11 +56,11 @@
 
 ## 三、硬性技术约束
 
-- **零依赖、零构建；程序化为主，允许预生成插画**：天空 / 地形 / 角色 / 弹幕仍全部 Canvas2D 程序化绘制；标题背景与标题 / 对白立绘使用 `src/art/gen/` 下的预生成图片，加载后只做 `drawImage`，禁止每帧滤镜或重绘。
+- **零依赖、零构建；场景程序化，人物全 AI 立绘**：天空 / 地形 / 弹幕 / 道具 / 场景装饰仍用 Canvas2D 程序化绘制；标题背景、自机动作帧、Boss 战斗立绘、对白立绘、妖精全部使用 `src/art/gen/` 下的 AI 生成图片，加载后只做 `drawImage`，禁止每帧滤镜或重绘。人物不再有程序化矢量 / 剪影回退——未就绪时只铺柔光占位。
 - **不得改变现有导出签名与数据结构**（调用方在本轮不重写）：
   - `scenes.js`: `drawSky(ctx, theme, cam, t)`、`drawParallax(ctx, theme, cam, t)`、`drawTiles(ctx, level, cam, t)`、`drawAmbient(ctx, theme, cam, t)`、`THEMES`
-  - `chars.js`: `drawCharacter(ctx, o)`、`CHAR_INFO`、`CHAR_BOX`；`o` 字段见文件内注释
-  - `bosses.js`: `drawBoss(ctx, o)`、`drawPortrait(ctx, o)`、`BOSS_INFO`、`BOSS_BOX`
+  - `roster.js`: `BOSS_INFO`（纯数据：名称 / 称号 / 主题色 / 主题）
+  - 人物绘制：`genchars.js` / `genboss.js` / `genfairy.js`，缺图时绘制函数返回 `false`，调用方只铺柔光
   - `bullets.js`: `BulletPool` 全部公开方法；`B_*` 常量
   - `playerShots.js`: `PlayerShots` 全部公开方法
   - `fx.js`: `Fx` 全部公开方法
@@ -101,12 +103,12 @@ P4：HUD / 标题 / 对话框排版
 目标：角色与 Boss 在背景里「读得出来」——尺寸够大、轮廓与背景分离、动作对得上、Boss 立绘不崩。
 
 - `src/art/genchars.js`（重写）
-  - 新增动作帧 `run/<char>_idle.png`、`_jump.png`、`_fall.png`、`_fly.png`（`tools/gen_char_poses.py` 以 `run_0` 为身份参考图生图，ARK Seedream；缺帧自动回退 run 帧 → 程序化 `chars.js`）。
+  - 新增动作帧 `run/<char>_idle.png`、`_jump.png`、`_fall.png`、`_fly.png`（`tools/gen_char_poses.py` 以 `run_0` 为身份参考图生图，ARK Seedream；缺帧自动回退 run 帧，不再回退程序化 `chars.js`）。
   - `DRAW_H` 92 → **104**；按 **alpha 包围盒**归一化 + 脚底中心对齐，240×252 与 260×268 混用也能贴地；`POSE_RATIO` = jump .93 / fall .97 / fly .86。
   - 加载时一次性预处理：去抠图半透明白边、纯白剪影（受击闪白）、暗贴纸 halo（alpha .55）、上缘受光 rim（`lighter` alpha .42，偏移 -1.1/-1.5）；接地椭圆阴影只在踏地状态画。
   - 手感：起跳拉长 / 落地压扁（`SQUASH_K` .20，以脚底为轴，不影响 56×56 碰撞盒）；idle 呼吸浮动、run 随步频轻颠，跑动帧率 8–14fps 随速度提升。
 - `src/game/stg.js`（飞行关自机）
-  - 自机改用同一套 AI 帧 `state:'fly'` + 随横移前倾（`rot = clamp(vx*0.00035, ±0.1)`，脚底对齐 y+38），与平台关角色不再两种画风；AI 帧未就绪时仍回退 `drawCharacter`。
+  - 自机改用同一套 AI 帧 `state:'fly'` + 随横移前倾（`rot = clamp(vx*0.00035, ±0.1)`，脚底对齐 y+38），与平台关角色不再两种画风；AI 帧未就绪时只铺主色柔光，不画任何人物轮廓。
 - `src/art/genboss.js`（重写）
   - 重做三张崩坏立绘（`tools/gen_boss_battle.py`，以对话立绘 `src/art/gen/<key>.png` 为身份参考）：`boss/rumia.png`（原白棍腿）、`boss/cirno.png`（原冰翼糊/脸脏）、`boss/aya.png`（原脸糊成一团）。旧图备份 `_p2_backup/boss_prev/`。
   - `DRAW_H` 236 + `BOSS_H` 逐角色视觉身高（rumia 242 / wriggle 254 / cirno 250 / aya 244 / yuyuko 236 / kaguya 238 / flandre 240），修正妖精系显小、长裙系显大。
@@ -171,7 +173,7 @@ EXTRA 关改成「14 分钟长道中 + 5:00 中途 Boss（雷米莉亚）+ 14:00
 - 战斗立绘 `src/art/gen/boss/remilia.png`（`tools/gen_boss_action.py remilia`，POSE_OVERRIDE 出「无弹幕、无血雾、无武器」的干净版，选 `_cand/remilia-2clean.png`）：
   - 首轮版本带血枪与血雾，进游戏后弹幕和特效叠在一起读不出脸，故重出一版「只有人 + 翼」的干净构图；血枪留给符卡演出，不烧进立绘。
   - `src/art/genboss.js`：`KEYS` 加 `remilia`，`BOSS_H.remilia = 236`（翼展比芙兰宽，身高压一点，头顶才不会顶到 Boss 血条）。
-- 对白：`src/game/dialogue.js` 的 `AI_PORTRAITS` 加 `remilia`，`CHAR_NAMES` 已有条目 → 雷米莉亚可以开口，不再回退灵梦矢量头像。
+- 对白：`src/game/dialogue.js` 的 `AI_PORTRAITS` 加 `remilia`，`CHAR_NAMES` 已有条目 → 雷米莉亚可以开口，不再出现矢量头像。
 - 文案（`src/game/story.js` 的 `STORY.extra.midBoss` / `midBossOut`）：按正作性格写——大小姐口吻、端着架子又孩子气、护着妹妹、输赢都要体面；开打前 9 句（含「五分零七秒」「打完请你喝茶」），击破后 7 句（认输、放行、留茶会位子），`midBossOut` 由 `main.js` 在「MID BOSS CLEAR」横幅后 1.8s 用 `_after()` 排进对话，避免盖住横幅。
-- 场景兼容：程序化 `bossRemilia`（`src/art/bosses.js`）保留为**图未加载时的 fallback**，实机已走 AI 图。
+- 场景兼容：`src/art/bosses.js` 已删除，`remilia` 实机与预览都只走 AI 图 `src/art/gen/boss/remilia.png`，没有任何程序化 fallback。
 - 验收截图：`_boss-art.png`（实机战斗立绘）、`_flow-3-mid-dialogue.png`（战前对话 + 立绘）、`_flow-6-midout.png`（击破后台词）、`_flow-5-midclear.png`（中途击破横幅）；`node tools/_qa_map.mjs` 全绿。

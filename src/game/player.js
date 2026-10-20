@@ -13,8 +13,7 @@
  * 尺寸基准：tile = 32px。碰撞盒 28x56（约 1.75 格高），视觉角色约 3 格高（大头 chibi）。
  */
 import { T } from './level.js';
-import { drawCharacter } from '../art/chars.js';
-import { drawGenChar, DRAW_H } from '../art/genchars.js';
+import { drawGenChar, drawCharAura, DRAW_H } from '../art/genchars.js';
 import { drawHitbox } from '../art/hitbox.js';
 import { POWER, powerLevel, canSpell, spendPower } from './power.js';
 
@@ -573,7 +572,7 @@ export class Player {
       alpha: a,
       scale: 1,
     };
-    if (!drawGenChar(ctx, charOpts)) drawCharacter(ctx, charOpts);
+    if (!drawGenChar(ctx, charOpts)) drawCharAura(ctx, this.char, a);
     ctx.restore();
 
     // 低速移动时显示判定点：位置与 stage.playerHitPoint 保持一致

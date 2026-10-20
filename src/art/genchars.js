@@ -5,7 +5,7 @@
  *       src/art/gen/run/<char>_idle.png
  *       src/art/gen/run/<char>_jump.png
  *       src/art/gen/run/<char>_fall.png
- * 缺哪个动作就回退到 run 帧，再不行返回 false 让调用方走 chars.js 程序化绘制。
+ * 缺哪个动作就回退到 run 帧；整张图未就绪时返回 false，由调用方留柔光占位（不画程序化人物）。
  *
  * 加载时会做一次预处理（同源图片可读像素）：
  *   1. 去掉抠图残留的半透明白边（近白且 alpha 低的像素直接透明）；
@@ -138,38 +138,66 @@ function prep(img) {
   return { img: cv, white, halo, haloPad: pad, rim, w, h, bbox };
 }
 
-function loadOne(src) {
+function loadOne(src, priority = 'low') {
   const img = new Image();
   img.decoding = 'async';
-  setPriority(img, 'low');
-  const holder = { frame: null, failed: false };
-  img.onload = () => {
-    const f = prep(img);
-    if (f) holder.frame = f;
-    else holder.failed = true;
-  };
-  img.onerror = () => { holder.failed = true; };
+  setPriority(img, priority);
+  const holder = { frame: null, failed: false, img };
+  holder.promise = new Promise((resolve) => {
+    img.onload = () => {
+      const f = prep(img);
+      if (f) { holder.frame = f; resolve(true); }
+      else { holder.failed = true; resolve(false); }
+    };
+    img.onerror = () => { holder.failed = true; resolve(false); };
+  });
   img.src = src;
   return holder;
 }
 
-// 首屏只需要标题素材：角色帧等首屏稳定后再排队（未就绪时调用方回退到程序化绘制）
+function sheetHolders(sheet) {
+  return [sheet.idle, sheet.jump, sheet.fall, sheet.fly, ...sheet.run];
+}
+
+/** 建立 / 取回某角色的动作帧表；priority='high' 时把已排队的图提到高优先级 */
+function ensureSheet(ch, priority = 'low') {
+  let sheet = SHEETS[ch];
+  if (sheet) {
+    if (priority === 'high') for (const h of sheetHolders(sheet)) setPriority(h.img, 'high');
+    return sheet;
+  }
+  if (!SUPPORTED.includes(ch)) return null;
+  const run = [];
+  for (let i = 0; i < FRAME_N; i++) {
+    run.push(loadOne(new URL(ch + '_run_' + i + '.png', BASE).href, priority));
+  }
+  sheet = {
+    run,
+    idle: loadOne(new URL(ch + '_idle.png', BASE).href, priority),
+    jump: loadOne(new URL(ch + '_jump.png', BASE).href, priority),
+    fall: loadOne(new URL(ch + '_fall.png', BASE).href, priority),
+    fly: loadOne(new URL(ch + '_fly.png', BASE).href, priority),
+  };
+  SHEETS[ch] = sheet;
+  return sheet;
+}
+
+/**
+ * 高优先级预载某位自机的动作帧（幂等）。
+ * 进关卡前调用，避免开局几帧只有柔光占位。
+ * @returns {Promise<boolean>} 4 帧 run 是否齐了
+ */
+export function ensureCharArt(ch) {
+  const sheet = ensureSheet(ch, 'high');
+  if (!sheet) return Promise.resolve(false);
+  return Promise.all(sheetHolders(sheet).map((h) => (h.frame ? true : h.promise)))
+    .then(() => ready(sheet));
+}
+
+// 首屏只需要标题素材：角色帧等首屏稳定后再排队（未就绪时调用方留柔光占位）
 preloadWhenIdle(() => {
   if (typeof Image === 'undefined') return;
-  for (const ch of SUPPORTED) {
-    if (SHEETS[ch]) continue;
-    const run = [];
-    for (let i = 0; i < FRAME_N; i++) {
-      run.push(loadOne(new URL(ch + '_run_' + i + '.png', BASE).href));
-    }
-    SHEETS[ch] = {
-      run,
-      idle: loadOne(new URL(ch + '_idle.png', BASE).href),
-      jump: loadOne(new URL(ch + '_jump.png', BASE).href),
-      fall: loadOne(new URL(ch + '_fall.png', BASE).href),
-      fly: loadOne(new URL(ch + '_fly.png', BASE).href),
-    };
-  }
+  for (const ch of SUPPORTED) ensureSheet(ch);
 });
 
 function ready(sheet) {
@@ -300,4 +328,25 @@ export function drawGenChar(ctx, o) {
 
 export function genCharReady(char) {
   return ready(SHEETS[char]);
+}
+
+/**
+ * 自机素材未就绪时的柔光占位：只画一团角色主色的光，绝不画人物轮廓。
+ * ctx 已经 translate 到脚底中心，与 drawGenChar 的坐标系一致。
+ */
+export function drawCharAura(ctx, char, alpha = 1) {
+  const rgb = char === 'marisa' ? '255,214,120' : '255,126,190';
+  const cy = -DRAW_H * 0.45;
+  const r = DRAW_H * 0.7;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(0, cy, 2, 0, cy, r);
+  g.addColorStop(0, `rgba(${rgb},0.42)`);
+  g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }

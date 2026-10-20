@@ -1,8 +1,8 @@
 /**
- * AI 生成的妖精精灵（替代程序化 _drawFlyer 的实机造型）
+ * AI 生成的妖精精灵
  *
  * 素材：src/art/gen/fairy.png（透明底，145×160）
- * 加载不到时 drawGenFairy 返回 false，enemies.js 回退到程序化绘制。
+ * 加载不到时 drawGenFairy 返回 false，enemies.js 只铺该色柔光，不回退程序化人物。
  */
 
 const BASE = new URL('./gen/fairy.png', import.meta.url);

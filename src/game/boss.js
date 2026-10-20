@@ -18,7 +18,7 @@
  *     保证不会出现「必死墙」，只是没法再靠背板过关。
  */
 
-import { BOSS_INFO } from '../art/bosses.js';
+import { BOSS_INFO } from '../art/roster.js';
 import { drawGenBoss, ensureBossArt, bossArtHeight, bossArtReady } from '../art/genboss.js';
 import { getDifficulty, bossPhasesFor, scaleBossHp, stageDensityOf } from './difficulty.js';
 import { scalePlayerDamage } from './balance.js';

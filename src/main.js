@@ -25,6 +25,7 @@ import {
   extraPostFor,
 } from './game/story.js';
 import { DIFFICULTY_KEYS, DIFFICULTIES, getDifficulty } from './game/difficulty.js';
+import { ensureCharArt } from './art/genchars.js';
 
 const MAIN_STAGES = () => LEVELS.filter((l) => !l.extra);
 const EXTRA_STAGE = () => LEVELS.find((l) => l.extra);
@@ -903,8 +904,10 @@ class Game {
     this._prewarmStageArt();
     this.stage.onEvent = (type, data) => this._onStageEvent(type, data);
     // 本关会出场的 AI 立绘（玩家 + Boss）现在就开始下载：
-    // 等跑到 Boss 触发对话时已经就绪，不会闪回旧的矢量立绘。
+    // 等跑到 Boss 触发对话时已经就绪，不会出现等待态柔光。
     // Boss 战前对话还会有搭档登场，一并预热（幂等，已下载的角色立即返回）
+    // 自机动作帧高优先级预载（幂等）：进关前抢带宽，避免开局只有柔光
+    ensureCharArt((isExtra && this.extraChar) ? this.extraChar : this.char);
     const _partner = this.char === 'marisa' ? 'reimu' : 'marisa';
     this.dialogue?.preparePortraits?.([this.char, _partner, def.boss]);
     // 道中剧情节点：重来 / 再战 / EXTRA 不再重复播放
@@ -1337,7 +1340,7 @@ class Game {
     };
 
     // 对话出现前先把这一场会登场的 AI 立绘准备好（最多等 1.4s），
-    // 避免立绘还没下载完时先画一帧旧矢量版。
+    // 避免立绘还没下载完时先画等待态柔光。
     const keys = [this.char];
     for (const line of script) {
       const who = line?.who || '';
@@ -1357,8 +1360,8 @@ class Game {
       begin();
     };
     // 等待期画面仍在推进（见主循环的 'dialogue 未激活' 分支），
-    // 所以这里只做短超时兜底：立绘没到就先用矢量版开播，不再僵住。
-    Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 600))]).then(go, go);
+    // 超时只为了让对话不僵住；没等到图也只画柔光，绝不回退矢量人物。
+    Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 1400))]).then(go, go);
   }
 
   /* ============================================================

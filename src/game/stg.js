@@ -8,8 +8,7 @@
  *
  * 操作：方向键自由移动，Z/J 连射，Shift 低速移动（显示判定点），K/C 冲刺（短无敌位移），X/L/V 符卡。
  */
-import { drawCharacter } from '../art/chars.js';
-import { drawGenChar, DRAW_H, POSE_RATIO } from '../art/genchars.js';
+import { drawGenChar, drawCharAura, DRAW_H, POSE_RATIO } from '../art/genchars.js';
 import { drawGenFairy } from '../art/genfairy.js';
 import { drawHitbox } from '../art/hitbox.js';
 import { POWER, powerLevel, canSpell, spendPower } from './power.js';
@@ -296,7 +295,12 @@ export class StgPlayer {
       rot: Math.max(-0.1, Math.min(0.1, this.vx * 0.00035)),
     });
     ctx.restore();
-    if (!drewAI) drawCharacter(ctx, { ...charOpts, scale: 0.9 });
+    if (!drewAI) {
+      ctx.save();
+      ctx.translate(0, HIT_FEET_DY);
+      drawCharAura(ctx, this.char, a);
+      ctx.restore();
+    }
 
     ctx.restore();
 

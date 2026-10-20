@@ -1,5 +1,5 @@
 /**
- * 剧情对话系统：DOM 文本 + AI 立绘（加载失败时退化为剪影）+ 打字机效果。
+ * 剧情对话系统：DOM 文本 + AI 立绘（缺图时只留柔光，不画任何矢量人物）+ 打字机效果。
  *
  * 用法：
  *   const dlg = new Dialogue();
@@ -28,7 +28,7 @@ const aiPending = {};
 
 /**
  * 取一个角色 AI 立绘。已缓存直接返回；加载中复用同一个 Promise；
- * 失败不 reject，回退矢量立绘，绝不把对话卡死。
+ * 失败不 reject，返回 null（画面只留柔光），绝不把对话卡死。
  */
 function loadPortrait(key, priority = 'high') {
   if (aiImages[key]) return Promise.resolve(aiImages[key]);
@@ -84,49 +84,23 @@ function paintAiPortrait(ctx, o) {
 }
 
 /**
- * 立绘兜底：AI 立绘还没到时的占位。
- * 只画柔光 + 无细节剪影，不画程序化小人（和 AI 立绘画风差太远）。
+ * 立绘缺图 / 未就绪：只铺一层很淡的柔光，不画任何人物轮廓。
+ * （剪影再抽象也会被读成「矢量小人」，宁可留空等 AI 立绘。）
  */
-function fallbackPortrait(ctx, o) {
-  const alpha = (o.alpha ?? 1) * 0.62;
-  ctx.save();
-  ctx.globalAlpha = alpha;
-
-  // 柔光
-  const glow = ctx.createRadialGradient(0, -300, 10, 0, -300, 260);
-  glow.addColorStop(0, 'rgba(255,255,255,0.10)');
-  glow.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(0, -300, 260, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 剪影：头 + 长发 + 衣摆
-  const g = ctx.createLinearGradient(0, -520, 0, 0);
-  g.addColorStop(0, 'rgba(52,38,70,0.92)');
-  g.addColorStop(0.6, 'rgba(26,18,40,0.95)');
-  g.addColorStop(1, 'rgba(12,8,20,0.97)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.moveTo(-96, 0);
-  ctx.bezierCurveTo(-120, -110, -110, -280, -56, -368);
-  ctx.bezierCurveTo(-45, -404, -35, -434, -37, -462);
-  ctx.bezierCurveTo(-27, -508, 27, -508, 37, -462);
-  ctx.bezierCurveTo(35, -434, 45, -404, 56, -368);
-  ctx.bezierCurveTo(110, -280, 120, -110, 96, 0);
-  ctx.quadraticCurveTo(0, 15, -96, 0);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(255,180,200,0.35)';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
-  ctx.restore();
-}
-
 function paintPortrait(ctx, o) {
   if (paintAiPortrait(ctx, o)) return;
-  return fallbackPortrait(ctx, o);
+  const cy = -300;
+  const r = 250;
+  ctx.save();
+  ctx.globalAlpha = (o.alpha ?? 1) * 0.5;
+  const glow = ctx.createRadialGradient(0, cy, 10, 0, cy, r);
+  glow.addColorStop(0, 'rgba(255,235,245,0.10)');
+  glow.addColorStop(1, 'rgba(255,235,245,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 export const CHAR_NAMES = {
@@ -243,7 +217,7 @@ export class Dialogue {
 
   /**
    * 预载若干角色的 AI 立绘；调用方可以 await 它再开对话，
-   * 保证第一帧就是 AI 版而不是旧矢量版。
+   * 保证第一帧就是 AI 立绘，而不是等待态柔光。
    */
   preparePortraits(keys) {
     return preloadPortraits(keys);

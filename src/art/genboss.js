@@ -2,7 +2,7 @@
  * AI 生成的 Boss 战斗立绘
  *
  * 图片：src/art/gen/boss/<key>.png（抠白底透明，内容高 560、脚底贴底）
- * 加载不到时 drawGenBoss 返回 false，boss.js 回退到程序化 drawBoss。
+ * 加载不到时 drawGenBoss 返回 false，boss.js 只铺柔光占位（不再回退程序化人物）。
  *
  * 加载时预处理（同源图片可读像素）：
  *   1. 抹掉抠图残留的半透明白边；
@@ -14,7 +14,7 @@ import { preloadWhenIdle, setPriority } from '../engine/lazy_preload.js';
 
 const BASE = new URL('./gen/boss/', import.meta.url);
 const KEYS = ['rumia', 'wriggle', 'cirno', 'aya', 'yuyuko', 'kaguya', 'flandre', 'remilia'];
-/** 游戏内显示高度（程序化 BOSS_BOX 是 240） */
+/** 游戏内显示高度（旧版占位框为 240，AI 立绘略高） */
 const DRAW_H = 236;
 /** 逐角色视觉身高微调：身形偏窄的（妖精系）放大一点，长裙系保持原样，避免同屏看起来大小不一致 */
 const BOSS_H = {
@@ -123,7 +123,7 @@ function loadOne(src) {
 
 /**
  * 强制加载某位 Boss 的战斗立绘（高优先级，幂等）。
- * Boss 战开始前调用，避免玩家先看到占位剪影再被 AI 立绘顶替。
+ * Boss 战开始前调用，避免玩家先看到柔光占位再被 AI 立绘顶替。
  * @returns {Promise<boolean>} 是否拿到了可用素材
  */
 const LOADING = new Map();
@@ -152,7 +152,7 @@ export function ensureBossArt(key) {
   return p;
 }
 
-// 首屏只需要标题素材：Boss 立绘等首屏稳定后再排队（未就绪时 drawGenBoss 返回 false，走程序化绘制）
+// 首屏只需要标题素材：Boss 立绘等首屏稳定后再排队（未就绪时 drawGenBoss 返回 false，只留柔光占位）
 preloadWhenIdle(() => {
   if (typeof Image === 'undefined') return;
   for (const k of KEYS) IMGS[k] = IMGS[k] || loadOne(new URL(k + '.png', BASE).href);
