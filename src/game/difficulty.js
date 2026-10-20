@@ -52,10 +52,11 @@ export const DIFFICULTIES = {
     ringGapPx: 54,
     // 道中 / 平台杂兵
     enemyBulletScale: 0.82,
-    enemyFireScale: 1.45,
-    flyerShots: 1,
-    stgScoutShots: 1,
-    stgGunnerShots: 2,
+    // 2026-10-20 反馈 #1：小怪齐射数/射速整体上调（EX 不动）
+    enemyFireScale: 1.38,
+    flyerShots: 2,
+    stgScoutShots: 2,
+    stgGunnerShots: 3,
     enemyDifficulty: 'easy',
   },
   N: {
@@ -76,10 +77,11 @@ export const DIFFICULTIES = {
     ringGapPx: 44,
     // 道中 / 平台杂兵
     enemyBulletScale: 1,
-    enemyFireScale: 1,
-    flyerShots: 1,
-    stgScoutShots: 1,
-    stgGunnerShots: 3,
+    // 2026-10-20 反馈 #1：小怪齐射数/射速整体上调（EX 不动）
+    enemyFireScale: 0.94,
+    flyerShots: 2,
+    stgScoutShots: 2,
+    stgGunnerShots: 4,
     enemyDifficulty: 'normal',
   },
   H: {
@@ -100,10 +102,11 @@ export const DIFFICULTIES = {
     ringGapPx: 36,
     // 道中 / 平台杂兵
     enemyBulletScale: 1.12,
-    enemyFireScale: 0.78,
-    flyerShots: 2,
-    stgScoutShots: 2,
-    stgGunnerShots: 4,
+    // 2026-10-20 反馈 #1：小怪齐射数/射速整体上调（EX 不动）
+    enemyFireScale: 0.74,
+    flyerShots: 3,
+    stgScoutShots: 3,
+    stgGunnerShots: 5,
     enemyDifficulty: 'hard',
   },
   L: {
@@ -124,10 +127,11 @@ export const DIFFICULTIES = {
     ringGapPx: 30,
     // 道中 / 平台杂兵
     enemyBulletScale: 1.25,
-    enemyFireScale: 0.6,
-    flyerShots: 3,
-    stgScoutShots: 3,
-    stgGunnerShots: 5,
+    // 2026-10-20 反馈 #1：小怪齐射数/射速整体上调（EX 不动）
+    enemyFireScale: 0.58,
+    flyerShots: 4,
+    stgScoutShots: 4,
+    stgGunnerShots: 6,
     enemyDifficulty: 'hard',
   },
 
@@ -195,14 +199,18 @@ export const STAGE_DENSITY = {
   6: 0.64,
 };
 
-/** 道中杂兵的密度系数：比 Boss 温和一点，避免道中变成空场 */
+/**
+ * 道中杂兵的密度系数：比 Boss 温和一点，避免道中变成空场。
+ * 2026-10-20 反馈 #1：后期面不再被压得太薄（原 6 面 0.74 会把 N 的
+ * flyerShots 1 发 ROUND 回 1 发，等于后期比前期还空）。
+ */
 export const ENEMY_STAGE_DENSITY = {
   1: 1,
-  2: 0.9,
-  3: 0.86,
-  4: 0.82,
-  5: 0.78,
-  6: 0.74,
+  2: 0.96,
+  3: 0.93,
+  4: 0.9,
+  5: 0.87,
+  6: 0.84,
 };
 
 /** 1 起关卡号 → Boss 弹幕密度系数；0 / 越界（Extra）返回 1 */

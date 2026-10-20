@@ -514,8 +514,11 @@ export function install(opts = {}) {
           for (let dy = -96; dy <= 96 && !done; dy += 32) {
             const y = (p2.y !== undefined ? p2.y : p2.worldY) + dy;
             if (y < 0 || y > s.level.h - 96) continue;
-            if (!B.landable(s.level, x + 4, y + p2.h, p2.w - 8, 10)) continue;
-            if (!B.landable(s.level, x + 4, y + 4, p2.w - 8, p2.h - 8)) continue;
+            // ① 身体盒不能与实心块重叠。旧版这里用 landable 反判（要求身体区「有实心」），
+            //    会把玩家直接传送进实心块：py 恒定、vx=vy=0、四向被碰撞夹死（面5 col984 py=776 即此 bug）
+            if (s.level.rectHitsSolid(x + 2, y, p2.w - 4, p2.h - 2)) continue;
+            // ② 脚下 12px 内要有可站立面（实心或单向平台），否则传送后直接坠落
+            if (!B.landable(s.level, x + 4, y + p2.h, p2.w - 8, 12)) continue;
             p2.x = x;
             p2.y = y;
             p2.vx = 0;

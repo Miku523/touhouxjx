@@ -85,6 +85,21 @@ const STYLE_CHUNKS = {
   ],
 };
 
+/**
+ * 分面刷怪密度：不同主题「能站人的合法地面格」数量差别很大（森林断层多、湖面/月都开阔），
+ * 按列随机步进会让各面小怪数漂 ±15%。这里改成「按每屏目标数量在合法格上等距取样」：
+ *   perScreen = 每屏（40 列 / 1280px）目标小怪数（改造前基线 × ~1.5），
+ *   groundRatio = 地面 s 与空中 f 的比例（沿用改造前各面的 s:f）。
+ * 这样关卡长度改变（levels.js 的 cols 调整）时密度仍然稳定，不会因首尾边缘区占比变化而漂。
+ */
+const MONSTER_SPAWN = {
+  shrine: { perScreen: 2.06, groundRatio: 1.92 },
+  forest: { perScreen: 1.71, groundRatio: 1.84 },
+  lake: { perScreen: 1.88, groundRatio: 1.41 },
+  nether: { perScreen: 1.85, groundRatio: 2.24 },
+  moon: { perScreen: 2.18, groundRatio: 1.84 },
+};
+
 class Builder {
   constructor(gen) {
     this.gen = gen;
@@ -811,14 +826,45 @@ class Builder {
       if (this.chance(0.30)) this.power(c + 1, t - 1);
     }
 
-    for (let c = 60; c < lastSafe; c += this.ri(28, 46)) {
+    // 小怪刷点：先收集合法地面格，再按「每屏目标数」等距取样（旧版按列随机步进，各面波动 ±15%）。
+    // 妖精实体不参与地形碰撞：只写在 AIR 格上 → 不堵路、不改可跳性；
+    // 同时跳过蘑菇面与检查点，保证检查点/复活点干净。
+    const groundSlots = [];
+    for (let c = 60; c < lastSafe; c++) {
       if (this.gap[c] || this.surface[c] === 'M') continue;
       const row = this.top[c] - 1;
-      if (this.get(c, row) === AIR && this.get(c + 1, row) !== 'C') this.set(c, row, 's');
-      if (this.chance(0.45)) {
-        const fr = this.top[c] - this.ri(3, this.rows >= 34 ? 8 : 6);
-        if (this.get(c, fr) === AIR) this.set(c, fr, 'f');
+      if (this.get(c, row) !== AIR) continue;
+      if (this.get(c + 1, row) === 'C') continue;
+      // 坑边留安全距离：离坑（含 2 列小坑）2 格内的位置不刷地面兵，
+      // 免得踩踏/受击的弹跳把人带进坑里，也避免自动玩家在坑沿被逼出失误。
+      let nearGap = false;
+      for (let d = -6; d <= 6 && !nearGap; d++) nearGap = !!this.gap[c + d];
+      if (nearGap) continue;
+      groundSlots.push(c);
+    }
+    const spawn = MONSTER_SPAWN[this.gen.style] || MONSTER_SPAWN.shrine;
+    const screens = this.cols / 40;
+    const totalTarget = Math.max(4, Math.round(spawn.perScreen * screens));
+    const sTarget = Math.max(1, Math.round((totalTarget * spawn.groundRatio) / (1 + spawn.groundRatio)));
+    const fTarget = Math.max(1, totalTarget - sTarget);
+    /** 在合法刷点列上等距取 count 个（确定性；不同 seed 的合法格分布不同，位置仍然自然） */
+    const pickEven = (count) => {
+      const picked = [];
+      const n = groundSlots.length;
+      if (!n) return picked;
+      for (let k = 0; k < count; k++) {
+        picked.push(groundSlots[Math.min(n - 1, Math.floor(((k + 0.5) / count) * n))]);
       }
+      return picked;
+    };
+    for (const c of pickEven(sTarget)) this.set(c, this.top[c] - 1, 's');
+    // 空中妖精：单独取样，偶尔与地面点同列（看起来像一高一低伴飞）
+    const airRange = this.rows >= 34 ? 8 : 6;
+    for (const c of pickEven(fTarget)) {
+      let fr = this.top[c] - this.ri(3, airRange);
+      let guard = 0;
+      while (this.get(c, fr) !== AIR && fr > 1 && guard < airRange) { fr--; guard++; }
+      if (this.get(c, fr) === AIR) this.set(c, fr, 'f');
     }
 
     // 出生点：开头清出 20 列平地

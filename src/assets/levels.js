@@ -33,7 +33,7 @@ export const LEVELS = [
     music: 'stage1',
     hint: '← → 移动　空格 跳跃／二段跳　K 冲刺　↑／↓ 向上／下射击　砖块踩久会塌',
     fairyTint: { main: 'purple', mix: ['yellow', 'red', 'blue'] },
-    gen: { kind: 'platform', rows: 22, ground: 19, cols: 2138, seed: 1101, style: 'shrine' },
+    gen: { kind: 'platform', rows: 22, ground: 19, cols: 600, seed: 1101, style: 'shrine' },
   },
   {
     id: 'stage2',
@@ -45,7 +45,7 @@ export const LEVELS = [
     music: 'stage2',
     hint: '蘑菇会把自机弹飞　藤蔓墙下方留有空隙　可以下水游泳',
     fairyTint: { main: 'green', mix: ['yellow', 'blue', 'purple'] },
-    gen: { kind: 'platform', rows: 22, ground: 19, cols: 2494, seed: 2202, style: 'forest' },
+    gen: { kind: 'platform', rows: 22, ground: 19, cols: 755, seed: 2202, style: 'forest' },
   },
   {
     id: 'stage3',
@@ -57,7 +57,7 @@ export const LEVELS = [
     music: 'stage3',
     hint: '冰面会打滑，提前起跳　水面可以游泳　崩落砖别停太久',
     fairyTint: { main: 'blue', mix: ['purple', 'yellow', 'green'] },
-    gen: { kind: 'platform', rows: 22, ground: 19, cols: 2850, seed: 3303, style: 'lake' },
+    gen: { kind: 'platform', rows: 22, ground: 19, cols: 871, seed: 3303, style: 'lake' },
   },
   {
     id: 'stage4',
@@ -69,7 +69,7 @@ export const LEVELS = [
     music: 'stage4',
     hint: '方向键 自由飞行　空格 加速　Z 连射　X 释放符卡',
     fairyTint: { main: 'green', mix: ['blue', 'yellow', 'purple'] },
-    gen: { kind: 'stg', rows: 22, cols: 1436 },
+    gen: { kind: 'stg', rows: 22, cols: 497 },
   },
   {
     id: 'stage5',
@@ -81,7 +81,7 @@ export const LEVELS = [
     music: 'stage5',
     hint: '纵向高台落差更大　砖块踩久会塌　↑／↓ 上下射击',
     fairyTint: { main: 'purple', mix: ['red', 'yellow', 'blue'] },
-    gen: { kind: 'platform', rows: 34, ground: 31, cols: 3563, seed: 5505, style: 'nether' },
+    gen: { kind: 'platform', rows: 34, ground: 31, cols: 1170, seed: 5505, style: 'nether' },
   },
   {
     id: 'stage6',
@@ -93,7 +93,7 @@ export const LEVELS = [
     music: 'stage6',
     hint: '砖墙与浮台交错　崩落砖桥要快速通过　↑／↓ 上下射击',
     fairyTint: { main: 'blue', mix: ['purple', 'yellow', 'red'] },
-    gen: { kind: 'platform', rows: 34, ground: 31, cols: 3919, seed: 6606, style: 'moon' },
+    gen: { kind: 'platform', rows: 34, ground: 31, cols: 1324, seed: 6606, style: 'moon' },
   },
   {
     id: 'extra',

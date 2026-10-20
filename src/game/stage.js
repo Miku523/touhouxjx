@@ -68,7 +68,7 @@ function _bgEntry(theme, idx) {
   const key = idx > 0 ? theme + '_' + (idx + 1) : theme;
   let e = _bgCache.get(key);
   if (e) return e;
-  e = { img: typeof Image !== 'undefined' ? new Image() : null, ok: false, failed: false };
+  e = { img: typeof Image !== 'undefined' ? new Image() : null, ok: false, failed: false, idx };
   if (e.img) {
     e.img.onload = () => { e.ok = true; };
     e.img.onerror = () => { e.failed = true; };
@@ -91,6 +91,22 @@ function _bgFor(theme) {
 const smoothstep = (a, b, x) => {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
+};
+
+/* 厚涂背景曝光标定：[变体0, 变体1] 的整层亮度乘数。
+ * 七面背景原图本身明暗差异巨大（整图均值 34.9 ~ 179.9），靠固定
+ * saturate/contrast/brightness(0.94) 压不平；这里按面 + 变体做一次预合成后
+ * 的整体曝光乘数，使各面中心区平均亮度统一到 76±5（0–255，L=0.299R+0.587G+0.114B）。
+ * 变体 0 对应关卡前段（约 10%），变体 1 对应后段（约 85%），交叉淡入在 40%–55%。
+ * 数值由 tools/_pt_bgshot.mjs + tools/_pt_luma.py 实测标定（见 _pt/bg/）。 */
+const BG_EXPOSURE = {
+  shrine:   [0.691, 1.352],
+  forest:   [1.877, 2.559],
+  lake:     [0.381, 0.707],
+  mountain: [0.529, 0.772],
+  nether:   [0.717, 1.026],
+  moon:     [0.416, 0.426],
+  mansion:  [1.860, 1.996],
 };
 
 /** 每关随进度漂移的目标色调：[r,g,b 色串, 末段强度] */
@@ -1277,6 +1293,23 @@ export class Stage {
     c.fillStyle = tint;
     c.fillRect(0, 0, cv.width, H);
 
+    // 整体曝光标定：整层乘到统一亮度（压暗用黑幕，提亮用滤镜重绘一次）
+    const ex = (BG_EXPOSURE[theme] || [1, 1])[variant] ?? 1;
+    if (ex < 0.99) {
+      c.globalCompositeOperation = 'source-over';
+      c.fillStyle = 'rgba(0,0,0,' + (1 - ex).toFixed(4) + ')';
+      c.fillRect(0, 0, cv.width, cv.height);
+    } else if (ex > 1.01) {
+      const exp = document.createElement('canvas');
+      exp.width = cv.width; exp.height = cv.height;
+      const ec = exp.getContext('2d');
+      if (ec) {
+        ec.filter = 'brightness(' + ex.toFixed(4) + ')';
+        ec.drawImage(cv, 0, 0);
+        return exp;
+      }
+    }
+
     return cv;
   }
 
@@ -1284,14 +1317,18 @@ export class Stage {
   _drawPaintedBg(ctx, list, cam, theme) {
     const W = VIEW_W, H = VIEW_H;
 
-    // 预合成每一张可用背景（换段时交叉淡入），每帧只贴图
+    // 预合成每一张可用背景（换段时交叉淡入），每帧只贴图。
+    // 注意：图片是异步加载的，list 可能一开始只含后加载完成的那张，
+    // 所以合成缓存必须按条目的原始变体序号 idx 存，不能按 list 顺序存，
+    // 否则曝光标定会串到另一张画上（EX 面出现过红月/蓝月互换）。
     if (!this._bgLayers) this._bgLayers = {};
-    let layers = this._bgLayers[theme];
-    if (!layers) layers = this._bgLayers[theme] = [];
-    for (let i = layers.length; i < list.length; i++) {
-      const l = this._composeBgLayer([list[i]], theme, i);
-      if (!l) break;
-      layers.push(l);
+    let cache = this._bgLayers[theme];
+    if (!cache) cache = this._bgLayers[theme] = [];
+    const layers = [];
+    for (const e of list) {
+      const idx = e.idx | 0;
+      if (cache[idx] === undefined) cache[idx] = this._composeBgLayer([e], theme, idx) || null;
+      if (cache[idx]) layers.push(cache[idx]);
     }
     if (layers.length) {
       const lvlW = Math.max(1, (this.level.w || W) - W);
@@ -1304,8 +1341,12 @@ export class Stage {
         k = smoothstep(0.40, 0.55, local);
       }
       const paint = (layer, alpha) => {
-        const maxShift = Math.max(0, layer.width - W);
-        const sx = Math.round(prog * maxShift);
+        // 取合成层（比视口宽 OVER）的正中窗口，再叠 ±12px 的慢速横移。
+        // 原来横移走满 420px，会把画里的月亮/云海在不同进度移进画面中心，
+        // 实测 stage6 中段中心亮度比前后高 13+、stage7 后段低 20+，是面内亮度断层的根源。
+        // 居中固定后各进度看的是同一块构图，配合 per-variant 曝光标定即可整段持平。
+        const base = Math.max(0, (layer.width - W) / 2) - 12;
+        const sx = Math.round(base + prog * 24);
         ctx.globalAlpha = alpha;
         ctx.drawImage(layer, sx, 0, W, H, 0, 0, W, H);
       };
@@ -1315,8 +1356,10 @@ export class Stage {
       paint(layers[ai], 1);
       if (k > 0.001 && layers[ai + 1]) {
         paint(layers[ai + 1], k);
-        // 过场遮罩：两张图构图不完全一致时，用一层薄暮色盖住重影
-        const veil = Math.sin(Math.PI * k) * 0.34;
+        // 过场遮罩：两张图构图不完全一致时，用一层薄暮色盖住重影。
+        // 两变体已按同一曝光标定，重影主要是构图差异，遮罩只需要很薄，
+        // 原来的 0.34 会让 40%–55% 进度段的画面亮度掉 20+，造成面内亮度断层。
+        const veil = Math.sin(Math.PI * k) * 0.03;
         if (veil > 0.004) {
           ctx.save();
           ctx.globalAlpha = veil;

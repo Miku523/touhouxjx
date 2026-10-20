@@ -315,14 +315,14 @@ export class StgPlayer {
    ============================================================ */
 
 const ENEMY_KINDS = {
-  scout: { hp: 4, w: 26, h: 30, color: '#8fd8ff', aura: 'blue', speed: 150, rate: 1.5, aim: true },
-  gunner: { hp: 8, w: 34, h: 38, color: '#ff9ad0', aura: 'red', speed: 90, rate: 1.0, aim: false },
-  diver: { hp: 3, w: 24, h: 28, color: '#ffd27a', aura: 'yellow', speed: 240, rate: 2.4, aim: true },
+  scout: { hp: 13, w: 26, h: 30, color: '#8fd8ff', aura: 'blue', speed: 150, rate: 1.5, aim: true },
+  gunner: { hp: 26, w: 34, h: 38, color: '#ff9ad0', aura: 'red', speed: 90, rate: 1.0, aim: false },
+  diver: { hp: 10, w: 24, h: 28, color: '#ffd27a', aura: 'yellow', speed: 240, rate: 2.4, aim: true },
   // 扩展兵种（同样按幻想乡的妖精 / 妖怪设计）：弓妖精 / 魔法妖精 / 提灯妖精 / 大妖精
-  sniper: { hp: 6, w: 28, h: 32, color: '#9ad0ff', aura: 'blue', speed: 118, rate: 1.9, aim: true },
-  spinner: { hp: 7, w: 32, h: 34, color: '#c79bff', aura: 'purple', speed: 96, rate: 0.18 },
-  bomber: { hp: 10, w: 40, h: 38, color: '#ffb066', aura: 'yellow', speed: 72, rate: 2.6 },
-  turret: { hp: 12, w: 40, h: 44, color: '#9fe6a0', aura: 'green', speed: 108, rate: 2.1 },
+  sniper: { hp: 20, w: 28, h: 32, color: '#9ad0ff', aura: 'blue', speed: 118, rate: 1.9, aim: true },
+  spinner: { hp: 23, w: 32, h: 34, color: '#c79bff', aura: 'purple', speed: 96, rate: 0.18 },
+  bomber: { hp: 33, w: 40, h: 38, color: '#ffb066', aura: 'yellow', speed: 72, rate: 2.6 },
+  turret: { hp: 39, w: 40, h: 44, color: '#9fe6a0', aura: 'green', speed: 108, rate: 2.1 },
 };
 
 class StgEnemy {
@@ -346,6 +346,8 @@ class StgEnemy {
     this.phase = Math.random() * 6.28;
     this.spinA = Math.random() * 6.28;
     this.ringA = Math.random() * 6.28;
+    // 弹幕变体计数（对向双环 / 交叉双线交替用）
+    this.shotAlt = 0;
     this.enterT = kind === 'turret' ? 1.7 : 0;
     this.size = Math.max(k.w, k.h) * 1.25;
   }
@@ -378,15 +380,17 @@ class StgEnemy {
     const cap = mods ? mods.cap : 520;
     const budget = mods ? (mods.budget || 1200) : 1200;
     const shotSpeed = (base) => Math.min(cap, base * speedMul);
+    // 射速：所有齐射冷却统一再快 12%（配合难度表的 stgScoutShots / stgGunnerShots 提高齐射数）
+    const rate = (base) => base * fireMul * 0.88;
 
     // 魔法妖精：持续螺旋（不占齐射冷却；弹幕池有软上限）
     if (this.kind === 'spinner') {
       this.spinA += 2.3 * dt;
       this.fireT -= dt;
       if (this.fireT > 0 || !bullets) return;
-      this.fireT = Math.max(0.11, this.k.rate * fireMul);
+      this.fireT = Math.max(0.1, rate(this.k.rate));
       if (bullets.count() >= budget) return;
-      const arms = mods && mods.scout > 2 ? 2 : 1;
+      const arms = mods && mods.scout >= 4 ? 3 : mods && mods.scout > 2 ? 2 : 1;
       for (let k = 0; k < arms; k++) {
         bullets.spiral(this.x, this.y, this.spinA + (k / arms) * Math.PI, shotSpeed(155), {
           color: this.k.color, r: 5, life: 5, type: 0,
@@ -402,27 +406,38 @@ class StgEnemy {
     const nScout = mods ? mods.scout : 1;
     switch (this.kind) {
       case 'sniper': {
-        // 高速瞄准米弹（可被低速擦过；密度随难度小幅增加）
-        this.fireT = this.k.rate * fireMul;
-        const a = Math.atan2(py - this.y, px - this.x);
-        bullets.fan(this.x, this.y, Math.max(1, nScout), 0.12, a, shotSpeed(320), {
-          color: this.k.color, r: 5, life: 5, type: 1,
-        });
+        // 交叉双线（新弹幕样式）：左右两个发射点各射一束瞄准米弹，两股流线在玩家附近交叉
+        this.fireT = rate(this.k.rate);
+        const streams = Math.max(1, nScout);
+        for (const side of [-1, 1]) {
+          const bx = this.x + side * 24;
+          const by = this.y + side * 6;
+          const aa = Math.atan2(py - by, px - bx);
+          bullets.fan(bx, by, streams, 0.05, aa, shotSpeed(320), {
+            color: this.k.color, r: 5, life: 5, type: 1,
+          });
+        }
         break;
       }
       case 'turret': {
-        // 大妖精定点：一圈弹，每次旋转半个间隔
-        this.fireT = this.k.rate * fireMul;
+        // 大妖精定点：主环 + 每两轮追加一圈反向慢速环（新弹幕样式：对向双环）
+        this.fireT = rate(this.k.rate);
         const count = 6 + Math.min(2, Math.max(0, n - 3));
         bullets.ring(this.x, this.y, count, shotSpeed(145), {
           angle: this.ringA, color: this.k.color, r: 6, life: 5, type: 0,
         });
+        if ((this.shotAlt = (this.shotAlt || 0) + 1) % 2 === 0) {
+          bullets.ring(this.x, this.y, Math.max(4, count - 2), shotSpeed(92), {
+            angle: -this.ringA * 1.4, color: this.k.aura === 'green' ? '#bfffc0' : this.k.color,
+            r: 5, life: 5.5, type: 0,
+          });
+        }
         this.ringA += Math.PI / count;
         break;
       }
       case 'bomber': {
         // 抛物延迟雨：下坠加速，落地前有时间闪避
-        this.fireT = this.k.rate * fireMul;
+        this.fireT = rate(this.k.rate);
         const count = Math.max(2, Math.round(n * 0.7));
         for (let k = 0; k < count; k++) {
           const bx = this.x + (k - (count - 1) / 2) * 22;
@@ -434,18 +449,18 @@ class StgEnemy {
         break;
       }
       case 'gunner': {
-        this.fireT = this.k.rate * fireMul;
-        bullets.fan(this.x, this.y, n, 0.4, Math.PI * 0.86, shotSpeed(190), {
+        this.fireT = rate(this.k.rate);
+        bullets.fan(this.x, this.y, n, 0.5, Math.PI * 0.86, shotSpeed(190), {
           color: this.k.color, r: 6, life: 5,
         });
         break;
       }
       default: {
         // scout / diver：单发瞄准，高难度变成小扇
-        this.fireT = this.k.rate * fireMul;
+        this.fireT = rate(this.k.rate);
         const a = Math.atan2(py - this.y, px - this.x);
         if (nScout > 1) {
-          bullets.fan(this.x, this.y, nScout, 0.18, a, shotSpeed(230), {
+          bullets.fan(this.x, this.y, nScout, 0.2, a, shotSpeed(230), {
             color: this.k.color, r: 6, life: 5,
           });
         } else {
@@ -737,35 +752,36 @@ export class StgStage {
   _buildWaves() {
     const levelW = this.level.w;
     const usable = levelW - 1280 - 200;
-    const step = 500;
+    // 波次间隔 500→400 列 + 每个编队 +1~2 架：杂兵总数约 +50%
+    const step = 400;
     let n = 0;
     for (let s = 400; s < usable; s += step) {
       const roll = n % 9;
       if (roll === 0) {
         // V 字：两翼张开，中间留缝
-        this.waves.push({ at: s, kind: 'scout', count: 5, gapY: 0, form: 'v' });
+        this.waves.push({ at: s, kind: 'scout', count: 6, gapY: 0, form: 'v' });
       } else if (roll === 1) {
         // 纵列：上下排开，一起扇形齐射
-        this.waves.push({ at: s, kind: 'gunner', count: 3, gapY: 120, form: 'column' });
+        this.waves.push({ at: s, kind: 'gunner', count: 4, gapY: 120, form: 'column' });
       } else if (roll === 2) {
         // 交叉：两条对角线交错俯冲
-        this.waves.push({ at: s, kind: 'diver', count: 6, gapY: 0, form: 'cross' });
+        this.waves.push({ at: s, kind: 'diver', count: 7, gapY: 0, form: 'cross' });
       } else if (roll === 3) {
         // 上下夹击的狙击手
-        this.waves.push({ at: s, kind: 'sniper', count: 2, gapY: 170, form: 'pincer' });
+        this.waves.push({ at: s, kind: 'sniper', count: 3, gapY: 170, form: 'pincer' });
       } else if (roll === 4) {
         this.waves.push({ at: s, kind: 'spinner', count: 3, gapY: 0, form: 'column' });
       } else if (roll === 5) {
-        this.waves.push({ at: s, kind: 'bomber', count: 3, gapY: 60, form: 'line' });
+        this.waves.push({ at: s, kind: 'bomber', count: 4, gapY: 60, form: 'line' });
       } else if (roll === 6) {
         // 大妖精压场 + 后续 V 字突进
         this.waves.push({ at: s, kind: 'turret', count: 1, gapY: 30, form: 'line' });
-        this.waves.push({ at: s + 200, kind: 'scout', count: 3, gapY: 180, form: 'v' });
+        this.waves.push({ at: s + 200, kind: 'scout', count: 4, gapY: 180, form: 'v' });
       } else if (roll === 7) {
-        this.waves.push({ at: s, kind: 'scout', count: 4, gapY: -150, form: 'v' });
+        this.waves.push({ at: s, kind: 'scout', count: 5, gapY: -150, form: 'v' });
         this.waves.push({ at: s + 160, kind: 'gunner', count: 2, gapY: 160, form: 'column' });
       } else {
-        this.waves.push({ at: s, kind: 'diver', count: 4, gapY: 60, form: 'cross' });
+        this.waves.push({ at: s, kind: 'diver', count: 5, gapY: 60, form: 'cross' });
         this.waves.push({ at: s + 240, kind: 'sniper', count: 1, gapY: 210, form: 'line' });
       }
       n++;
@@ -816,20 +832,23 @@ export class StgStage {
         if (kind === 'turret') { w.count = 1; w.gapY = 30; w.form = 'line'; }
         else if (kind === 'sniper') w.count = Math.max(1, Math.min(2, w.count - 1));
         else if (kind === 'bomber') w.count = Math.max(2, Math.min(3, w.count));
-      } else if (r < 0.44) {
+      } else if (r < 0.56) {
         const at = w.at + 90;
         if (at > usable) continue;
         const kind = kinds[Math.floor(rng() * kinds.length)];
         this.waves.splice(i + 1, 0, {
           at,
           kind,
-          count: kind === 'turret' ? 1 : 3,
+          count: kind === 'turret' ? 1 : 4,
           gapY: (rng() < 0.5 ? -1 : 1) * (90 + Math.floor(rng() * 90)),
           form: forms[Math.floor(rng() * forms.length)],
         });
         i++;
       }
     }
+    // 整体加密：EX 目标每屏敌机数 ≈ +50%。均匀放大每波数量、不改变兵种构成，
+    // 这样平均血量倍率不被拉高（EX 的杂兵已经比道中重一档）。
+    for (const w of this.waves) w.count = Math.max(1, Math.round(w.count * 1.32));
     this.waves.sort((x, y) => x.at - y.at);
   }
 
@@ -886,7 +905,8 @@ export class StgStage {
       for (const e of this.enemies) {
         if (!e.alive) continue;
         if (Math.abs(e.x - px) < 44 && Math.abs(e.y - py) < 44) {
-          e.hp -= 6;
+          // 杂兵血量上调后冲刺同步加伤：轻装 1 冲、重装 2~3 冲
+          e.hp -= 12;
           if (e.hp <= 0) {
             e.alive = false;
             fx?.burst(e.x, e.y, e.k.color, 14, 300);

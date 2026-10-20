@@ -40,7 +40,10 @@ const GOD = argv.god !== '0';
 const EXTRA = argv.extra === '1';
 const URL_BASE = argv.url || 'http://127.0.0.1:8137/index.html';
 const MAX_STEPS = Number(argv.maxSteps || 120000);
-const CHUNK = Number(argv.chunk || 1200);
+// 默认 120 步（=2s 逻辑时间）。旧默认 1200 会让单次 page.evaluate 阻塞 20s，
+// 对话立绘预热/图片 load 被压到块尾才兑现，道中计时凭空多 0~80s（pacing 实测）；
+// 全流程冒烟想跑快可显式传 --chunk 1200（计时会失真，不要用于验收）。
+const CHUNK = Number(argv.chunk || 120);
 const OUT = argv.out || '';
 const KEEP = argv.keep === '1';
 const CDP_TIMEOUT = Number(argv.timeout || 60000);

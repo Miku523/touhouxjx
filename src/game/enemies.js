@@ -88,14 +88,14 @@ function pickFairyColor(tint, idx) {
  * 不引入枪炮、引信、浮游炮这类不属幻想乡的机械部件。
  * 种子固定（level.def.gen.seed + level.def.id），同一关每次进入种类分布一致。
  */
-const PLATFORM_KINDS = {
-  fairy: { air: false, w: 28, h: 36, hp: 2, size: 42, amp: 12, hover: 1.6 },
-  lancer: { air: false, w: 30, h: 38, hp: 4, size: 46, amp: 12, hover: 1.6 },
-  weaver: { air: false, w: 26, h: 32, hp: 3, size: 38, amp: 12, hover: 1.6 },
-  flyer: { air: true, w: 30, h: 34, hp: 2, size: 42, amp: 12, hover: 1.6 },
-  spreader: { air: true, w: 34, h: 38, hp: 4, size: 47, amp: 14, hover: 1.45 },
-  bomber: { air: true, w: 38, h: 34, hp: 5, size: 48, amp: 9, hover: 1.2 },
-  spinner: { air: true, w: 30, h: 34, hp: 4, size: 43, amp: 16, hover: 1.8 },
+export const PLATFORM_KINDS = {
+  fairy: { air: false, w: 28, h: 36, hp: 6, size: 42, amp: 12, hover: 1.6 },
+  lancer: { air: false, w: 30, h: 38, hp: 12, size: 46, amp: 12, hover: 1.6 },
+  weaver: { air: false, w: 26, h: 32, hp: 9, size: 38, amp: 12, hover: 1.6 },
+  flyer: { air: true, w: 30, h: 34, hp: 6, size: 42, amp: 12, hover: 1.6 },
+  spreader: { air: true, w: 34, h: 38, hp: 12, size: 47, amp: 14, hover: 1.45 },
+  bomber: { air: true, w: 38, h: 34, hp: 15, size: 48, amp: 9, hover: 1.2 },
+  spinner: { air: true, w: 30, h: 34, hp: 12, size: 43, amp: 16, hover: 1.8 },
 };
 
 /** 关卡序号 → 杂兵池档位（stage1 最保守，stage5/6 最丰富） */
@@ -203,6 +203,9 @@ function makeFairy(type, x, y, idx, tint, kind = type, rng = null) {
     ringA: rnd() * 6.28,
     spinA: rnd() * 6.28,
     fireT: 0,
+    // 开火变体计数（对地扇形 / 交叉火网 / 追踪延迟弹交替用）
+    shotAlt: 0,
+    spinBurst: 0,
   };
 }
 
@@ -1033,7 +1036,7 @@ export class EnemyManager {
       this.list.push(makeFairy(e.type, x, y, i++, tint, kind, rng));
 
       // 高面数关卡的空中护航：只补空中兵，绝不在地面路线中间加卡位
-      if (info.air && tier >= 3 && rng() < 0.16 && escorts.length < 10) {
+      if (info.air && tier >= 3 && rng() < 0.2 && escorts.length < 12) {
         const ex = x - 118;
         const ey = Math.max(T * 1.5, y - 38);
         if (ex > T * 2 && !level.rectHitsSolid(ex, ey, 30, 34)) {
@@ -1051,6 +1054,8 @@ export class EnemyManager {
     // 分面密度：2–6 面道中更稀（齐射发数变少、开火间隔变长）；Extra 传 0 → 1.00
     const dens = Math.min(1.5, Math.max(0.4, Number(opts.stageDensity) || 1));
     this.fireScale = (Number(d?.enemyFireScale) || this.bulletCooldownMul) / dens;
+    // 分面开火递增：1 面保持基准（别太变态），越往后射速越快（最多快 20%）
+    this.tierMul = Math.max(0.8, 1 - 0.05 * (Math.max(1, tier) - 1));
     this.bulletCooldownMul = this.fireScale;
     this.bulletSpeed = Math.min(Number(d?.bulletSpeedCap) || 520, 150 * (Number(d?.enemyBulletScale) || 1));
     this.bulletShots = Math.max(1, Math.round((Number(d?.flyerShots) || 1) * dens));
@@ -1100,7 +1105,8 @@ export class EnemyManager {
         const playerBottom = player.y + player.h;
         const isStomp = player.vy > 60 && playerBottom < e.y + e.h * 0.62;
         if (isStomp) {
-          e.hp -= 2;
+          // 小怪血量整体上调后，踩踏伤害同步提高：普通妖精 1 脚、重装 2 脚仍能踩死
+          e.hp -= 8;
           opts.onStomp?.(e);
           player.vy = -560;
           player.jumpsLeft = 1;
@@ -1108,7 +1114,8 @@ export class EnemyManager {
           fx?.burst(e.x + e.w / 2, e.y + e.h / 2, e.colors.glow, 8, 200);
           if (e.hp <= 0) this._kill(e, fx, opts);
         } else if (player.dashing) {
-          e.hp -= 3;
+          // 冲刺是有限资源，给得比踩踏更重：轻装 1 冲、重装 2 冲
+          e.hp -= 10;
           opts.onStomp?.(e);
           fx?.burst(e.x + e.w / 2, e.y + e.h / 2, e.colors.glow, 10, 240);
           if (e.hp <= 0) this._kill(e, fx, opts);
@@ -1222,30 +1229,48 @@ export class EnemyManager {
     const oy = e.y + e.h * 0.45;
     const dist = Math.hypot(px - ox, py - oy);
     if (e.kind === 'lancer' && dist < 760 && Math.abs(py - oy) < 280) {
-      // 瞄准扇形米弹：难度的 flyerShots 让扇面变宽
-      e.shootCd = (2.4 + Math.random() * 0.8) * this.fireScale;
-      const n = 1 + Math.min(2, this.bulletShots - 1);
+      // 瞄准扇形米弹：发数随 flyerShots（难度 / 分面密度）变宽，射速也吃分面递增
+      e.shootCd = (2.0 + Math.random() * 0.7) * this.fireScale * this.tierMul;
+      const n = 2 + Math.min(3, this.bulletShots - 1);
       const aimX = px + (player.vx || 0) * 0.14;
       const aimY = py + (player.vy || 0) * 0.14;
       const a = Math.atan2(aimY - oy, aimX - ox);
-      bullets.fan(ox, oy, n, 0.16, a, this.bulletSpeed * 0.95, {
+      bullets.fan(ox, oy, n, 0.15 + 0.02 * n, a, this.bulletSpeed * 0.95, {
         r: 5, color: e.colors.glow, type: 1, life: 5,
       });
     } else if (e.kind === 'weaver' && dist < 720) {
-      // 四向 / 八向「交叉网」星弹
-      e.shootCd = (3.2 + Math.random() * 0.9) * this.fireScale;
-      const n = this.bulletShots > 1 ? 8 : 4;
-      const base = Math.PI / 4 + e.ringA;
-      const sp = this.bulletSpeed * 0.72;
-      for (let k = 0; k < n; k++) {
-        const a = base + (k / n) * TAU;
-        bullets.spawn({
-          x: ox, y: oy,
-          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-          r: 5, color: e.colors.wing, type: 3, life: 5, spin: 3,
-        });
+      // 蛛网妖精两种弹幕交替：
+      //  奇数发 = 交叉火网（新）：左右两点各一扇瞄准星弹，两股流线在半空交叉
+      //  偶数发 = 原环形网：8/4 向自旋星弹
+      const crossTurn = (e.shotAlt = (e.shotAlt || 0) + 1) % 2 === 1;
+      const nBase = Math.min(4, 2 + Math.max(0, this.bulletShots - 1));
+      e.shootCd = (2.8 + Math.random() * 0.7) * this.fireScale * this.tierMul;
+      if (crossTurn) {
+        const aimX = px + (player.vx || 0) * 0.1;
+        const aimY = py + (player.vy || 0) * 0.1;
+        const sp = this.bulletSpeed * 0.78;
+        for (const side of [-1, 1]) {
+          const bx = ox + side * 62;
+          const by = oy - 6;
+          const a = Math.atan2(aimY - by, aimX - bx);
+          bullets.fan(bx, by, nBase, 0.09, a, sp, {
+            r: 4.5, color: e.colors.wing, type: 3, life: 5, spin: 2,
+          });
+        }
+      } else {
+        const n = this.bulletShots > 1 ? 10 : 6;
+        const base = Math.PI / 4 + e.ringA;
+        const sp = this.bulletSpeed * 0.72;
+        for (let k = 0; k < n; k++) {
+          const a = base + (k / n) * TAU;
+          bullets.spawn({
+            x: ox, y: oy,
+            vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+            r: 5, color: e.colors.wing, type: 3, life: 5, spin: 3,
+          });
+        }
+        e.ringA += Math.PI / 8;
       }
-      e.ringA += Math.PI / 8;
     } else {
       e.shootCd = 1.2 + Math.random() * 1.2;
     }
@@ -1273,13 +1298,27 @@ export class EnemyManager {
       e.spinA += dt * 2.1;
       e.fireT -= dt;
       if (e.fireT > 0 || opts.freeze || !this._mayFire(bullets)) return;
-      e.fireT = Math.max(0.13, 0.2 * this.fireScale);
-      const arms = this.bulletShots > 2 ? 2 : 1;
+      e.fireT = Math.max(0.11, 0.16 * this.fireScale * this.tierMul);
+      const arms = this.bulletShots >= 4 ? 3 : this.bulletShots > 2 ? 2 : 1;
       const sp = Math.min(this.bulletSpeed, 150);
       for (let k = 0; k < arms; k++) {
         bullets.spiral(ox, oy, e.spinA + (k / arms) * Math.PI, sp, {
           r: 4.5, color: e.colors.wing, type: 0, life: 4.5,
         });
+      }
+      // 追踪延迟弹（新弹幕样式）：每 3 轮螺旋追加一对慢速星弹，
+      // 先以 55px/s 爬行、再靠 accel 追玩家，homing 2.4s 后转为直线——逼玩家换位而不是站着输出
+      if ((e.spinBurst = (e.spinBurst || 0) + 1) % 3 === 0) {
+        for (let k = 0; k < 2; k++) {
+          const a = e.spinA + Math.PI * k;
+          bullets.spawn({
+            x: ox, y: oy,
+            vx: Math.cos(a) * 55, vy: Math.sin(a) * 55,
+            r: 6.5, color: e.colors.glow, type: 3, life: 6.5,
+            homing: 2.4, accel: 92, spin: 4,
+          });
+        }
+        fx?.flash?.(ox, oy, e.colors.hot, 20);
       }
       return;
     }
@@ -1289,33 +1328,50 @@ export class EnemyManager {
 
     if (e.kind === 'spreader') {
       // 环射：每次换一个角度，弹数随难度 / 分面密度增加
-      e.shootCd = (2.7 + Math.random() * 0.7) * this.fireScale;
-      const n = Math.min(9, 4 + Math.max(0, this.bulletShots - 1) * 2);
-      bullets.ring(ox, oy, n, Math.min(this.bulletSpeed, 135), {
+      e.shootCd = (2.4 + Math.random() * 0.6) * this.fireScale * this.tierMul;
+      const n = Math.min(12, 6 + Math.max(0, this.bulletShots - 1) * 2);
+      bullets.ring(ox, oy, n, Math.min(this.bulletSpeed, 140), {
         angle: e.ringA, r: 5, color: e.colors.glow, type: 0, life: 5.5,
       });
       e.ringA += Math.PI / n;
     } else if (e.kind === 'bomber') {
-      // 延迟雨：初速很慢 + 沿速度持续加速，落下时才是「雨」
+      // 两种弹幕交替：奇数发 = 对地扇形（新），偶数发 = 原延迟雨
       const dist = Math.hypot(px - ox, py - oy);
       if (dist < 900) {
-        e.shootCd = (3.0 + Math.random() * 0.8) * this.fireScale;
-        const n = 2 + Math.min(2, Math.max(0, this.bulletShots - 1));
-        for (let k = 0; k < n; k++) {
-          const bx = ox + (k - (n - 1) / 2) * 26;
-          bullets.spawn({
-            x: bx, y: oy + 6, vx: 0, vy: 30, accel: 260,
-            r: 6, color: e.colors.glow, type: 1, life: 7, scaleIn: 0.2,
-          });
+        e.shootCd = (2.5 + Math.random() * 0.7) * this.fireScale * this.tierMul;
+        if ((e.shotAlt = (e.shotAlt || 0) + 1) % 2 === 1) {
+          // 对地扇形：以正下方为中心铺一排重力米弹，封锁地面走位（避开正上方，给玩家绕后空间）
+          const n = 3 + Math.min(4, Math.max(0, this.bulletShots - 1) * 2);
+          const sp = this.bulletSpeed * 0.62;
+          for (let k = 0; k < n; k++) {
+            const a = Math.PI / 2 + (k - (n - 1) / 2) * 0.2;
+            bullets.spawn({
+              x: ox, y: oy + 4,
+              vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+              r: 5.5, color: e.colors.glow, type: 1, life: 5, accel: 150,
+            });
+          }
+          fx?.flash?.(ox, oy + 12, e.colors.wing, 20);
+        } else {
+          // 延迟雨：初速很慢 + 沿速度持续加速，落下时才是「雨」
+          const n = 3 + Math.min(2, Math.max(0, this.bulletShots - 1));
+          for (let k = 0; k < n; k++) {
+            const bx = ox + (k - (n - 1) / 2) * 26;
+            bullets.spawn({
+              x: bx, y: oy + 6, vx: 0, vy: 30, accel: 260,
+              r: 6, color: e.colors.glow, type: 1, life: 7, scaleIn: 0.2,
+            });
+          }
+          fx?.flash?.(ox, oy + 10, e.colors.wing, 18);
         }
-        fx?.flash?.(ox, oy + 10, e.colors.wing, 18);
       }
     } else {
-      // 原 flyer：单发瞄准 / 高难度小扇
-      e.shootCd = 2.4 + Math.random() * 1.8;
+      // 原 flyer：齐射数随 flyerShots 提高，开火间隔也吃 fireScale（分面递增）
+      e.shootCd = (2.1 + Math.random() * 1.3) * this.fireScale * this.tierMul;
       if (this.bulletShots > 1) {
         const a = Math.atan2(py - oy, px - ox);
-        bullets.fan(ox, oy, this.bulletShots, 0.22, a, this.bulletSpeed, {
+        const n = Math.min(5, this.bulletShots + 1);
+        bullets.fan(ox, oy, n, 0.2, a, this.bulletSpeed, {
           r: 5, color: e.colors.glow, type: 0, life: 5,
         });
       } else {

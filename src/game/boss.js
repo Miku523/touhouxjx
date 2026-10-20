@@ -541,7 +541,9 @@ function firePattern(p, boss, api, fireT) {
  * 只乘 Boss 本体，不动杂兵 / 道中（那套走 balance.js 的 ENEMY_HP_SCALE）。
  *
  * 单个 Boss 想单独拉长 / 缩短，在它的 def 上写 `hpMul`（绝对倍率，不再乘全局）即可，
- * 用来对齐「目标单场时长」：下方各 Boss 的 hpMul 就是按 3 / 4 / 5 / 8.5 分钟反推的。
+ * 用来对齐「目标单场时长」：下方各 Boss 的 hpMul 是按 docs/BALANCE_TARGETS.md 表 1 的
+ * Boss-only 秒数（1面128s / 2面163s / 3面198s / 4面210s / 5面245s / 6面280s）反推的，
+ * 口径 = 自动玩家 / god / Normal / --startX 直达 Boss 场。EX（芙兰、蕾米莉亚）不按主线加长。
  */
 export const BOSS_HP_MUL = 1.1;
 
@@ -550,17 +552,17 @@ export const BOSS_DEFS = {
      每张符卡独立血条（phases[i].hp），弹幕参数随符卡序号递增，难度有序。 */
 
   rumia: {
-    name: '露米娅', title: '宵暗的妖怪', hp: 1920, accent: '#c9a6ff',
+    name: '露米娅', title: '宵暗的妖怪', hp: 1920, accent: '#c9a6ff', hpMul: 15.92, // 目标单场 ≈128s（1面；2张卡各≈63/65s）
     phases: [
       {
-        name: '宵暗「月之暗面」', hp: 880, patterns: [
+        name: '宵暗「月之暗面」', hp: 950, patterns: [
           { typeName: 'ring', n: 14, speed: 100, color: '#b48cff', rate: 1.4, r: 7, spinAngle: 0.55 },
           { typeName: 'homing', n: 2, speed: 110, color: '#ff5ea8', rate: 1.1, r: 8, homing: 1.3 },
           { typeName: 'scatter', n: 6, speed: 120, color: '#b48cff', rate: 1.1, r: 6, aimed: true, arc: 1.2, weight: 0.75 },
         ],
       },
       {
-        name: '暗符「黑暗吞噬」', hp: 1040, patterns: [
+        name: '暗符「黑暗吞噬」', hp: 970, patterns: [
           { typeName: 'ring', n: 22, speed: 126, color: '#8f6bd8', rate: 1.0, r: 7, spinAngle: 0.35 },
           { typeName: 'ring', n: 8, speed: 70, color: '#c9a6ff', rate: 1.6, r: 11, type: 2 },
           { typeName: 'aimed', n: 3, spread: 0.45, speed: 205, color: '#ffffff', rate: 0.9, r: 6 },
@@ -572,7 +574,7 @@ export const BOSS_DEFS = {
   },
 
   wriggle: {
-    name: '莉格露', title: '暗中蠢动的光虫', hp: 2880, accent: '#8ef07a', hpMul: 1.18, // 目标单场 ≈3:00
+    name: '莉格露', title: '暗中蠢动的光虫', hp: 2880, accent: '#8ef07a', hpMul: 13.77, // 目标单场 ≈163s（2面；3张卡各≈45/54/63s）
     phases: [
       {
         name: '灯符「萤火虫现象」', hp: 800, patterns: [
@@ -604,7 +606,7 @@ export const BOSS_DEFS = {
   },
 
   cirno: {
-    name: '琪露诺', title: '冰之妖精', hp: 4120, accent: '#7fd8ff', hpMul: 1.29, // 目标单场 ≈4:00
+    name: '琪露诺', title: '冰之妖精', hp: 4120, accent: '#7fd8ff', hpMul: 11.24, // 目标单场 ≈198s（3面；4张卡各≈40/46/52/60s）
     phases: [
       {
         name: '冰符「冰柱落下」', hp: 840, patterns: [
@@ -643,7 +645,7 @@ export const BOSS_DEFS = {
   },
 
   aya: {
-    name: '射命丸文', title: '最速的记者', hp: 5720, accent: '#ff6b6b', hpMul: 1.28, // 目标单场 ≈5:00
+    name: '射命丸文', title: '最速的记者', hp: 5720, accent: '#ff6b6b', hpMul: 8.90, // 目标单场 ≈210s（4面 STG 互动收益高、整关实测偏快 ~11%，按 8.90 标定；N 裁掉一张后3张卡各≈49/56/63s）
     phases: [
       {
         name: '风符「风神一扇」', hp: 880, patterns: [
@@ -688,6 +690,7 @@ export const BOSS_DEFS = {
 
   yuyuko: {
     name: '西行寺幽幽子', title: '幽冥楼阁的亡灵少女', hp: 9650, accent: '#ffa8d8',
+    hpMul: 7.24, // 目标单场 ≈245s（5面；N 裁掉一张后5张卡各≈39/44/49/54/60s）
     phases: [
       {
         name: '幽雅「死出诱蛾灯」', hp: 1200, patterns: [
@@ -738,24 +741,24 @@ export const BOSS_DEFS = {
   },
 
   kaguya: {
-    name: '蓬莱山辉夜', title: '永远与须臾的罪人', hp: 16520, accent: '#ffe9b0', hpMul: 1.0, // 目标单场 ≈8:30（不跟随全局 +10%）
+    name: '蓬莱山辉夜', title: '永远与须臾的罪人', hp: 16520, accent: '#ffe9b0', hpMul: 4.52, // 目标单场 ≈280s（6面；N 裁掉「蓬莱的玉枝」后7张卡各≈40s）
     phases: [
       {
-        name: '难题「龙颈之玉 -五色的弹丸-」', hp: 1460, patterns: [
+        name: '难题「龙颈之玉 -五色的弹丸-」', hp: 1900, patterns: [
           { typeName: 'ring', n: 20, speed: 120, color: '#ffe9b0', rate: 1.0, r: 8, type: 3 },
           { typeName: 'fan', n: 9, spread: 1.0, speed: 170, color: '#fff8d0', rate: 0.7, r: 6, aimed: true },
           { typeName: 'arc', n: 4, arcs: 2, gap: 0.55, speed: 175, rate: 0.85, color: '#fff8d0', r: 5, turn: 1.0, aimed: true, weight: 0.85 },
         ],
       },
       {
-        name: '神宝「耀眼的龙玉」', hp: 1620, patterns: [
+        name: '神宝「耀眼的龙玉」', hp: 1930, patterns: [
           { typeName: 'laser', n: 5, speed: 500, color: '#fff8d0', rate: 0.8, angle: 0 },
           { typeName: 'ring', n: 26, speed: 125, color: '#ffe9b0', rate: 1.1, r: 6, type: 2, rings: 2, weight: 0.9 },
           { typeName: 'spiralPulse', arms: 3, speed: 190, rate: 0.075, spin: 3.0, color: '#ffffff', r: 5, type: 1, weight: 0.85 },
         ],
       },
       {
-        name: '难题「佛御石之钵 -不碎的意志-」', hp: 1790, patterns: [
+        name: '难题「佛御石之钵 -不碎的意志-」', hp: 1960, patterns: [
           { typeName: 'ring', n: 18, speed: 90, color: '#fff8d0', rate: 1.3, r: 12, type: 2 },
           { typeName: 'ring', n: 30, speed: 130, color: '#ffe9b0', rate: 1.15, r: 7, type: 3, spinAngle: 0.4, weight: 0.9 },
           { typeName: 'cage', n: 18, gaps: 3, radius: 250, speed: 100, rate: 1.6, color: '#ffffff', r: 4, weight: 0.85 },
@@ -769,21 +772,21 @@ export const BOSS_DEFS = {
         ],
       },
       {
-        name: '难题「火鼠的皮衣 -不焦躁的内心-」', hp: 2130, patterns: [
+        name: '难题「火鼠的皮衣 -不焦躁的内心-」', hp: 1960, patterns: [
           { typeName: 'spiral', arms: 5, speed: 150, color: '#ffe9b0', rate: 0.08, spin: 3.0, r: 6 },
           { typeName: 'rain', n: 5, speed: 260, color: '#ffd890', rate: 0.5, r: 6, spreadX: 800, weight: 0.9 },
           { typeName: 'meteor', n: 2, delay: 1.25, spread: 170, burstN: 7, burstSpeed: 130, speed: 200, rate: 1.15, color: '#ffd890', r: 5, weight: 0.9 },
         ],
       },
       {
-        name: '神宝「火蜥蜴之盾」', hp: 2300, patterns: [
+        name: '神宝「火蜥蜴之盾」', hp: 1990, patterns: [
           { typeName: 'ring', n: 24, speed: 130, color: '#ffe9b0', rate: 1.05, r: 8, rings: 2, spinAngle: 0.3 },
           { typeName: 'cage', n: 20, gaps: 2, radius: 260, speed: 105, rate: 1.7, color: '#ffd890', r: 4, weight: 0.9 },
           { typeName: 'homing', n: 4, speed: 140, color: '#fff8d0', rate: 1.0, r: 7, homing: 1.6, weight: 0.8 },
         ],
       },
       {
-        name: '难题「燕的子安贝 -永命线-」', hp: 2460, patterns: [
+        name: '难题「燕的子安贝 -永命线-」', hp: 2020, patterns: [
           { typeName: 'laser', n: 6, speed: 560, color: '#ffffff', rate: 0.6, angle: 0 },
           { typeName: 'spiral', arms: 6, speed: 180, color: '#ffe9b0', rate: 0.07, spin: -3.4, r: 5, type: 3, weight: 0.9 },
           { typeName: 'snake', n: 2, speed: 220, rate: 0.09, color: '#fff8d0', r: 4, amp: 0.85, freq: 2.0, weight: 0.9 },
@@ -940,6 +943,11 @@ export class Boss {
     this.stageNumber = Number(opts.stageNumber) || 0;
     // 分面密度：2–6 面统一收薄（Extra 的 stageNumber = 0 → 1.00）
     this.stageDensity = stageDensityOf(this.stageNumber);
+    // 本文件内的弹数密度系数（需求 #7）：非 EX 统一 +18% 弹数，EX 保持 1。
+    // 只乘弹数（nScale / armScale / 计划外变招 cnt），不动弹速，也不改 difficulty.js。
+    // 验收用：window.__BOSS_DENSITY 可临时覆盖（A/B 对照实验），默认 1.18
+    const densOverride = typeof window !== 'undefined' ? Number(window.__BOSS_DENSITY) : 0;
+    this.density = this.difficulty === 'EX' ? 1 : (densOverride > 0 ? densOverride : 1.18);
     // 血量倍率：默认用全局 BOSS_HP_MUL；def.hpMul 写了就按它（绝对倍率，不再乘全局），
     // 用来把单个 Boss 的单场时长对齐到目标值。
     const hpMul = def.hpMul != null ? Number(def.hpMul) : BOSS_HP_MUL;
@@ -1037,15 +1045,49 @@ export class Boss {
     // 地面高度：俯冲落点用；stage 传关卡地表 y
     this.groundY = Number(opts.groundY) || (y + 240);
     this.poise = 0;
-    this.poiseMax = 100;
+    // 破势槽上限：100 → 140（需求 #5）。每破一次 +25，封顶 240。
+    this.poiseMax = 140;
     this.staggerT = 0;
     this.staggerMax = 2.2;
     this.staggerCount = 0;
     this.poiseFlash = 0;
     this.stompCd = 0;
+    // 破势自然衰减（点/秒）：磨破势不是一劳永逸，得在衰减前接上后续手段。
+    // 血条被标定到 2–4 分钟后，若沿用旧的 7/s，自动玩家整场只能破势 1 次，故降到 1/s。
+    this.poiseDecay = 1;
+    // 射击攒破势系数：整条血打空 ≈ 5.5 条槽（再扣衰减 → 自动玩家每场 2–3 次破势）。
+    // 按 maxHp 归一化，各面血量差异 / 难度血量倍率都不会破坏破势节奏。
+    this._shotPoiseK = (5.5 * this.poiseMax) / Math.max(1, this.maxHp);
     this._dive = { state: 'idle', t: 0, fromX: x, fromY: y, tx: x, ty: y };
     this._diveCd = this.rnd(4.5, 7.5);
     this._diveCount = 0;
+
+    /* ---------- 需求 #4：玩家可主动参与的 Boss 互动 ----------
+     * ① 落地破势球：Boss 定期甩出会落到地面上的能量球，从上方踩爆 = 一大截破势；
+     * ② 俯冲落地：冲击波可跳 / 可闪，落地 1 秒硬直里踩头、冲刺都能反打（射击破势 ×1.8）；
+     * ③ 横向冲撞：白闪蓄力预警 → 贴地冲撞 → 后摇白闪 COUNTER，冲刺反击伤害 ×1.5 / 破势翻倍；
+     * ④ 硬直放大器：破势硬直期踩踏伤害 ×1.35、每 8 次命中追加一跳，硬直越打越赚。
+     */
+    this._orbs = [];                  // 落地破势球
+    this._orbCd = this.rnd(3.2, 5.2); // 首个球来得早一点，让玩家早点发现这套互动
+    this._ram = { state: 'idle', t: 0, dir: 1, hit: false, fromX: x, fromY: y, tx: x, ty: y };
+    this._ramCd = this.rnd(9, 14);
+    this._staggerHits = 0;
+    // 互动遥测（只增不减，验收 / 平衡报告用；页面内可读 stage.boss._ix）
+    this._ix = {
+      orbSpawn: 0, orbStomp: 0,
+      diveLand: 0, diveStamp: 0,
+      ramCharge: 0, ramWhiff: 0, ramPunish: 0,
+      staggerStomp: 0, staggerCombo: 0, counterShot: 0,
+      stgPressure: 0, coreHit: 0, coreBreak: 0,
+    };
+
+    // STG 关（4 面 aya 等，非 EX）互动：近身压制增伤 + 可击破符卡核心
+    this._stgPressT = 0;
+    this._stgPressOn = false;
+    this._core = null;
+    this._coreCd = this.rnd(8, 12);
+    this._coreFlash = 0;
 
     // 开场也是随机一招，背板第一招不再固定
     this._startPattern(this.rndInt(0, this.phases[0].patterns.length - 1));
@@ -1131,12 +1173,12 @@ export class Boss {
     this._pat = {
       angle: this.rnd(0, TAU),                 // 整招的基准角
       dir: this.chance(0.5) ? 1 : -1,          // 旋转 / 转向方向
-      nScale: this.rnd(0.78, 1.26) * (1 + (this.wild - 0.6) * 0.15) * this.diff.bulletCountScale * this.stageDensity,
+      nScale: this.rnd(0.78, 1.26) * (1 + (this.wild - 0.6) * 0.15) * this.diff.bulletCountScale * this.stageDensity * this.density,
       speedScale: this.rnd(0.86, 1.14) * this.diff.bulletSpeedScale,
       spreadScale: this.rnd(0.78, 1.26),
       rateScale: this.rnd(0.85, 1.18) * this.diff.fireIntervalScale,
       wobbleScale: this.rnd(0.7, 1.35),
-      armScale: this.rnd(0.8, 1.25),
+      armScale: this.rnd(0.8, 1.25) * this.density,
       ringScale: this.rnd(0.8, 1.2),
     };
     this._nextRate = this._rollRate(p);
@@ -1261,8 +1303,8 @@ export class Boss {
     const aim = Math.atan2(py - this.y, px - this.x);
     const color = this.chance(0.5) ? this.def.accent : '#ffffff';
     const kind = this.rndInt(0, 2);
-    // 弹数与弹速：难度倍率 × 分面密度 × 密度自适应，速度同样夹到上限
-    const cnt = this.diff.bulletCountScale * this.pressure * this.stageDensity;
+    // 弹数与弹速：难度倍率 × 分面密度 × 密度自适应 × 本文件密度系数（需求 #7），速度同样夹到上限
+    const cnt = this.diff.bulletCountScale * this.pressure * this.stageDensity * this.density;
     const sp = (v) => Math.min(this.speedCap, Math.max(20, v * this.diff.bulletSpeedScale));
 
     if (kind === 0) {
@@ -1315,6 +1357,15 @@ export class Boss {
     this.spellBroken = false;
     // 切卡 / 击败会清屏，延迟弹幕队列也一并作废（否则旧壳弹会在新卡里炸开）
     this._flushLater();
+    // 换卡时清掉上一张卡残留的互动对象/状态，避免冲撞状态机、破势球跨卡泄漏
+    this._orbs.length = 0;
+    this._orbCd = Math.max(this._orbCd, this.rnd(3.5, 5.5));
+    this._ram.state = 'idle';
+    this._ram.t = 0;
+    this._ramCd = Math.max(this._ramCd, this.rnd(8, 12));
+    // 冲撞途中被打断时 Boss 可能停在半空/偏移位置，回位后再进新卡
+    this.x = this.homeX;
+    this.y = this.baseY;
     const phases = this.phases;
 
     if (this.spellIdx >= phases.length - 1) {
@@ -1412,6 +1463,9 @@ export class Boss {
       if (this.state !== 'battle') return;
     }
 
+    // 破势球独立推进：符卡宣言无敌 / 硬直 / 俯冲期间球也照常下落，玩家随时可踩
+    this._updateOrbs(dt, player, fx);
+
     // 符卡宣言的无敌时间：清屏后的短暂停顿
     if (this.spellLock > 0) {
       this.spellLock = Math.max(0, this.spellLock - dt);
@@ -1423,6 +1477,7 @@ export class Boss {
       this.staggerT = Math.max(0, this.staggerT - dt);
       this.poise = 0;
       this.poiseFlash = 0;
+      this._staggerHits = 0;
       const fallK = clamp((this.staggerMax - this.staggerT) / 0.35, 0, 1);
       this.y = this.baseY + (this.groundY - this.baseY) * fallK;
       if (this.staggerT <= 0) this._endStagger(fx);
@@ -1432,10 +1487,16 @@ export class Boss {
     this.stompCd = Math.max(0, this.stompCd - dt);
     this.poiseFlash = Math.max(0, this.poiseFlash - dt);
     // 破势自然衰减：磨破势不是一劳永逸，得在衰减前接上后续手段
-    this.poise = Math.max(0, this.poise - (this.platformMelee ? 7 : 0) * dt);
+    this.poise = Math.max(0, this.poise - (this.platformMelee ? this.poiseDecay : 0) * dt);
 
     // 平台关俯冲：占用移动/开火，形成「Boss 主动进攻 → 落地硬直 → 玩家反打」的循环
     if (this._updateDive(dt, player, bullets, fx)) return;
+
+    // 平台关横向冲撞：蓄力预警 → 冲撞 → 后摇 COUNTER 窗口（可冲刺反击）
+    if (this._updateRam(dt, player, fx)) return;
+
+    // STG 关互动：近身压制 / 击破符卡核心（平台关走上面的近战互动，不吃这套）
+    if (!this.platformMelee && this.difficulty !== 'EX') this._updateStgKit(dt, player, fx);
 
     // 随机幅度：符卡越靠后、本张血越少，弹幕越乱
     this.wild = clamp(0.55 + this.spellIdx * 0.12 + (1 - this.hpRatio) * 0.3, 0.55, 1.4);
@@ -1486,7 +1547,7 @@ export class Boss {
     // 接触伤害
     // 落地硬直期不打身体伤害：这一段就是让玩家跳上头顶的奖励窗口，
     // 否则玩家还没踩到就被撞飞（Boss 立绘比碰撞盒高得多，观感上本来就在「身上」）。
-    if (this.hurtCd <= 0 && this._dive.state !== 'land' && this._overlapPlayer(player)) {
+    if (this.hurtCd <= 0 && this._dive.state !== 'land' && this._ram.state === 'idle' && this._overlapPlayer(player)) {
       player.hurt(1, this.x);
       this.hurtCd = 0.6;
     }
@@ -1528,9 +1589,25 @@ export class Boss {
     const hh = this.h * 0.78;
     // 传 this 作为 targetRef：穿透弹对 Boss 也只结算一次（同一条弹不会连续帧反复削血）
     shots.hitRect(this.x - hw, this.y - hh, hw * 2, hh, (dmg, hx, hy) => {
-      this.damage(dmg);
-      // 射击也攒破势，但效率远低于踩踏 / 冲刺：持续输出能磨出硬直，主动近战才是捷径
-      this._addPoise(Math.min(2.5, dmg * 0.22), fx);
+      // STG 关：贴身压制期间射击增伤
+      const stgMul = (!this.platformMelee && this.difficulty !== 'EX' && this._stgPressOn) ? 1.10 : 1;
+      const dealt = dmg * stgMul;
+      this.damage(dealt);
+      // 符卡核心：Boss 身上的可击破装置，持续射击可以打爆（打断当前符卡节奏 + 额外伤害）
+      this._damageCore(dealt, hx, hy, fx);
+      // 射击也攒破势，但效率远低于踩踏 / 冲刺：持续输出能磨出硬直，主动近战才是捷径。
+      // 破势量按 maxHp 归一化；反打窗口（俯冲落地 / 冲撞后摇）里由 _addPoise 再翻倍。
+      if (this._counterWindow()) this._ix.counterShot++;
+      this._addPoise(Math.min(6, dmg * this._shotPoiseK), fx);
+      // 硬直放大器：硬直期每 8 次命中追加一跳伤害，鼓励在硬直窗口内持续贴脸
+      if (this.staggerT > 0) {
+        this._staggerHits++;
+        if (this._staggerHits % 8 === 0) {
+          this.damage(scalePlayerDamage(14));
+          this._ix.staggerCombo++;
+          fx?.sparkle(hx, hy, '#ffe66d');
+        }
+      }
       fx?.sparkle(hx, hy, this.inmDefColor());
       onHit?.(dmg);
     }, this);
@@ -1549,9 +1626,15 @@ export class Boss {
     const hh = this.h * 0.72;
     const p = player;
     if (this.x - hw < p.x + p.w && this.x + hw > p.x && this.y - hh < p.y + p.h && this.y > p.y) {
-      this.damage(scalePlayerDamage(this.platformMelee ? 64 : 28));
+      // 冲撞后摇里冲进来 = COUNTER：伤害 ×1.5，破势翻倍（窗口加成后再 ×1.6 ≈ 旧值的 2 倍）
+      const counter = this._ram.state === 'recover';
+      this.damage(scalePlayerDamage((this.platformMelee ? 64 : 28) * (counter ? 1.5 : 1)));
       this.hurtCd = 0.35;
-      if (this.platformMelee) this._addPoise(20, fx);
+      if (this.platformMelee) this._addPoise(counter ? 26 : 20, fx);
+      if (counter) {
+        this._ix.ramPunish++;
+        fx?.flash(p.x + p.w / 2, p.y + p.h / 2, '#ffffff', 18);
+      }
       fx?.shockwave(p.x + p.w / 2, p.y + p.h / 2, '#ffffff', 14, 480, 0.3);
       return true;
     }
@@ -1566,6 +1649,10 @@ export class Boss {
   _addPoise(n, fx) {
     if (!this.platformMelee || this.state !== 'battle') return;
     if (this.spellLock > 0 || this.staggerT > 0) return;
+    // 反打窗口加成：Boss 刚落地 / 冲撞刚结束的硬直里，破势来得更快
+    const win = this._counterWindow();
+    if (win === 'dive') n *= 1.8;
+    else if (win === 'ram') n *= 1.6;
     this.poise = Math.min(this.poiseMax, this.poise + n);
     this.poiseFlash = 0.12;
     if (this.poise >= this.poiseMax) this._startStagger(fx);
@@ -1580,6 +1667,11 @@ export class Boss {
     // 俯冲/蓄力被打断，从当前高度坠向地面
     this._dive.state = 'idle';
     this._dive.t = 0;
+    // 冲撞也打断，回到巡游位（否则状态机会卡在 rush/recover 里）
+    this._ram.state = 'idle';
+    this._ram.t = 0;
+    this._ramCd = Math.max(this._ramCd, this.rnd(7, 11));
+    this._staggerHits = 0;
     this.hurtCd = Math.max(this.hurtCd, 0.15);
     this._wildLeft = 0;
     fx?.flash(this.x, this.y - this.h * 0.6, '#ffe66d', 26);
@@ -1616,7 +1708,15 @@ export class Boss {
     if (feet > headTop + 30 || feet < headTop - 52) return false;
     if ((player.vy || 0) < 40) return false; // 必须是下落中
     this.stompCd = 0.9;
-    this.damage(scalePlayerDamage(96 + this.spellIdx * 18));
+    // 俯冲落地窗口内踩头：记为「反打窗口踩踏」遥测
+    if (this._dive.state === 'land') this._ix.diveStamp++;
+    // 硬直放大器：破势硬直期踩头伤害 ×1.35（再叠 damage() 的 1.7 倍窗口加成）
+    let dmg = scalePlayerDamage(96 + this.spellIdx * 18);
+    if (this.staggerT > 0) {
+      dmg *= 1.35;
+      this._ix.staggerStomp++;
+    }
+    this.damage(dmg);
     this._addPoise(34, fx);
     this.hitFlash = Math.min(0.2, this.hitFlash + 0.14);
     player.vy = -620;
@@ -1675,8 +1775,8 @@ export class Boss {
     }
 
     if (d.state === 'land') {
-      // 落地硬直窗口：头顶可踩、贴身可冲，0.85 秒后升空
-      if (d.t >= 0.85) { d.state = 'rise'; d.t = 0; d.tx = this.x; d.ty = this.y; }
+      // 落地反打窗口：头顶可踩、贴身可冲、射击破势 ×1.8，1.0 秒后升空
+      if (d.t >= 1.0) { d.state = 'rise'; d.t = 0; d.tx = this.x; d.ty = this.y; }
       return true;
     }
 
@@ -1704,6 +1804,9 @@ export class Boss {
   _onDiveLand(bullets, fx) {
     const gy = this.y;
     this.hurtCd = 0.25;
+    this._ix.diveLand++;
+    // 落地顺手甩一颗破势球：把「躲冲击波」接成「踩球 → 反打」的连续动作
+    this._spawnOrbs(fx, 1);
     fx?.shockwave(this.x, gy - 4, '#ffffff', 30, 960, 0.5);
     fx?.burst(this.x, gy - 6, this.def.accent, 26, 440);
     if (!bullets) return;
@@ -1724,7 +1827,342 @@ export class Boss {
     }
   }
 
+  /* ============================================================
+     需求 #4：可主动参与的互动（破势球 / 冲撞 COUNTER / 反打窗口 / 硬直放大器）
+     全部只在平台关生效（和 platformMelee 一致），STG 关保持原样。
+     ============================================================ */
+
+  /** 当前是否处于「反打窗口」：'dive'（俯冲落地）| 'ram'（冲撞后摇）| null */
+  _counterWindow() {
+    if (this._dive && this._dive.state === 'land') return 'dive';
+    if (this._ram && this._ram.state === 'recover') return 'ram';
+    return null;
+  }
+
+  /** 甩出可踩的破势球：抛物线落到地面静置，从上方踩爆 = 一大截破势 */
+  _spawnOrbs(fx, n = 2) {
+    if (!this.platformMelee || this.state !== 'battle') return;
+    for (let i = 0; i < n; i++) {
+      const dir = n === 1 ? (this.chance(0.5) ? 1 : -1) : (i % 2 === 0 ? -1 : 1);
+      this._orbs.push({
+        x: this.x + dir * this.rnd(30, 80),
+        y: this.y - this.h * 0.35,
+        vx: dir * this.rnd(30, 90),
+        vy: this.rnd(-160, -40),
+        r: 13,
+        t: 0,
+        life: 11,
+        rest: false,
+        spin: this.rnd(0, TAU),
+      });
+      if (this._orbs.length > 6) this._orbs.shift();
+    }
+    this._ix.orbSpawn += n;
+    fx?.flash(this.x, this.y - this.h * 0.35, '#7fd6ff', 10);
+  }
+
+  /** 破势球更新：飞 → 落地静置；玩家从上方落下踩到即爆（球不挡弹幕、不挡路） */
+  _updateOrbs(dt, player, fx) {
+    if (!this.platformMelee) return;
+    const gy = this.groundY;
+    for (let i = this._orbs.length - 1; i >= 0; i--) {
+      const o = this._orbs[i];
+      o.t += dt;
+      o.life -= dt;
+      if (!o.rest) {
+        o.vy += 1500 * dt;
+        o.x += o.vx * dt;
+        o.y += o.vy * dt;
+        o.spin += dt * 4;
+        if (o.y >= gy - o.r) {
+          o.y = gy - o.r;
+          o.vx = 0;
+          o.vy = 0;
+          o.rest = true;
+        }
+      }
+      // 踩踏判定：玩家下落中，脚底落在球体上半区（冲刺穿过不算）
+      if (o.life > 0 && player && player.alive !== false && !player.dashing) {
+        const pc = this._playerCenter(player);
+        const feet = player.y + (player.h || 0);
+        if ((player.vy || 0) > 40 &&
+            Math.abs(pc.x - o.x) < o.r + 20 &&
+            feet > o.y - o.r - 30 && feet < o.y + o.r + 4) {
+          this._popOrb(o, player, fx);
+          this._orbs.splice(i, 1);
+          continue;
+        }
+      }
+      if (o.life <= 0) this._orbs.splice(i, 1);
+    }
+
+    // 生成节奏：常驻互动（与俯冲 / 冲撞独立），7.5–11.5 秒一波、每波 2 颗
+    if (this.state === 'battle') {
+      this._orbCd -= dt;
+      if (this._orbCd <= 0 && this._orbs.length < 6) {
+        this._orbCd = this.rnd(7.5, 11.5);
+        this._spawnOrbs(fx, 2);
+      }
+    }
+  }
+
+  /** 踩破破势球：小伤害 + 一大截破势 + 把玩家弹起；硬直中踩则伤害加成 */
+  _popOrb(o, player, fx) {
+    this._ix.orbStomp++;
+    let dmg = scalePlayerDamage(22);
+    if (this.staggerT > 0) {
+      dmg *= 1.5;
+      this._staggerHits += 3;
+    }
+    this.damage(dmg);
+    this._addPoise(18, fx);
+    player.vy = -640;
+    player.jumpsLeft = 1;
+    player.invuln = Math.max(player.invuln || 0, 0.35);
+    this.poiseFlash = 0.15;
+    fx?.burst(o.x, o.y, '#7fd6ff', 16, 380);
+    fx?.shockwave(o.x, o.y, '#7fd6ff', 14, 420, 0.3);
+  }
+
+  /**
+   * 横向冲撞状态机：idle → windup（0.55s 白闪蓄力预警，可跳 / 可闪）→ rush（0.32s 贴地冲撞）
+   * → recover（0.75s 后摇，白闪 COUNTER 窗口）→ rise（0.55s 回巡游位）。
+   * 返回 true 表示正在冲撞中，本帧跳过常规移动与开火（后摇 / 回升期不结算接触伤害）。
+   */
+  _updateRam(dt, player, fx) {
+    if (!this.platformMelee) return false;
+    const r = this._ram;
+
+    if (r.state === 'idle') {
+      // 俯冲优先级更高；俯冲期间不给冲撞计时，免得两招撞车
+      if (this._dive.state !== 'idle') return false;
+      this._ramCd -= dt;
+      if (this._ramCd > 0) return false;
+      const pc = this._playerCenter(player);
+      r.state = 'windup';
+      r.t = 0;
+      r.hit = false;
+      r.fromX = this.x;
+      r.fromY = this.y;
+      r.dir = pc.x >= this.x ? 1 : -1;
+      r.ty = clamp(pc.y - 20, this.baseY - 40, this.groundY - 70);
+      r.tx = clamp(this.x + r.dir * 560, this.homeX - 640, this.homeX + 640);
+      this._ix.ramCharge++;
+      fx?.flash(this.x, this.y - this.h * 0.5, '#ffffff', 16);
+      return true;
+    }
+
+    r.t += dt;
+
+    if (r.state === 'windup') {
+      // 后仰蓄力：白闪 + 位移都在提示「要冲了」，给玩家起跳 / 冲刺离开的时间
+      const k = Math.min(1, r.t / 0.55);
+      this.x = r.fromX - r.dir * 34 * k;
+      this.y = r.fromY + (r.ty - r.fromY) * k * 0.45;
+      if (k >= 1) { r.state = 'rush'; r.t = 0; }
+      return true;
+    }
+
+    if (r.state === 'rush') {
+      const k = Math.min(1, r.t / 0.32);
+      const e = k * k;
+      this.x = r.fromX + (r.tx - r.fromX) * e;
+      this.y = r.fromY + (r.ty - r.fromY) * (0.45 + 0.55 * e);
+      if (this.hurtCd <= 0 && player && player.alive !== false && this._overlapPlayer(player)) {
+        player.hurt(1, this.x);
+        this.hurtCd = 0.6;
+        r.hit = true;
+      }
+      if (k >= 1) {
+        r.state = 'recover';
+        r.t = 0;
+        if (!r.hit) this._ix.ramWhiff++;
+        fx?.flash(this.x, this.y - this.h * 0.5, '#ffffff', 22);
+        fx?.shockwave(this.x, this.y - 16, '#ffffff', 24, 720, 0.45);
+      }
+      return true;
+    }
+
+    if (r.state === 'recover') {
+      // 后摇 0.75s：白闪 + COUNTER，冲刺撞进来伤害 ×1.5 / 破势翻倍
+      if (r.t >= 0.75) { r.state = 'rise'; r.t = 0; r.fromX = this.x; r.fromY = this.y; }
+      return true;
+    }
+
+    // rise：0.55s 回到巡游位
+    const k = Math.min(1, r.t / 0.55);
+    const e = 1 - Math.pow(1 - k, 2);
+    this.x = r.fromX + (this.homeX - r.fromX) * e;
+    this.y = r.fromY + (this.baseY - r.fromY) * e - Math.sin(k * Math.PI) * 12;
+    if (k >= 1) {
+      r.state = 'idle';
+      this.x = this.homeX;
+      this.y = this.baseY;
+      this._move.sx = this.x;
+      this._move.sy = this.y;
+      this._move.t = 0;
+      this._move.dur = 0;
+      this._moveWait = this.rnd(0.5, 1.0);
+      this._ramCd = this.rnd(9, 15);
+    }
+    return true;
+  }
+
+  /** 破势球绘制（世界坐标 → 以 Boss 为原点的局部坐标） */
+  _drawOrbs(ctx) {
+    if (!this._orbs.length) return;
+    for (const o of this._orbs) {
+      const x = o.x - this.x;
+      const y = o.y - this.y;
+      const pulse = 0.85 + 0.15 * Math.sin((o.t + o.spin) * 5);
+      ctx.save();
+      ctx.translate(x, y);
+      if (o.rest) {
+        ctx.globalAlpha = 0.28;
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.ellipse(0, o.r * 0.9, o.r * 0.95, o.r * 0.32, 0, 0, TAU);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(0, 0, 2, 0, 0, o.r * 2.1);
+      g.addColorStop(0, 'rgba(190,245,255,0.95)');
+      g.addColorStop(0.45, 'rgba(127,214,255,0.55)');
+      g.addColorStop(1, 'rgba(127,214,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(0, 0, o.r * 2.1, 0, TAU);
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#d8f6ff';
+      ctx.beginPath();
+      ctx.arc(0, 0, o.r * pulse, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // 落地后闪一个向下的小箭头：提示「可以踩」
+      if (o.rest) {
+        ctx.globalAlpha = 0.55 + 0.45 * Math.sin(this.t * 8);
+        ctx.fillStyle = '#7fd6ff';
+        ctx.beginPath();
+        ctx.moveTo(-6, -o.r - 16);
+        ctx.lineTo(6, -o.r - 16);
+        ctx.lineTo(0, -o.r - 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      // 快消失时红圈闪烁
+      if (o.life < 2.2) {
+        ctx.globalAlpha = 0.5 + 0.5 * Math.sin(this.t * 22);
+        ctx.strokeStyle = '#ff6b8a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, o.r + 4, 0, TAU);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
   /** Boss 头顶的破势槽 / 眩晕星（仅平台关） */
+  /** STG 关互动（非 EX）：① 贴身压制 ② 可击破符卡核心 */
+  _updateStgKit(dt, player, fx) {
+    if (this.state !== 'battle' || this.spellLock > 0) return;
+    const pc = this._playerCenter(player);
+    const d = Math.hypot(pc.x - this.x, pc.y - this.y);
+    // ① 贴身压制：在 Boss 近距 300px 内持续 1.2s → 获得短暂射击增伤（每次激活计一次数）
+    if (d < 300) this._stgPressT = Math.min(2.2, this._stgPressT + dt);
+    else this._stgPressT = Math.max(0, this._stgPressT - dt * 2);
+    if (this._stgPressT >= 1.2 && !this._stgPressOn) {
+      this._stgPressOn = true;
+      this._stgPressT = 1.8;
+      this._ix.stgPressure++;
+      fx?.flash(this.x, this.y - 70, '#7fd6ff', 18);
+      fx?.shockwave(this.x, this.y - 70, '#7fd6ff', 14, 420, 0.35);
+    }
+    if (this._stgPressOn) {
+      this._stgPressT -= dt;
+      if (this._stgPressT <= 0) { this._stgPressOn = false; this._stgPressT = 0; }
+    }
+    // ② 符卡核心：每 15–21s 在 Boss 头顶附近显形，存活 9s；打爆后 Boss 停火 1.1s + 掉一截血
+    this._coreFlash = Math.max(0, this._coreFlash - dt);
+    if (this._core) {
+      this._core.t += dt;
+      if (this._core.t > 7) { this._core = null; this._coreCd = this.rnd(18, 24); }
+    } else {
+      this._coreCd -= dt;
+      if (this._coreCd <= 0) {
+        this._core = { t: 0, hp: 360, maxHp: 360, ox: this.rnd(-64, 64), oy: this.rnd(-92, -54) };
+        this._coreCd = this.rnd(28, 36);
+        fx?.flash(this.x, this.y - 70, '#ffe66d', 20);
+      }
+    }
+  }
+
+  _corePos() { return this._core ? { x: this.x + this._core.ox, y: this.y + this._core.oy } : null; }
+
+  _damageCore(dmg, hx, hy, fx) {
+    const c = this._core;
+    if (!c || this.state !== 'battle') return;
+    c.hp -= dmg;
+    this._ix.coreHit++;
+    this._coreFlash = 0.12;
+    if (c.hp > 0) return;
+    const cp = this._corePos();
+    this._core = null;
+    this._coreCd = this.rnd(20, 26);
+    this._coreFlash = 0.5;
+    this._ix.coreBreak++;
+    this.damage(scalePlayerDamage(50));
+    this.spellLock = Math.max(this.spellLock, 1.1);
+    if (cp) {
+      fx?.flash(cp.x, cp.y, '#ffe66d', 26);
+      fx?.shockwave(cp.x, cp.y, '#ffe66d', 20, 760, 0.45);
+    }
+  }
+
+  _drawStgKit(ctx) {
+    if (this.platformMelee || this.difficulty === 'EX') return;
+    if (this._core) {
+      const k = clamp(this._core.hp / this._core.maxHp, 0, 1);
+      const pulse = 0.9 + Math.sin(this.t * 8) * 0.1;
+      ctx.save();
+      ctx.translate(this._core.ox, this._core.oy);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = this._coreFlash > 0 ? 'rgba(255,230,109,0.92)' : 'rgba(127,214,255,0.5)';
+      ctx.beginPath(); ctx.arc(0, 0, 15 * pulse, 0, TAU); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = '#ffe66d';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = this.t * 1.5 + (i * TAU) / 6;
+        const rr = 20;
+        const px = Math.cos(a) * rr;
+        const py = Math.sin(a) * rr;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.stroke();
+      ctx.fillStyle = 'rgba(8,10,24,0.65)';
+      ctx.fillRect(-22, 26, 44, 4);
+      ctx.fillStyle = k > 0.4 ? '#ffe66d' : '#ff6b8a';
+      ctx.fillRect(-21, 27, 42 * k, 2);
+      ctx.restore();
+    }
+    if (this._stgPressOn) {
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#7fd6ff';
+      ctx.font = 'bold 13px "Microsoft YaHei", "PingFang SC", sans-serif';
+      ctx.fillText('贴身压制 ×1.10', 0, -this.h * 0.95);
+      ctx.restore();
+    }
+  }
+
   _drawMeleeUI(ctx) {
     if (!this.platformMelee || this.state !== 'battle' || this.alpha < 0.5) return;
     // 立绘高度（脚底原点向上）：碰撞盒 h 只有 132，立绘却有 236~256
@@ -1748,6 +2186,28 @@ export class Boss {
       ctx.restore();
     }
 
+    // 冲撞预警 / 反打窗口提示：白闪时告诉玩家「现在可以贴脸输出」
+    const win = this._counterWindow();
+    if (win) {
+      const pulse = 0.6 + 0.4 * Math.sin(this.t * 14);
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 15px "Microsoft YaHei", "PingFang SC", sans-serif';
+      ctx.fillText('COUNTER!', 0, y - 26);
+      ctx.restore();
+    } else if (this._ram.state === 'windup') {
+      const pulse = 0.5 + 0.5 * Math.sin(this.t * 20);
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff6b8a';
+      ctx.font = 'bold 15px "Microsoft YaHei", "PingFang SC", sans-serif';
+      ctx.fillText('DASH!', 0, y - 26);
+      ctx.restore();
+    }
+
     if (this.staggerT > 0) {
       ctx.save();
       ctx.globalAlpha = 0.92;
@@ -1755,6 +2215,12 @@ export class Boss {
       ctx.fillStyle = '#ffe66d';
       ctx.font = 'bold 15px "Microsoft YaHei", "PingFang SC", sans-serif';
       ctx.fillText('STAGGER!', 0, y - 8);
+      // 硬直放大器：显示硬直期连击数（每 8 跳追加一次伤害）
+      if (this._staggerHits > 0) {
+        ctx.font = 'bold 12px "Microsoft YaHei", "PingFang SC", sans-serif';
+        ctx.fillStyle = '#ffe66d';
+        ctx.fillText(`连击 ${this._staggerHits}`, 0, y + 10);
+      }
       for (let i = 0; i < 3; i++) {
         const a = this.t * 6 + (i * TAU) / 3;
         ctx.beginPath();
@@ -1794,6 +2260,11 @@ export class Boss {
     ctx.arc(0, -this.h * 0.55, 150, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
+
+    // 落地破势球画在立绘之前（它们在脚下，Boss 身体应该压在上面）
+    this._drawOrbs(ctx);
+    // STG 关的符卡核心 / 压制提示
+    this._drawStgKit(ctx);
 
     const bossArtOpts = {
       boss: this.key,
