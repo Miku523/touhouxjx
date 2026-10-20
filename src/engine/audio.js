@@ -36,6 +36,8 @@ export class AudioEngine {
     this._musicGain = null;   // BGM 总线（比音效更轻）
     this._softIn = null;      // 柔和总线入口（低通 + 短回声），仅 soft 曲目走这条
     this._songSoft = false;   // 当前曲目是否走柔和总线（歌曲数据里的 soft 标记）
+    this._warmIn = null;      // 温总线入口（轻低通 + 短反射），warm 曲目走这条去 8-bit 干声
+    this._songWarm = false;   // 当前曲目是否走温总线（歌曲数据里的 warm 标记）
     this._noiseBuffer = null; // 白噪声 buffer，懒创建
     this._muted = false;
     this._sfxOn = true;       // 音效开关（菜单可关）
@@ -113,6 +115,7 @@ export class AudioEngine {
       this._musicGain.gain.value = 0.9 * this._musicVolume;
       this._musicGain.connect(this._master);
       this._buildSoftBus();
+      this._buildWarmBus();
       this._ensureNoiseBuffer();
       return true;
     } catch (e) {
@@ -584,9 +587,57 @@ export class AudioEngine {
     }
   }
 
-  /** 当前曲目的发声出口：soft 曲目走柔和总线，其余直接进 BGM 总线 */
+  /**
+   * 温总线：给带 warm 标记的曲目去掉「干、硬、像游戏机」的听感。
+   *
+   *   warmIn → 低通(5.2kHz, Q 0.6) ─┬→ 干声 0.95 → musicGain
+   *                                 └→ 反射 0.21s（反馈 0.15）→ 湿声 0.11 → musicGain
+   *
+   * 比柔和总线（2.4kHz / 湿 0.15）轻一档：只削最刺的高次谐波、补一点房间感，
+   * 旋律的明亮度保留。整条链只在 unlock 时建一次。
+   */
+  _buildWarmBus() {
+    const ctx = this.ctx;
+    if (!ctx || this._warmIn || !this._musicGain) return;
+    try {
+      const input = ctx.createGain();
+      input.gain.value = 1;
+
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 5200;
+      lp.Q.value = 0.6;
+
+      const dry = ctx.createGain();
+      dry.gain.value = 0.95;
+
+      const delay = ctx.createDelay(1.0);
+      delay.delayTime.value = 0.21;
+      const fb = ctx.createGain();
+      fb.gain.value = 0.15;
+      const wet = ctx.createGain();
+      wet.gain.value = 0.11;
+
+      input.connect(lp);
+      lp.connect(dry);
+      dry.connect(this._musicGain);
+      lp.connect(delay);
+      delay.connect(fb);
+      fb.connect(delay);
+      delay.connect(wet);
+      wet.connect(this._musicGain);
+
+      this._warmIn = input;
+    } catch (e) {
+      this._warmIn = null;
+    }
+  }
+
+  /** 当前曲目的发声出口：soft 走柔和总线，warm 走温总线，其余直接进 BGM 总线 */
   _musicOut() {
-    return this._songSoft && this._softIn ? this._softIn : this._musicGain;
+    if (this._songSoft && this._softIn) return this._softIn;
+    if (this._songWarm && this._warmIn) return this._warmIn;
+    return this._musicGain;
   }
 
   _startMusic() {
@@ -596,6 +647,7 @@ export class AudioEngine {
     if (!song || !song.duration) return; // 没有曲目数据就保持安静
     this._song = song;
     this._songSoft = !!song.soft;
+    this._songWarm = !!song.warm;
     this._events = this._getEvents(name, song);
     if (!this._events || !this._events.length) return;
     // 真正开始发声时才算「听见」：音乐关着时切歌不会误解锁回忆室里的曲目

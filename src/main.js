@@ -104,8 +104,8 @@ class Game {
     this.difficulty = 'N';
     this.levelIndex = 0;
     this.inExtra = false;
-    // 开局给一点 POWER（4 = 火力 2 级），否则第一关 Boss 只能拿 1 级火力磨
-    this.carryPower = 4;
+    // 开局给一点 POWER（16 = 火力 2 级），否则第一关 Boss 只能拿 1 级火力磨
+    this.carryPower = 16;
     // 本次挑战内的残机与 1UP 进度：在设置页选的 lives 只是「开局值」，
     // 中途 1UP 拿到的残机、没满 99 的 extend 进度都要带进下一关，
     // 否则「99 点换一命」会在转关时凭空蒸发，等于白攒。
@@ -829,7 +829,7 @@ class Game {
   startGame() {
     this._hidePanel();
     this.inExtra = false;
-    this.carryPower = 4;
+    this.carryPower = 16;
     this.continues = 0;
     this.levelIndex = 0;
     this.runLives = null;
@@ -883,6 +883,13 @@ class Game {
     const startLives = this.runLives ?? this.lives;
     this.runLives = startLives;
     seedReset?.(); // ?seed= 时把关卡随机序列拨回起点，保证弹幕可复现
+    // 本关音乐：配了 musicPre 的关卡（1 / 2 面）先进道中曲，Boss 登场时再切 Boss 曲；
+    // 其余关卡没有 musicPre，照旧一首到底。必须在 beginBoss() 之前登记——resumeBoss 会在
+    // 建完 Stage 后立刻开战并同步触发 bossStart，那时就得知道本关该放哪首。
+    this._levelMusic = { pre: def.musicPre || null, boss: def.music || null };
+    // 本次进关还没切到 Boss 曲；resumeBoss 时下面的 beginBoss() 会同步把它翻成 true，
+    // 稍后的播曲那里就不会把道中曲再盖上去。
+    this._bossMusicSwitched = false;
     this.stage = new Stage({
       def,
       index,
@@ -957,8 +964,9 @@ class Game {
     this.hud.setMaxLives(startLives, this.char);
     this.hud.setStageName(isExtra ? 'EXTRA' : `STAGE ${index + 1}`, def.title || '');
     this.hud.banner(isExtra ? 'EXTRA STAGE' : `STAGE ${index + 1}`, def.title || '', 2.6);
-    // 本关 BOSS 的原作主题曲（8-bit 合成版）
-    this.audio.playMusic?.(def.music || 'stage1');
+    if (!this._bossMusicSwitched) {
+      this.audio.playMusic?.(this._levelMusic.pre || this._levelMusic.boss || 'stage1');
+    }
     this.audio.setMusic?.(this.musicOn !== false);
     this.audio.play?.('menu');
 
@@ -1034,6 +1042,21 @@ class Game {
         this.hud.banner('1UP', '残机 +1', 1.6);
         this._sfx('extend');
         break;
+      case 'cardResult': {
+        // 符卡限时结算（spec 3.5）：Stage 决定 reward —— 按时击破/坚持到点给 POWER（满槽改残机），超时给 10 点
+        const reward = data && data.reward;
+        if (reward === 'power') {
+          this.hud.banner('+POWER', '火力 +1 格', 1.4);
+          this._sfx('checkpoint'); // 复用存档点双音上行：小奖励，不盖过 Boss 主题曲
+        } else if (reward === 'life') {
+          // 满火力奖励残机：stage 侧走 _addExtend 已同步 emit 'extend'，
+          // 横幅与音效交给上面的 case 'extend' 播一次即可，这里不重复弹。
+        } else if (reward === 'points') {
+          this.hud.banner('超时', '奖励 +10 点', 1.4);
+          this._sfx('bossStagger'); // 复用破势警报：超时提示要能一下听出来
+        }
+        break;
+      }
       case 'bossTrigger':
         // 事件带信息：EXTRA 靠 data.midboss 区分「中途 Boss」和「终盘 Boss」
         this._onBossTrigger(data);
@@ -1042,6 +1065,14 @@ class Game {
         seedReset?.(); // 从开战这一帧把随机序列拨回起点，弹幕才有复现意义
         this.hud.banner(data.name || '', data.title || '', 2.0);
         this.audio.play?.('menu');
+        // 道中曲 → Boss 曲：只有配了 musicPre 的关卡这么切，其余保持原样
+        {
+          const lm = this._levelMusic;
+          if (lm && lm.pre && lm.boss && !this._bossMusicSwitched) {
+            this._bossMusicSwitched = true;
+            this.audio.playMusic?.(lm.boss);
+          }
+        }
         break;
       case 'bossPhase':
         this.hud.banner('', data.name || '', 1.4);
@@ -1102,7 +1133,7 @@ class Game {
     // 火力继承：打完这关的 POWER 带进下一关
     if (this.stage?.player) {
       const p = this.stage.player;
-      this.carryPower = Math.min(p.maxPower || 16, Math.round(p.power || 0));
+      this.carryPower = Math.min(p.maxPower || 64, Math.round(p.power || 0));
       // 残机与 1UP 进度同样继承：这关靠 99 点换来的命、没满的进度都不能蒸发
       this.runLives = p.lives;
       this.carryExtend = this.stage.extendPts || 0;

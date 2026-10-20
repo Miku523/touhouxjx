@@ -10,7 +10,54 @@
   <link rel="apple-touch-icon" href="./src/art/apple-touch-icon.png" />
   <!-- 入口样式 / 脚本带 ?v= 缓存版本串：改动 src/ 后递增（见 README「部署」），
        旧访客的缓存会立刻失效，不必等 GitHub Pages 的 10 分钟 CDN 缓存到期 -->
-  <link rel="stylesheet" href="./src/style.css?v=1.2.2" />
+  <link rel="stylesheet" href="./src/style.css?v=1.2.6" />
+  <!-- Boss 符卡计时行 / survival 血条的追加样式：只新增 id/类，不覆盖 style.css 里既有 Boss 血条规则。
+       放这里是为了让「HUD 计时」这一处改动自成一块，改完可整段删除回滚。 -->
+  <style>
+    /* ---------- Boss 符卡计时行（damage 倒计时 / survival 坚持时间） ---------- */
+    #bossCardTimer {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: calc(var(--s) * 8px);
+      margin-top: calc(var(--s) * 4px);
+      min-height: calc(var(--s) * 14px);
+      font-family: var(--serif);
+      font-size: calc(var(--s) * 11px);
+      letter-spacing: .16em;
+      font-variant-numeric: tabular-nums;
+      color: var(--gold);
+      text-shadow:
+        0 1px calc(var(--s) * 2px) rgba(0, 0, 0, .95),
+        0 0 calc(var(--s) * 8px) rgba(0, 0, 0, .85);
+    }
+    #bossCardTimer.overtime { color: #ff9a6e; }
+    #bossCardTimer.survive .bct-text { color: var(--cyan); }
+    #bossCardTimer .bct-mode {
+      padding: calc(var(--s) * 1px) calc(var(--s) * 6px) calc(var(--s) * 1px) calc(var(--s) * 8px);
+      border: 1px solid rgba(110, 231, 255, .65);
+      border-radius: calc(var(--s) * 3px);
+      font-size: calc(var(--s) * 9.5px);
+      letter-spacing: .28em;
+      color: #d9fbff;
+      background: rgba(30, 150, 185, .30);
+      box-shadow: 0 0 calc(var(--s) * 10px) rgba(110, 231, 255, .45);
+      text-shadow: 0 0 calc(var(--s) * 8px) rgba(110, 231, 255, .8);
+      animation: bct-pulse 1.1s ease-in-out infinite;
+    }
+    @keyframes bct-pulse {
+      0%, 100% { opacity: .68; }
+      50% { opacity: 1; }
+    }
+    /* survival 卡：Boss 免疫伤害，血条改为「剩余时间比例」并用青蓝配色区分 damage 卡 */
+    #bossBar.survive .bbar { border-color: rgba(110, 231, 255, .55); }
+    #bossBar.survive .bbar > i {
+      background: linear-gradient(180deg, #d6fbff, #4fd6ff 42%, #0f5f8f);
+      box-shadow:
+        0 0 calc(var(--s) * 16px) rgba(110, 231, 255, .75),
+        inset 0 1px 0 rgba(255, 255, 255, .7);
+    }
+  </style>
   <!-- 标题画面三张图是首屏必需素材：预加载 + 高优先级，配合启动幕保证同帧出现 -->
   <link rel="preload" as="image" href="./src/art/gen/title_bg.jpg" fetchpriority="high" />
   <link rel="preload" as="image" href="./src/art/gen/reimu_title.png" fetchpriority="high" />
@@ -38,11 +85,11 @@
             </div>
             <div class="power-body">
               <div class="pbar" id="powerBar">
-                <span id="powerCastMark" class="pcast" title="符卡消耗 6 POWER"></span>
+                <span id="powerCastMark" class="pcast" title="符卡消耗 24 POWER"></span>
                 <i id="powerFill"></i>
               </div>
               <span id="powerNum" class="pn">0</span>
-              <span class="pdim">/ <b id="powerMax">16</b></span>
+              <span class="pdim">/ <b id="powerMax">64</b></span>
               <span id="powerPop" class="ppop" aria-live="polite"></span>
             </div>
             <!-- 1UP 累计：拾取 POWER 每满 99 点恢复 1 命 -->
@@ -73,6 +120,13 @@
           <span id="bossPhase"></span>
         </div>
         <div class="bbar"><i id="bossFill"></i></div>
+        <!-- 卡计时/模式行：只有带 limit 的符卡才显示（EXTRA 无 limit → 整行隐藏）
+             damage：「限时 剩余 12.4s」，超时后「超时 · 击破 +10 点」
+             survival：SURVIVE 标记 +「坚持 12.4s」 -->
+        <div id="bossCardTimer" class="hidden">
+          <span id="bossCardMode" class="bct-mode hidden">SURVIVE</span>
+          <span id="bossCardText" class="bct-text"></span>
+        </div>
       </div>
 
       <!-- ===== 符卡 cut-in：释放瞬间的全屏演出（白闪 → 立绘破屏 → 符卡名砸出 → 白光收束） ===== -->
@@ -190,6 +244,6 @@
     </div>
   </div>
 
-  <script type="module" src="./src/main.js?v=1.2.2"></script>
+  <script type="module" src="./src/main.js?v=1.2.6"></script>
 </body>
 </html>

@@ -22,7 +22,11 @@ models.json
 arktest.json
 tools/build/themes.json
 # 乐曲试听渲染（8.8MB / 1.5MB，按需重跑 tools/build_*.py 生成）
+tools/build/*.wav
+tools/build/*.mp3
 tools/build/*_preview.wav
+# Windows 下误建的空文件名
+nul
 # midi2js 改版前的 JS 备份
 tools/build/touhou.before.js
 
@@ -71,3 +75,4 @@ tools/_shots/
 # playtest / 调试产物
 _pt/
 _hit/
+tools/build/musicroom_*.png
