@@ -73,7 +73,16 @@ const RESUME = argv.resume === '1';
 const PLAN = String(argv.plan || argv.diffPlan || 'N:1-6;E:1,4;H:2,3;T:1;D:1');
 // 整关跑：这些面不传送/不强开 Boss，让 bot 正常打道中到 Boss（stg 关 force-boss 站位失真时用）
 const FULL_RUN = parseStageList(argv.fullRun || '');
+const PLAYER_POWER = Number(argv.power || 128);          // 开局火力（模拟正常玩家：死一次后 respawnKeep=0.5 → 32=Lv3）
 const DPS_ORACLE = Number(argv.dpsOracle || 200);        // 血量公式的基准 DPS（calibration 前后不同）
+// 2026-10-21 口径变更：血量按「满火力实测 ×0.76」重算后，满火力 bot 应在 0.80×limit 击破，
+// 而不是贴到 1.00×limit。判定口径（ratio = elapsed / limit）：
+//   ratio > 0.95（TARGET+0.15）→ FAIL：余量不足 5%，正常玩家一旦失手就超时；
+//   ratio < 0.65（TARGET-0.15）→ WARN：打得太快（bot 噪声 / 血量被过度下调），不算失败。
+const TARGET_RATIO = Number(argv.targetRatio || 0.8);
+const TIMING_HI = TARGET_RATIO + 0.15;
+const TIMING_LO = TARGET_RATIO - 0.15;
+const nearTarget = (r) => r != null && r >= TIMING_LO && r <= TIMING_HI;
 const HPSCALE_MODE = String(argv.hpScaleMode || 'auto'); // auto|applied|none：血量是否按难度 hpScale 缩放
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -170,7 +179,7 @@ function parsePlan(plan) {
           mutateCard: null, mutateMul: 1,
         });
       } else {
-        runs.push({ tag, diff: tag, stage, test: false, startPower: 128, deathTest: false, full: FULL_RUN.includes(stage) });
+        runs.push({ tag, diff: tag, stage, test: false, startPower: PLAYER_POWER, deathTest: false, full: FULL_RUN.includes(stage) });
       }
     }
   }
@@ -982,16 +991,20 @@ function analyzeRun(out) {
       if (elapsed == null) fail('缺少 cardElapsed');
       else if (mutated) { /* 时长判定跳过 */ }
       else if (diff === 'N' || !useNorm) {
-        if (Math.abs(ratio - 1) > 0.15) {
-          const msg = `时长 ${elapsed.toFixed(1)}s / limit ${exp.limit}s = ${(ratio * 100 - 100).toFixed(1)}%（超出 ±15%）`;
+        if (ratio > TIMING_HI) {
+          const msg = `时长 ${elapsed.toFixed(1)}s / limit ${exp.limit}s = ${(ratio * 100).toFixed(1)}%（上限 ${(TIMING_HI * 100).toFixed(0)}%：正常玩家余量不足）`;
           if (timingWarnOnly) warns.push(msg + '（落命测试跑，参照用）'); else fail(msg);
+        } else if (ratio < TIMING_LO) {
+          warns.push(`s${stage}-${diff} 卡${i + 1}：时长 ${elapsed.toFixed(1)}s / limit ${exp.limit}s = ${(ratio * 100).toFixed(1)}%（低于下限 ${(TIMING_LO * 100).toFixed(0)}%，打得偏快，非失败）`);
         }
       } else {
-        if (Math.abs(normRatio - 1) > 0.15) {
-          const msg = `hpScale 归一后 ${elapsed.toFixed(1)}s/(${hpScale}×${exp.limit}s) = ${(normRatio * 100 - 100).toFixed(1)}%（超出 ±15%）`;
+        if (normRatio > TIMING_HI) {
+          const msg = `hpScale 归一后 ${elapsed.toFixed(1)}s/(${hpScale}×${exp.limit}s) = ${(normRatio * 100).toFixed(1)}%（上限 ${(TIMING_HI * 100).toFixed(0)}%）`;
           if (timingWarnOnly) warns.push(msg + '（落命测试跑，参照用）'); else fail(msg);
+        } else if (normRatio < TIMING_LO) {
+          warns.push(`s${stage}-${diff} 卡${i + 1}：hpScale 归一后 ${(normRatio * 100).toFixed(1)}%（低于下限 ${(TIMING_LO * 100).toFixed(0)}%，非失败）`);
         }
-        if (Math.abs(ratio - 1) > 0.15) warns.push(`s${stage}-${diff} 卡${i + 1}：原始偏差 ${(ratio * 100 - 100).toFixed(1)}%（血量按 hpScale ${hpScale} 缩放，属预期）`);
+        if (!nearTarget(ratio)) warns.push(`s${stage}-${diff} 卡${i + 1}：原始偏差 ${((ratio / TARGET_RATIO) * 100 - 100).toFixed(1)}%（血量按 hpScale ${hpScale} 缩放，属预期）`);
       }
       if (exp.limit && resOk != null && !mutated && resOk !== (elapsed <= exp.limit + 1e-6)) fail(`ok=${resOk}，但 elapsed=${elapsed}s vs limit=${exp.limit}s 不匹配`);
       if (c.ended && !mutated && c.ratioMin > 0.02) fail(`damage 卡结束时血条未打空：cardRatio min=${c.ratioMin}（血条被打空才应切卡）`);
@@ -1173,12 +1186,12 @@ function buildSummary(results) {
   summary.stats = {
     cardsTotal: allCards.length,
     normalCards: nCards.length,
-    normalTimedOk: timed.filter((c) => Math.abs(c.ratio - 1) <= 0.15).length,
+    normalTimedOk: timed.filter((c) => nearTarget(c.ratio)).length,
     normalTimed: timed.length,
     survivalCards: allCards.filter((c) => c.mode === 'survival').length,
     survivalOk: allCards.filter((c) => c.mode === 'survival' && c.ok === true && (c.elapsed || 0) >= (c.expectedLimit - 0.1)).length,
-    passCards: allCards.filter((c) => c.ratio == null || Math.abs(c.ratio - 1) <= 0.15).length,
-    failCards: allCards.filter((c) => c.ratio != null && Math.abs(c.ratio - 1) > 0.15).length,
+    passCards: allCards.filter((c) => c.ratio == null || c.ratio <= TIMING_HI).length,
+    failCards: allCards.filter((c) => c.ratio != null && c.ratio > TIMING_HI).length,
     measuredDps: (() => {
       const arr = nCards.filter((c) => c.mode === 'damage' && c.measuredDps).map((c) => c.measuredDps);
       if (!arr.length) return null;
@@ -1210,8 +1223,8 @@ function writeMarkdown(summary) {
   lines.push('| 面 | 难度 | # | 符卡 | 模式 | limit | elapsed | 偏差 | ok | reward | 判定 | HUD | 截图 |');
   lines.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const c of summary.cards) {
-    const dev = c.ratio != null ? `${(c.ratio * 100 - 100).toFixed(1)}%` : '—';
-    const pass = c.ratio == null ? '—' : Math.abs(c.ratio - 1) <= 0.15 ? 'PASS' : 'FAIL';
+    const dev = c.ratio != null ? `${(c.ratio * 100).toFixed(1)}% / 目标差 ${((c.ratio / TARGET_RATIO) * 100 - 100).toFixed(1)}%` : '—';
+    const pass = c.ratio == null ? '—' : c.ratio > TIMING_HI ? 'FAIL' : c.ratio < TIMING_LO ? 'WARN' : 'PASS';
     const hud = c.mode === 'survival' ? (c.hudMid || c.hudStart || '') : (c.hudMid || c.hudStart || '');
     lines.push(`| ${c.stage} | ${c.diff} | ${c.index} | ${c.name} | ${c.mode} | ${c.limit ?? '—'} | ${c.elapsed ?? '—'} | ${dev} | ${c.ok} | ${c.reward || '—'} | ${pass} | ${String(hud).replace(/\|/g, '\\|')} | |`);
   }

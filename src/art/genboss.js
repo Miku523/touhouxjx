@@ -13,7 +13,7 @@
 import { preloadWhenIdle, setPriority } from '../engine/lazy_preload.js';
 
 const BASE = new URL('./gen/boss/', import.meta.url);
-const KEYS = ['rumia', 'wriggle', 'cirno', 'aya', 'yuyuko', 'kaguya', 'flandre', 'remilia'];
+const KEYS = ['rumia', 'wriggle', 'cirno', 'aya', 'yuyuko', 'kaguya', 'flandre', 'remilia', 'youmu'];
 /** 游戏内显示高度（旧版占位框为 240，AI 立绘略高） */
 const DRAW_H = 236;
 /** 逐角色视觉身高微调：身形偏窄的（妖精系）放大一点，长裙系保持原样，避免同屏看起来大小不一致 */
@@ -28,7 +28,10 @@ const BOSS_H = {
   flandre: 256,
   // 中途 Boss：翼展比芙兰宽，身高压一点，头顶才不会顶到 Boss 血条
   remilia: 236,
+  // 中途 Boss 魂魄妖梦：比关底略矮，双刀举过头时也不顶血条
+  youmu: 238,
 };
+/* 立绘一律走 AI 素材（src/art/gen/boss/<key>.png）；缺图由调用方铺柔光占位，不画矢量小人。 */
 /** 暗贴纸放大倍率 / 光晕模糊半径 */
 const HALO_K = 1.05;
 const HALO_BLUR = 3;
@@ -255,11 +258,7 @@ export function drawGenBoss(ctx, o) {
   return true;
 }
 
-export function genBossReady(key) {
-  const holder = IMGS[key];
-  return !!(holder && holder.art);
-}
-
+/** 立绘是否就绪（含程序化分支：妖梦永远就绪，不需要等图）。 */
 /**
  * 立绘的显示高度（以脚底原点向上，像素）。
  * 近战提示（破势条 / 眩晕星）按这个高度定位头顶，别用 Boss 的碰撞盒 h——

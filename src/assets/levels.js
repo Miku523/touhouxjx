@@ -22,6 +22,34 @@
 
 export const TILE = 32;
 
+/**
+ * STAGE5 中途战「魂魄妖梦」的编排参数。
+ *
+ * 同一份对象同时发给 levelgen（挖舞台 / 停刷小怪 / 放补偿 P）和 stage.js
+ * （触发线 / 登场位置 / 呼吸区），避免两处各写一套像素数。
+ * 关卡是程序生成的，所以位置全都写成「距关卡右端 w 的像素数」，改 cols 不用重算：
+ *
+ *   triggerFromEnd  玩家越过 w-triggerFromEnd 这条线 → 妖梦拦路（midboss 登场）
+ *   arenaFromEnd    妖梦舞台中心在 w-arenaFromEnd；levelgen 把这段挖成平地
+ *   arenaHalf       舞台半宽（像素）。舞台内不刷小怪，原本的火力折算成 P 点
+ *   breathDist      击破妖梦后还要再前进多少像素，才允许触发关底幽幽子
+ *   breathSec       同时要求道中计时再过多少秒（距离 + 时间双保险，防止击破瞬间被接走）
+ *   directPower     进妖梦战一次性补进火力条的点数；舞台小怪取消的补偿见 levelgen（会再撒 P 道具）
+ *   key             Boss 注册表里的 key（Boss 本体由另一条实现线提供）
+ */
+const STAGE5_MIDBOSS = {
+  key: 'youmu',
+  triggerFromEnd: 5400,
+  arenaFromEnd: 4600,
+  arenaHalf: 900,
+  breathDist: 700,
+  breathSec: 0.8,
+  // 补偿口径：妖梦舞台（col 998–1054）里原本会刷 5 只小怪，合计 5 点火力；
+  // levelgen 已在舞台内补 2 枚 P 道具（POWER.pickup = 4，合 8 点），
+  // 这里进战再直接补 2 点 → 进妖梦战时约 +10 点，比改动前略高。
+  directPower: 2,
+};
+
 export const LEVELS = [
   {
     id: 'stage1',
@@ -82,10 +110,18 @@ export const LEVELS = [
     theme: 'nether',
     mode: 'platform',
     boss: 'yuyuko',
+    // 幽幽子之前先打魂魄妖梦（midboss）：道中 → 妖梦 → 呼吸区 → 幽幽子。
+    // 触发线 / 舞台 / 呼吸区 / 火力补偿全在这份配置里，gen.midboss 是同一份对象的引用。
+    midboss: STAGE5_MIDBOSS,
+    musicPre: 'pre5',
     music: 'stage5',
     hint: '纵向高台落差更大　砖块踩久会塌　↑／↓ 上下射击',
     fairyTint: { main: 'purple', mix: ['red', 'yellow', 'blue'] },
-    gen: { kind: 'platform', rows: 34, ground: 31, cols: 1170, seed: 5505, style: 'nether' },
+    gen: {
+      kind: 'platform', rows: 34, ground: 31, cols: 1170, seed: 5505, style: 'nether',
+      // levelgen 只拿得到 gen：这里放同一个引用，生成器才知道在哪挖妖梦舞台、停刷小怪。
+      midboss: STAGE5_MIDBOSS,
+    },
   },
   {
     id: 'stage6',
@@ -94,6 +130,7 @@ export const LEVELS = [
     theme: 'moon',
     mode: 'platform',
     boss: 'kaguya',
+    musicPre: 'pre6',
     music: 'stage6',
     hint: '砖墙与浮台交错　崩落砖桥要快速通过　↑／↓ 上下射击',
     fairyTint: { main: 'blue', mix: ['purple', 'yellow', 'red'] },
@@ -106,6 +143,10 @@ export const LEVELS = [
     theme: 'mansion',
     mode: 'stg',
     boss: 'flandre',
+    // EXTRA 走三段式：0:00 道中放血月编 → 3:00 雷米莉亚拦路切中段曲（亡き王女）→
+    // 姐姐认输后回血月编 → 6:00 芙兰朵露登场才切 U.N.
+    musicPre: 'ex_pre',
+    musicMid: 'ex_mid',
     music: 'extra',
     extra: true,
     hint: '零火力起手的 6:00 道中　3:00 雷米莉亚拦路 → 6:00 芙兰朵露终盘　全程弹幕密度极高',

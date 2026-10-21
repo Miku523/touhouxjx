@@ -1,6 +1,9 @@
 /**
  * 剧情对话系统：DOM 文本 + AI 立绘（缺图时只留柔光，不画任何矢量人物）+ 打字机效果。
  *
+ * 例外：中途 Boss 魂魄妖梦（youmu）没有 AI 立绘，复用 genboss.js 的程序化战斗立绘当对话立绘，
+ * 保证「战斗里看到的她」和「对话里说话的她」是同一张画。
+ *
  * 用法：
  *   const dlg = new Dialogue();
  *   dlg.play(script, { onEnd: () => resume() });
@@ -21,6 +24,7 @@ const AI_PORTRAITS = {
   kaguya: 'kaguya.png',
   flandre: 'flandre.png',
   remilia: 'remilia.png',
+  youmu: 'youmu.png',
 };
 const AI_BASE = new URL('../art/gen/', import.meta.url);
 const aiImages = {};
@@ -70,17 +74,19 @@ preloadWhenIdle(() => {
 /** 有 AI 立绘就用它（底部中心对齐、高度 560），返回是否画了 */
 function paintAiPortrait(ctx, o) {
   const img = aiImages[o.char];
-  if (!img || !img.naturalWidth) return false;
-  const h = 560;
-  const w = img.naturalWidth * (h / img.naturalHeight);
-  ctx.save();
-  ctx.globalAlpha = o.alpha ?? 1;
-  // 情绪：慌张/受击轻微侧倾，开心稍微抬头
-  if (o.mood === 'panic') ctx.rotate(-0.03);
-  else if (o.mood === 'sad') ctx.rotate(0.02);
-  ctx.drawImage(img, -w / 2, -h, w, h);
-  ctx.restore();
-  return true;
+  if (img && img.naturalWidth) {
+    const h = 560;
+    const w = img.naturalWidth * (h / img.naturalHeight);
+    ctx.save();
+    ctx.globalAlpha = o.alpha ?? 1;
+    // 情绪：慌张/受击轻微侧倾，开心稍微抬头
+    if (o.mood === 'panic') ctx.rotate(-0.03);
+    else if (o.mood === 'sad') ctx.rotate(0.02);
+    ctx.drawImage(img, -w / 2, -h, w, h);
+    ctx.restore();
+    return true;
+  }
+  return false;
 }
 
 /**

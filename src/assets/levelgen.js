@@ -15,7 +15,10 @@
  * gen 配置：
  *   { kind:'platform', rows, ground, cols, seed, style, collectStats? }
  *   { kind:'stg', rows, cols }
+ *   midboss?: 见 levels.js 的 STAGE5_MIDBOSS —— 挖平地 / 停刷小怪 / 补 P 都用它。
  */
+
+import { POWER } from '../game/power.js';
 
 const AIR = '.';
 const DIRT = '#';
@@ -120,8 +123,9 @@ class Builder {
     this.surface = new Array(this.cols).fill(GRASS);
     this.cells = Array.from({ length: this.rows }, () => new Array(this.cols).fill(AIR));
     this.crumble = [];
-    this.chunkStats = Object.create(null);
-    this.chunkLog = [];
+    // 中途 Boss 舞台的统计（列区间 / 取消的小怪数 / 补偿 P 数），供自测脚本与平衡检查读取
+    this.midbossInfo = null;
+    this.chunkStats = Object.create(null);    this.chunkLog = [];
     this.stepCount = 0;
     this.cursor = 0;
     // 第一个存档点到出生点的距离：太远会让开局失误代价过高（原 620 列 ≈ 52 秒）
@@ -787,7 +791,48 @@ class Builder {
   }
 
   /* ---------- 收尾 ---------- */
+  /**
+   * 中途 Boss 舞台（STAGE5 的妖梦）：把关卡中段挖成和关底 Boss 场同一层的空地。
+   *
+   * gen.midboss 的几何用「距关卡右端像素」描述（与 stage.js 的触发线共用 levels.js
+   * 里同一份配置），这里换算成列。之所以在 placeEntities 最前面就挖好：
+   * 后面的检查点 / 小怪 / 金币 / P 点都按「这段已经是平地」来判定，
+   * 不会先刷出小怪再被清场抹掉（那样小怪数和火力补偿都会算不准）。
+   *
+   * @returns {{ms:number, me:number}|null} 舞台列区间 [ms, me)
+   */
+  _prepareMidbossArena() {
+    const m = this.gen.midboss;
+    if (!m) return null;
+    const half = Math.max(6, Math.round((m.arenaHalf || 900) / 32));
+    const center = this.cols - Math.round((m.arenaFromEnd || 0) / 32);
+    const ms = Math.max(60, center - half);
+    // 不侵入关底 Boss 场（最后 50 列），中间至少留 4 列过渡
+    const me = Math.min(this.cols - 54, center + half);
+    if (me - ms < 8) return null;
+
+    const entryTop = ms > 0 ? this.top[ms - 1] : this.ground;
+    for (let c = ms; c < me; c++) {
+      this.commit(c, this.ground);
+      for (let r = 0; r < this.ground; r++) this.set(c, r, AIR);
+    }
+    // 从更高的主路直接跳下来时补一段单向平台当落脚点（和关底 Boss 场同款处理）
+    if (entryTop <= this.ground - 4) {
+      this.platform(ms, Math.round((entryTop + this.ground) / 2), Math.min(18, me - ms));
+    }
+    // 出口缓坡：舞台地面在本关最低层，直接接主路会出现一堵跳不上去的高墙。
+    // 用 8 列把地面抬回原高度（每列最多抬 1 格，与生成器的可跳性约束一致）。
+    const rampLen = Math.min(8, this.cols - me - 51);
+    if (rampLen > 0) {
+      const exitTop = this.top[me + rampLen] || this.ground;
+      this.slope(me, rampLen, exitTop);
+    }
+    return { ms, me };
+  }
+
   placeEntities() {
+    // 舞台先挖：见 _prepareMidbossArena 的注释
+    const mid = this._prepareMidbossArena();
     const lastSafe = this.cols - 70;
     let lastBest = -1;
     // 检查点：等距放在平地上；尖刺/水面/冰面/已有装饰占位的列跳过
@@ -868,15 +913,41 @@ class Builder {
       }
       return picked;
     };
-    for (const c of pickEven(sTarget)) this.set(c, this.top[c] - 1, 's');
+    // 中途 Boss 舞台取消小怪：窗口内本来会刷的 s / f 不再出场。
+    // 小怪火力按 POWER.kill=1 点/只、P 点按 POWER.pickup=4 点/枚折算成舞台上的 P 点，
+    // 让玩家进战前的火力与「没取消小怪」持平（略高）：撤掉小怪 ≠ 白扣玩家火力。
+    // 窗口比舞台左右各多留 10 列：入场前最后一段和出口缓坡也不放怪，跑进战场不会迎面撞上妖精。
+    const MID_MARGIN = 10;
+    const inMidWindow = (c) => !!mid && c >= mid.ms - MID_MARGIN && c < mid.me + MID_MARGIN;
+    let midSuppressed = 0;
+    for (const c of pickEven(sTarget)) {
+      if (inMidWindow(c)) { midSuppressed += 1; continue; }
+      this.set(c, this.top[c] - 1, 's');
+    }
     // 空中妖精：单独取样，偶尔与地面点同列（看起来像一高一低伴飞）
     const airRange = this.rows >= 34 ? 8 : 6;
     for (const c of pickEven(fTarget)) {
+      if (inMidWindow(c)) { midSuppressed += 1; continue; }
       let fr = this.top[c] - this.ri(3, airRange);
       let guard = 0;
       while (this.get(c, fr) !== AIR && fr > 1 && guard < airRange) { fr--; guard++; }
       if (this.get(c, fr) === AIR) this.set(c, fr, 'f');
     }
+    // 火力补偿 P 点：铺在舞台地面上（进场一路捡过去），数量 = 被取消小怪的总火力 / 单枚 P 值。
+    // 至少 2 枚：本关窗口内的取样可能只有 0~1 只小怪，空舞台也要留下补给感。
+    let midP = 0;
+    if (mid) {
+      midP = Math.min(8, Math.max(2, Math.ceil((midSuppressed * POWER.kill) / POWER.pickup)));
+      const span = Math.max(1, mid.me - mid.ms - 6);
+      for (let i = 0; i < midP; i++) {
+        const c = mid.ms + 3 + Math.round((span * (i + 0.5)) / midP);
+        // 舞台地面在 ground 行；P 点放在地面上方，被地形/金币占住就往上找一格
+        for (let r = this.ground - 2; r >= this.ground - 5; r--) {
+          if (this.get(c, r) === AIR) { this.set(c, r, 'p'); break; }
+        }
+      }
+    }
+    this.midbossInfo = mid ? { from: mid.ms, to: mid.me, suppressed: midSuppressed, power: midP } : null;
 
     // 出生点：开头清出 20 列平地
     for (let c = 0; c < Math.min(20, this.cols); c++) {
@@ -979,7 +1050,8 @@ class Builder {
 /**
  * 生成关卡字符行。
  * @param {object} gen 关卡生成配置
- * @returns {{rows:string[], crumble:[number,number][], chunkStats?:object}}
+ * @returns {{rows:string[], crumble:[number,number][], midboss?:object|null, chunkStats?:object}}
+ *   midboss: 中途 Boss 舞台的列区间与补偿统计（gen.midboss 存在时才有），不参与 Level 解析。
  */
 export function buildLevelRows(gen) {
   if (!gen) return { rows: [], crumble: [] };
@@ -989,10 +1061,10 @@ export function buildLevelRows(gen) {
   }
   const b = new Builder(gen);
   const rows = b.build();
-  const out = { rows, crumble: b.crumble };
+  const out = { rows, crumble: b.crumble, midboss: b.midbossInfo };
   if (gen.collectStats) {
     out.chunkStats = b.chunkStats;
-    out.debug = { top: Array.from(b.top), gap: Array.from(b.gap), chunks: b.chunkLog, steps: b.stepCount };
+    out.debug = { top: Array.from(b.top), gap: Array.from(b.gap), chunks: b.chunkLog, steps: b.stepCount, midboss: b.midbossInfo };
   }
   return out;
 }

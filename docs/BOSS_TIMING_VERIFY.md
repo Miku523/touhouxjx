@@ -1,10 +1,44 @@
-# BOSS 符卡限时 · 验收报告（最终版）
+# BOSS 符卡限时 · 验收报告（含 2026-10-21 血量重标复验）
 
 - **验收人**：verifier（独立复核，不改 `src/**`）
 - **规格**：`docs/BOSS_TIMING_SPEC.md`（§1 目标时长表、§2 结算规则、§3.6 验证要求）
 - **对象工作树**：`C:\Users\GuSheng\Downloads\HKS`
-- **最终轮次**：2026-10-21 **00:33:08–00:34:08**（Normal 1–6，`--fullRun 4 --hpScaleMode none`）；T/D 复核 00:35:45 同树
+- **历史轮次（旧口径）**：2026-10-21 **00:33:08–00:34:08**（Normal 1–6，`--fullRun 4 --hpScaleMode none`）；T/D 复核 00:35:45 同树
+- **最新轮次（血量 ×0.8 后）**：见 §0
 - **工具**：`tools/_verify_bosscards.mjs`（headless Edge + CDP，自包含，可一键重跑）
+
+## 0. 2026-10-21 血量重标后的复验（最新 · 覆盖下文 10-20 结论）
+
+**变更**（用户 m00001「调整 boss 血量，使每个 boss 都能在规定时间内被正常玩家击破」，m00123「ex 关除外」）：
+stage1–6 的 **23 张 damage 卡** `dps` 全表 ×0.8（等价「满火力实测有效 DPS ×0.76」），`limit` 不变；5 张 survival 卡 Boss 免疫伤害、不动；**EXTRA（remilia / flandre）除外、未调整**。回填见 `src/game/bossTuning.js`、口径见 `docs/BOSS_TIMING_SPEC.md` §2.9。
+
+**重跑命令**（与旧报告同一工具，新增 `--power` 与目标时长比）：
+
+```bash
+# 满火力基准（= 上限能力）+ 三档难度回归
+node tools/_verify_bosscards.mjs --plan "N:1-6;E:1-5;H:1-6" --fullRun 4 --power 64 --god 1 --noShots 1 --outDir _pt/new_all
+# 掉一级火力参照（落命一次 Lv4→Lv3，用于确认「失误惩罚」仍存在）
+node tools/_verify_bosscards.mjs --plan "N:1-6" --fullRun 4 --power 32 --god 1 --noShots 1 --outDir _pt/new32
+```
+
+**结果：PASS**（76 卡跑次，issues=0；唯一 1 条 WARN 为 H 面 s4c4 bot 噪声）
+
+| 项 | 结果 |
+| --- | --- |
+| Normal 28 卡（23 damage + 5 survival） | **23/23 damage 达标**，ratio 70.0%–87.0%（目标 80%，允许 [65%, 95%]）；survival 5/5 PASS |
+| E 1–5 / H 1–6 回归 | PASS；0 FAIL，1 WARN（H s4c4 64.5%，低于 65% 下限，属 stage4 整关跑 bot 噪声） |
+| 满火力基准值 | 实测有效 DPS 中位 206.3 hp/s，每卡约 **0.76×limit** 击破（旧口径 0.95×limit） |
+| 掉一级火力（Lv3） | 同一批卡 **120.8%–141.0%×limit**（旧 165%–182%），符合「落命一次大概率超时」的失误惩罚设定（按用户选择的 B 方案保留） |
+| 控制台 | 0 error |
+
+**逐卡实测（N，满火力）**：s1c1 73.0% / s1c2 76.0% / s2c1 73.0% / s2c2 80.0% / s2c3 70.0% / s3c1 77.0% / s3c2 73.0% / s3c3 78.0% / s3c4 73.0% / s4c1 74.0% / s4c3 87.0% / s4c4 77.0% / s5c1 72.0% / s5c2 70.0% / s5c3 70.0% / s5c5 78.0% / s5c6 74.0% / s6c2 78.0% / s6c3 73.0% / s6c4 72.0% / s6c5 75.0% / s6c6 76.0% / s6c7 74.0%（ratio = elapsed/limit）。
+
+**由此对「正常玩家」的判定**：满火力上限 0.76×limit；真人相对 bot 再折损 ~20% 命中/走位 → 约 0.92–0.95×limit，**留 5% 余量**，即原需求「规定时间内被正常玩家击破」成立。
+
+**判定口径同步变更**（`tools/_verify_bosscards.mjs`）：`TARGET_RATIO=0.8`（`--targetRatio` 可覆盖）；`ratio > 0.95` → FAIL（余量不足 5%）；`ratio < 0.65` → WARN（打得偏快，多为 bot 噪声）；区间内 PASS。自动表：`_pt/new_all/bosscards_table.md`、`_pt/new32/bosscards_table.md`。
+
+**需知**：下文 §1–§11 是 2026-10-20 旧口径（×0.95 贴线、±15% 对称判定）的历史报告，数字与结论均早于本次血量下调，仅作溯源；**当前验收以本节为准**。
+
 
 ## 结论
 

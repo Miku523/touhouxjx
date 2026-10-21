@@ -116,8 +116,11 @@ function firePattern(p, boss, api, fireT) {
   const aimJitter = clamp(0.04 + wild * 0.09, 0.04, 0.2);
   const aim = () => Math.atan2(py - boss.y, px - boss.x) + boss.rnd(-aimJitter, aimJitter);
   // 弹数：招式变体 + 每发抖动 + 屏幕密度自适应（越满越薄）
+  // 半灵体系（def.system='phantom'）额外乘 phantomShotK：半灵消散时本体发弹减半，
+  // 这是「打满断灵槽」对弹幕密度的唯一直接影响，其他卡不受影响（默认 1）。
+  const shotK = boss.phantomShotK || 1;
   const count = (base, lo = 1, hi = 64) =>
-    clamp(Math.round((base || 1) * pat.nScale * boss.pressure * boss.rnd(0.94, 1.06)), lo, hi);
+    clamp(Math.round((base || 1) * pat.nScale * boss.pressure * shotK * boss.rnd(0.94, 1.06)), lo, hi);
   // 环状弹幕的缝隙保障：同样半径下相邻两发的弧长不小于 ringGapPx，
   // 否则一圈会缩成没有缝的墙（人形判定半径 7，两发半径 6 需要约 26px 间距）
   const ringN = (base, lo = 1, hi = 64) => {
@@ -711,6 +714,57 @@ export const BOSS_DEFS = {
     ],
   },
 
+  // ── 5 面 · 中途 Boss（白玉楼 · 冥界花海，幽幽子之前）────────────────────
+  // 专属体系「半灵二天一流」：def.system='phantom' 打开，全部机制挂在
+  // def.phantom（数值）与 Boss 的 _initPhantom/_updatePhantom/_onPhantomHit/
+  // _breakPhantom/_drawPhantom 里；通用代码只读 system，不认 key。
+  // 下面的 patterns 只是「bossTuning 里没有 youmu 条目时」的兜底表。
+  youmu: {
+    name: '魂魄妖梦', title: '半人半灵的庭师', hp: 4200, accent: '#9fe8d0',
+    system: 'phantom',
+    phantom: {
+      color: '#9fe8d0',
+      radius: 84,        // 绕本体的主环绕半径
+      radiusY: 46,       // 上下摆幅
+      orbitSpeed: 0.62,  // 主环绕角速度（rad/s）
+      lissA: 30, lissB: 22, lissW: 0.9, // 李萨如摆动：半灵不是 1:1 跟着本体
+      follow: 4.6,       // 追赶系数（越小越「甩尾」）
+      maxDist: 190,      // 半灵离本体的硬上限（Boss 俯冲/冲撞时不许把半灵甩出画面）
+      hitR: 26,          // 半灵受击半径
+      gaugeMax: 100,     // 断灵槽上限
+      gaugePerHit: 4,    // 玩家子弹每次命中半灵涨多少
+      gaugePerFrame: 10, // 每帧最多涨多少（防高射速弹一帧打满）
+      gaugeDecay: 1.1,   // 每秒自然衰减
+      dissipateDur: 5,   // 半灵消散持续秒数
+      dissipateShotK: 0.5,   // 消散中发弹倍率（= 发弹减半）
+      dissipateSlowK: 0.55,  // 消散中本体移动速度倍率
+      dissipateVulnK: 1.35,  // 消散中本体受击伤害倍率
+    },
+    phases: [
+      {
+        name: '人符「现世斩」', hp: 1150, patterns: [
+          { typeName: 'presentSlash', n: 10, speed: 300, spread: 1.45, color: '#9fe8d0', rate: 0.62, r: 4, type: 1 },
+          { typeName: 'presentSlash', n: 14, speed: 272, spread: 1.95, color: '#9fe8d0', rate: 0.84, r: 4, type: 1, weight: 0.85 },
+          { typeName: 'spiritTrace', n: 8, speed: 128, color: '#c8ffe8', rate: 0.5, r: 5, type: 3, weight: 0.7 },
+        ],
+      },
+      {
+        name: '人鬼「未来永劫斩」', hp: 1250, patterns: [
+          { typeName: 'eternalSlash', n: 5, speed: 272, stages: 3, color: '#9fe8d0', rate: 0.95, r: 4, type: 1 },
+          { typeName: 'eternalSlash', n: 7, speed: 246, stages: 3, color: '#9fe8d0', rate: 1.18, r: 4, type: 1, weight: 0.85 },
+          { typeName: 'spiritTrace', n: 10, speed: 142, color: '#c8ffe8', rate: 0.56, r: 5, type: 3, weight: 0.7 },
+        ],
+      },
+      {
+        name: '断灵「剑楼阁」', hp: 1400, patterns: [
+          { typeName: 'phantomSwordArray', n: 16, gaps: 3, pillars: 5, speed: 152, color: '#9fe8d0', rate: 0.72, r: 4, type: 3 },
+          { typeName: 'phantomSwordArray', n: 22, gaps: 3, pillars: 7, speed: 136, color: '#9fe8d0', rate: 0.96, r: 4, type: 3, weight: 0.85 },
+          { typeName: 'spiritTrace', n: 12, speed: 158, color: '#c8ffe8', rate: 0.46, r: 5, type: 3, weight: 0.7 },
+        ],
+      },
+    ],
+  },
+
   yuyuko: {
     name: '西行寺幽幽子', title: '幽冥楼阁的亡灵少女', hp: 9650, accent: '#ffa8d8',
     hpMul: 5.79, // 目标单场 ≈193s（5面；N 裁掉一张后5张卡各≈31/35/39/43/48s）
@@ -1155,6 +1209,7 @@ export class Boss {
       ramCharge: 0, ramWhiff: 0, ramPunish: 0,
       staggerStomp: 0, staggerCombo: 0, counterShot: 0,
       stgPressure: 0, coreHit: 0, coreBreak: 0,
+      phantomHits: 0, phantomBreak: 0,
     };
 
     // STG 关（4 面 aya 等，非 EX）互动：近身压制增伤 + 可击破符卡核心
@@ -1164,9 +1219,175 @@ export class Boss {
     this._coreCd = this.rnd(8, 12);
     this._coreFlash = 0;
 
+    /* ---------------- 专属体系：半灵二天一流（def.system === 'phantom'）----------------
+     * 妖梦的「半灵」是一个独立实体，不是装饰：
+     *   1) 独立坐标：绕本体做李萨如摆动（follow 越小越「甩尾」，不 1:1 跟随）；
+     *   2) 独立发弹源：bossBullets.js 的 phantomSrc() 直接读 boss.phantom 的坐标；
+     *   3) 可被玩家子弹命中：damageWithShots 里第二个 hitRect（独立 targetRef），
+     *      命中不伤本体，只攒「断灵槽」；
+     *   4) 满槽 → 半灵消散：淡出、独立发弹停止、本体发弹减半 / 移速减半 / 易伤 ×1.35，
+     *      持续 dissipateDur 秒后复原。这是「打半灵」唯一的战术回报。
+     * 通用代码只认 system，不认 key（其他 Boss 的 phantom 为 null，全链路零开销）。
+     */
+    this.system = def.system || null;
+    this.phantomDef = def.phantom || null;
+    this.phantom = null;
+    this.phantomShotK = 1;  // 发弹倍率：消散中 0.5（firePattern 的 count / _wildVolley 都吃它）
+    this.phantomSlowK = 1;  // 本体移动速度倍率：消散中 0.55
+    this.phantomVulnK = 1;  // 本体受击伤害倍率：消散中 1.35
+    if (this.system === 'phantom') this._initPhantom();
+
     // 开场也是随机一招，背板第一招不再固定
     this._applyCard(0);
     this._startPattern(this.rndInt(0, this.phases[0].patterns.length - 1));
+  }
+
+  /* ---------------- 半灵二天一流（def.system === 'phantom'） ---------------- */
+
+  /** 建立半灵实体：数值全部来自 def.phantom，这里只补运行期字段 */
+  _initPhantom() {
+    const d = this.phantomDef || {};
+    const ph = {
+      x: this.x + this.rnd(-40, 40),
+      y: this.y - 96,
+      t: this.rnd(0, 10),
+      phase: this.rnd(0, TAU),
+      lissPhase: this.rnd(0, TAU),
+      orbitSpeed: d.orbitSpeed || 0.62,
+      radius: d.radius || 84,
+      radiusY: d.radiusY || 46,
+      lissA: d.lissA || 30,
+      lissB: d.lissB || 22,
+      lissW: d.lissW || 0.9,
+      follow: d.follow || 4.6,
+      maxDist: d.maxDist || 190,
+      hitR: d.hitR || 26,
+      gauge: 0,
+      gaugeMax: d.gaugeMax || 100,
+      gaugePerHit: d.gaugePerHit || 4,
+      gaugePerFrame: d.gaugePerFrame || 10,
+      decay: d.gaugeDecay || 1.1,
+      dissipateT: 0,
+      dissipateDur: d.dissipateDur || 5,
+      fade: 1,
+      reformT: 0,
+      gap: 0,      // 上一帧「半灵↔本体」距离（已夹到 maxDist；自测/调参可读）
+      hits: 0,
+      breaks: 0,
+      _frameGain: 0,
+    };
+    this.phantom = ph;
+    // 独立 targetRef：playerShots.hitRect 靠它给穿透弹做去重，绝不能复用 this
+    this._phantomRef = { phantom: this.key };
+  }
+
+  /**
+   * 半灵每帧：轨迹 + 断灵槽衰减 + 消散状态机。
+   * 即使 spellLock / 破势硬直也会被调用（半灵是独立的，不该跟着本体冻结）。
+   * @param {number} dt
+   * @param {object} fx
+   */
+  _updatePhantom(dt, fx) {
+    const ph = this.phantom;
+    if (!ph) return;
+    const d = this.phantomDef || {};
+    ph.t += dt;
+    ph._frameGain = 0;
+
+    if (ph.dissipateT > 0) {
+      // 消散：淡出 + 发弹减半 + 减速 + 易伤
+      ph.dissipateT = Math.max(0, ph.dissipateT - dt);
+      ph.fade += (0.14 - ph.fade) * Math.min(1, dt * 5);
+      this.phantomShotK = d.dissipateShotK || 0.5;
+      this.phantomSlowK = d.dissipateSlowK || 0.55;
+      this.phantomVulnK = d.dissipateVulnK || 1.35;
+      if (ph.dissipateT <= 0) {
+        // 复原：槽清空、半灵重新聚形，给玩家一个明确的「回来了」反馈
+        ph.gauge = 0;
+        ph.reformT = 1.4;
+        this.phantomShotK = 1;
+        this.phantomSlowK = 1;
+        this.phantomVulnK = 1;
+        fx?.shockwave?.(ph.x, ph.y, d.color || this.def.accent, 16, 420, 0.45);
+        fx?.flash?.(ph.x, ph.y, '#c8ffe8', 14);
+      }
+    } else {
+      ph.fade += (1 - ph.fade) * Math.min(1, dt * (ph.reformT > 0 ? 1.6 : 3.2));
+      ph.reformT = Math.max(0, ph.reformT - dt);
+      this.phantomShotK = 1;
+      this.phantomSlowK = 1;
+      this.phantomVulnK = 1;
+      ph.gauge = Math.max(0, ph.gauge - ph.decay * dt);
+    }
+
+    // 轨迹：主环绕 + 李萨如的二阶摆动 → 半灵始终在动，但不会飘出画面
+    const a = ph.t * ph.orbitSpeed + ph.phase;
+    const tx = this.x + Math.cos(a) * ph.radius + Math.sin(ph.t * ph.lissW + ph.lissPhase) * ph.lissA;
+    let ty = this.y - 96 + Math.sin(a * 1.3) * ph.radiusY + Math.cos(ph.t * ph.lissW * 1.7 + ph.lissPhase) * ph.lissB;
+    // 消散中：半灵往上飘散、脱离牵引（视觉上「正在消失」）
+    if (ph.dissipateT > 0) ty -= (ph.dissipateDur - ph.dissipateT) * 16;
+    const k = 1 - Math.exp(-ph.follow * dt);
+    ph.x += (tx - ph.x) * k;
+    ph.y += (ty - ph.y) * k;
+    this._clampPhantom();
+  }
+
+  /**
+   * 只夹位置、不推进时间：给「本帧后半段本体高速位移」的分支（俯冲 / 冲撞 / 移步）收尾用。
+   * 硬上限保证 Boss 突进时半灵不会被拉成一根横跨屏幕的牵引线。
+   */
+  _clampPhantom() {
+    const ph = this.phantom;
+    if (!ph) return;
+    const ddx = ph.x - this.x;
+    const ddy = ph.y - this.y;
+    const dd = Math.hypot(ddx, ddy);
+    if (dd > ph.maxDist) {
+      const k = ph.maxDist / dd;
+      ph.x = this.x + ddx * k;
+      ph.y = this.y + ddy * k;
+      ph.gap = ph.maxDist;
+    } else {
+      ph.gap = dd;
+    }
+  }
+
+  /**
+   * 半灵被玩家子弹命中：只涨断灵槽，不伤本体。满槽立即触发消散。
+   * @returns {number} 本次涨了多少（0 = 无用命中 / 已消散）
+   */
+  _onPhantomHit(dmg, hx, hy, fx) {
+    const ph = this.phantom;
+    if (!ph) return 0;
+    ph.hits++;
+    this._ix.phantomHits++;
+    fx?.sparkle?.(hx, hy, (this.phantomDef && this.phantomDef.color) || '#9fe8d0');
+    if (ph.dissipateT > 0) return 0;
+    // 每帧增幅上限：高射速弹幕一帧糊满会让「攒槽」失去节奏
+    if (ph._frameGain >= ph.gaugePerFrame) return 0;
+    const gain = Math.min(ph.gaugePerHit, ph.gaugePerFrame - ph._frameGain);
+    ph._frameGain += gain;
+    ph.gauge = Math.min(ph.gaugeMax, ph.gauge + gain);
+    if (ph.gauge >= ph.gaugeMax) this._breakPhantom(fx);
+    return gain;
+  }
+
+  /** 断灵槽满：半灵消散（视觉 + 全系统 debuff 开关） */
+  _breakPhantom(fx) {
+    const ph = this.phantom;
+    if (!ph || ph.dissipateT > 0) return;
+    const d = this.phantomDef || {};
+    ph.breaks++;
+    ph.dissipateT = ph.dissipateDur;
+    ph.gauge = ph.gaugeMax;
+    this._ix.phantomBreak++;
+    // 立即生效（不等下一帧）：破的当下就减半 / 减速 / 易伤，玩家马上能感到「打对了」
+    this.phantomShotK = d.dissipateShotK || 0.5;
+    this.phantomSlowK = d.dissipateSlowK || 0.55;
+    this.phantomVulnK = d.dissipateVulnK || 1.35;
+    fx?.burst?.(ph.x, ph.y, '#c8ffe8', 22, 380);
+    fx?.shockwave?.(ph.x, ph.y, d.color || this.def.accent, 22, 620, 0.6);
+    fx?.flash?.(ph.x, ph.y, '#ffffff', 18);
   }
 
   /* ---------------- 随机数 ---------------- */
@@ -1393,7 +1614,8 @@ export class Boss {
   _updateMovement(dt, fx) {
     const mv = this._move;
     if (mv.dur > 0) {
-      mv.t += dt;
+      // 半灵消散期间本体减速（phantomSlowK；普通 Boss 恒为 1）
+      mv.t += dt * (this.phantomSlowK || 1);
       const k = Math.min(1, mv.t / mv.dur);
       // easeInOutQuad，起停都软
       const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
@@ -1408,6 +1630,7 @@ export class Boss {
       this._moveWait -= dt;
       if (this._moveWait <= 0) this._pickMoveTarget(fx);
     }
+    this._clampPhantom();
   }
 
   /* ---------------- 计划外变招 ---------------- */
@@ -1445,7 +1668,8 @@ export class Boss {
     const color = this.chance(0.5) ? this.def.accent : '#ffffff';
     const kind = this.rndInt(0, 2);
     // 弹数与弹速：难度倍率 × 分面密度 × 密度自适应 × 本文件密度系数（需求 #7），速度同样夹到上限
-    const cnt = this.diff.bulletCountScale * this.pressure * this.stageDensity * this.density;
+    // 半灵消散时整波变招也跟着减半（phantomShotK，普通 Boss 恒为 1）
+    const cnt = this.diff.bulletCountScale * this.pressure * this.stageDensity * this.density * (this.phantomShotK || 1);
     const sp = (v) => Math.min(this.speedCap, Math.max(20, v * this.diff.bulletSpeedScale));
 
     if (kind === 0) {
@@ -1519,6 +1743,19 @@ export class Boss {
     // 冲撞途中被打断时 Boss 可能停在半空/偏移位置，回位后再进新卡
     this.x = this.homeX;
     this.y = this.baseY;
+    // 半灵：换卡即「重新聚形」——槽清空、消散状态解除（旧卡的硬直不跨卡）
+    if (this.phantom) {
+      this.phantom.gauge = 0;
+      this.phantom.dissipateT = 0;
+      this.phantom.fade = 1;
+      this.phantom.reformT = 0;
+      this.phantom._frameGain = 0;
+      this.phantom.x = this.homeX + this.rnd(-40, 40);
+      this.phantom.y = this.baseY - 96;
+      this.phantomShotK = 1;
+      this.phantomSlowK = 1;
+      this.phantomVulnK = 1;
+    }
     const phases = this.phases;
 
     if (this.spellIdx >= phases.length - 1) {
@@ -1559,6 +1796,8 @@ export class Boss {
     if (this.mode === 'survival') return false;
     // 破势硬直是全伤害加成窗口：把「攒破势」变成正反馈
     if (this.staggerT > 0) d *= 1.7;
+    // 半灵消散 = 本体露破绽：易伤窗口（phantomVulnK，普通 Boss 恒为 1）
+    d *= this.phantomVulnK || 1;
     this.spellHp -= d;
     this.hp = Math.max(0, this.hp - d);
     this.hitFlash = Math.min(0.16, this.hitFlash + d * 0.01);
@@ -1619,6 +1858,10 @@ export class Boss {
     // 破势球独立推进：符卡宣言无敌 / 硬直 / 俯冲期间球也照常下落，玩家随时可踩
     this._updateOrbs(dt, player, fx);
 
+    // 半灵独立推进：自己的轨迹 / 断灵槽衰减 / 消散状态机。
+    // 故意放在 spellLock 与破势硬直 return 之前——半灵是独立实体，不该跟着本体冻结。
+    if (this.phantom) this._updatePhantom(dt, fx);
+
     // 符卡宣言的无敌时间：清屏后的短暂停顿
     if (this.spellLock > 0) {
       this.spellLock = Math.max(0, this.spellLock - dt);
@@ -1646,10 +1889,10 @@ export class Boss {
     this.poise = Math.max(0, this.poise - (this.platformMelee ? this.poiseDecay : 0) * dt);
 
     // 平台关俯冲：占用移动/开火，形成「Boss 主动进攻 → 落地硬直 → 玩家反打」的循环
-    if (this._updateDive(dt, player, bullets, fx)) return;
+    if (this._updateDive(dt, player, bullets, fx)) { this._clampPhantom(); return; }
 
     // 平台关横向冲撞：蓄力预警 → 冲撞 → 后摇 COUNTER 窗口（可冲刺反击）
-    if (this._updateRam(dt, player, fx)) return;
+    if (this._updateRam(dt, player, fx)) { this._clampPhantom(); return; }
 
     // STG 关互动：近身压制 / 击破符卡核心（平台关走上面的近战互动，不吃这套）
     if (!this.platformMelee && this.difficulty !== 'EX') this._updateStgKit(dt, player, fx);
@@ -1769,6 +2012,17 @@ export class Boss {
       fx?.sparkle(hx, hy, this.inmDefColor());
       onHit?.(dmg);
     }, this);
+
+    // 半灵受击：本体优先吃弹（上面的 hitRect 先跑，绝不抢本体 DPS），
+    // 漏过本体的子弹打中半灵 → 只攒断灵槽，不伤本体、也不算 bossHit。
+    // targetRef 用 this._phantomRef：穿透弹对半灵同样只结算一次。
+    const ph = this.phantom;
+    if (ph) {
+      const pr = ph.hitR;
+      shots.hitRect(ph.x - pr, ph.y - pr, pr * 2, pr * 2, (dmg, hx, hy) => {
+        this._onPhantomHit(dmg, hx, hy, fx);
+      }, this._phantomRef);
+    }
   }
 
   inmDefColor() {
@@ -2403,6 +2657,97 @@ export class Boss {
     ctx.restore();
   }
 
+  /**
+   * 半灵绘制（def.system === 'phantom'）：柔光 + 半透明幽灵半身 + 本体牵引线 + 断灵槽。
+   * 全部画在 Boss 立绘之前：半灵被本体遮住的地方就是遮住，不做穿插。
+   * 消散中：整体压到 45% 透明度、牵引线变断点、槽环闪烁；复原时自然淡回。
+   */
+  _drawPhantom(ctx, t) {
+    const ph = this.phantom;
+    if (!ph) return;
+    const d = this.phantomDef || {};
+    const accent = d.color || this.def.accent || '#9fe8d0';
+    const dx = ph.x - this.x;
+    const dy = ph.y - this.y;
+    const diss = ph.dissipateT > 0;
+    const a = clamp(ph.fade * this.alpha, 0, 1);
+    if (a <= 0.02) return;
+    const breathe = 0.94 + Math.sin(t * 2.4 + ph.lissPhase) * 0.06;
+
+    // 牵引线：本体胸口 → 半灵，二次曲线 + 流动虚线；消散时断成散点
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `${accent}${diss ? '2e' : '5c'}`;
+    ctx.lineWidth = diss ? 1 : 1.6;
+    ctx.setLineDash(diss ? [2, 10] : [6, 8]);
+    ctx.lineDashOffset = -t * 26;
+    ctx.beginPath();
+    ctx.moveTo(0, -this.h * 0.62);
+    ctx.quadraticCurveTo(dx * 0.4, dy * 0.5 - 40, dx, dy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // 柔光（呼吸）
+    const gg = ctx.createRadialGradient(dx, dy, 4, dx, dy, 62 * breathe);
+    gg.addColorStop(0, `${accent}55`);
+    gg.addColorStop(0.55, `${accent}20`);
+    gg.addColorStop(1, `${accent}00`);
+    ctx.fillStyle = gg;
+    ctx.beginPath();
+    ctx.arc(dx, dy, 62 * breathe, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    // 幽灵半身：不画实心人形，只画一层半透明剪影，避免和 AI 立绘画风打架
+    ctx.save();
+    ctx.globalAlpha = a * (diss ? 0.45 : 0.72);
+    ctx.translate(dx + Math.sin(t * 1.7) * 3, dy);
+    ctx.fillStyle = 'rgba(215, 255, 242, 0.42)';
+    ctx.beginPath();
+    ctx.moveTo(-7, -6);
+    ctx.quadraticCurveTo(-22, 16, -16, 34 + Math.sin(t * 3.1) * 3);
+    ctx.quadraticCurveTo(-6, 28, 0, 36 + Math.sin(t * 3.1 + 1.7) * 3);
+    ctx.quadraticCurveTo(6, 28, 16, 34 + Math.sin(t * 3.1 + 3.4) * 3);
+    ctx.quadraticCurveTo(22, 16, 7, -6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(230, 255, 248, 0.5)';
+    ctx.beginPath();
+    ctx.arc(0, -20, 14, 0, TAU);
+    ctx.fill();
+    // 眼睛：两个小暗点，让半灵有「脸」而不是一团雾
+    ctx.fillStyle = 'rgba(40, 70, 70, 0.55)';
+    ctx.beginPath(); ctx.arc(-5, -21, 1.9, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(5, -21, 1.9, 0, TAU); ctx.fill();
+    // 幽灵太刀
+    ctx.strokeStyle = `rgba(200, 255, 238, ${diss ? 0.2 : 0.6})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(10, 10); ctx.lineTo(30, -26); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(11, 8); ctx.lineTo(31, -28); ctx.stroke();
+    ctx.restore();
+
+    // 断灵槽：绕半灵一圈的弧；满了 → 消散中闪烁（玩家一眼看出「打对了」）
+    const g = clamp(ph.gauge / ph.gaugeMax, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0.25, a);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(8, 24, 22, 0.5)';
+    ctx.beginPath();
+    ctx.arc(dx, dy, 34, -Math.PI / 2, Math.PI * 1.5);
+    ctx.stroke();
+    if (diss || g > 0.001) {
+      const fill = diss ? 1 : g;
+      ctx.strokeStyle = diss
+        ? `rgba(200, 255, 238, ${0.35 + Math.sin(t * 22) * 0.25})`
+        : (g >= 0.999 ? '#ffffff' : accent);
+      ctx.beginPath();
+      ctx.arc(dx, dy, 34, -Math.PI / 2, -Math.PI / 2 + TAU * clamp(fill, 0, 1));
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   draw(ctx, t) {
     if (this.alpha <= 0.01) return;
     ctx.save();
@@ -2423,6 +2768,8 @@ export class Boss {
     this._drawOrbs(ctx);
     // STG 关的符卡核心 / 压制提示
     this._drawStgKit(ctx);
+    // 半灵（妖梦专属体系）：画在立绘之前，被本体压住的地方就压住
+    this._drawPhantom(ctx, t);
 
     const bossArtOpts = {
       boss: this.key,

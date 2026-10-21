@@ -80,6 +80,20 @@ function shot(e, x, y, a, sp, o = {}) {
   });
 }
 
+/**
+ * 半灵弹源（仅 def.system === 'phantom' 的 Boss 有 boss.phantom）
+ *
+ * 半灵是独立实体：自己的坐标、自己的弹源。不存在的 Boss 返回 null；
+ * 半灵正在消散（fade 掉到 0.4 以下）时也返回 null —— 调用方据此把这一拍
+ * 压回本体，于是「打满断灵槽」= 半个 Boss 停火，而不是整卡空窗。
+ */
+function phantomSrc(e) {
+  const ph = e.boss && e.boss.phantom;
+  if (!ph) return null;
+  if ((ph.fade || 0) < 0.4) return null;
+  return ph;
+}
+
 export const CUSTOM_PATTERNS = {
   /* ============================================================
      1 面 · 露米娅
@@ -1039,6 +1053,173 @@ export const CUSTOM_PATTERNS = {
       } catch (err) {
         /* 忽略：没有延迟队列就不做二阶分叉 */
       }
+    }
+  },
+
+  /* ============================================================
+     5 面中途 Boss · 魂魄妖梦「半灵二天一流」
+     半灵（boss.phantom）是独立发弹源：下面四个弹型都是「本体 + 半灵」
+     两条动作合成。半灵被断灵后自动只剩本体一侧（不是整拍消失）。
+     ============================================================ */
+
+  /**
+   * 人符「现世斩」：一记宽扇斩 + 向玩家短突进，半灵从自己位置补一记反向斜斩。
+   * 节奏是「贴脸 → 被逼退 → 再贴脸」，宽但每拍只有一层，不留弹墙。
+   */
+  presentSlash(p, boss, ctx) {
+    const e = env(ctx, boss);
+    if (!e || !room(e, 0.9)) return;
+    const { b, rnd, count, varySpeed, clamp, aim } = e;
+    const n = count(p.n || 9, 3, 24);
+    const sp = varySpeed(p.speed || 290);
+    const spread = clamp((p.spread || 1.5) * e.pat.spreadScale, 0.5, 2.6);
+    const a0 = aim();
+    // 本体：宽扇斩
+    b.fan(boss.x, boss.y, n, spread, a0, sp, {
+      color: p.color || e.color,
+      r: 4, type: B_RICE, life: 6, rot: a0,
+      wobbleAmp: 5, wobbleFreq: 6,
+    });
+    // 突进：隔拍一次，改写 Boss 自己的移动目标（可被破势 / 硬直打断，不瞬移）
+    if (!boss.staggerT && (boss.volleys || 0) % 2 === 0) {
+      const mv = boss._move;
+      if (mv && !mv.dashing) {
+        const tx = clamp(boss.x + (e.px - boss.x) * 0.45, boss.homeX - 360, boss.homeX + 360);
+        const ty = clamp(boss.y + (e.py - boss.y) * 0.1, boss.baseY - 40, boss.baseY + 120);
+        mv.sx = boss.x; mv.sy = boss.y;
+        mv.tx = tx; mv.ty = ty;
+        mv.t = 0; mv.dur = 0.24; mv.dashing = true;
+      }
+    }
+    // 半灵：反向斜斩（二天一流：本体正面，半灵从侧面切）
+    const ph = phantomSrc(e);
+    if (ph) {
+      const off = rnd(0.45, 0.8) * (rnd(0, 1) < 0.5 ? -1 : 1);
+      b.fan(ph.x, ph.y, Math.max(2, Math.round(n * 0.5)), spread * 0.62, a0 + off, sp * 0.78, {
+        color: '#c8ffe8', r: 3.5, type: B_RICE, life: 6, rot: a0 + off,
+      });
+    }
+  },
+
+  /**
+   * 人鬼「未来永劫斩」：本体一斩，半灵紧接着三连斩；
+   * 每一斩都在「斩出去那一刻」重新瞄准玩家的位置 —— 追着人砍，不背板。
+   */
+  eternalSlash(p, boss, ctx) {
+    const e = env(ctx, boss);
+    if (!e || !room(e, 0.86)) return;
+    const { b, rnd, count, varySpeed, clamp, aim } = e;
+    const n = count(p.n || 5, 2, 14);
+    const sp = varySpeed(p.speed || 260);
+    const a0 = aim();
+    // 本体：第一刀，窄而快
+    b.fan(boss.x, boss.y, n, clamp((p.spread || 0.62) * e.pat.spreadScale, 0.3, 1.4), a0, sp, {
+      color: p.color || e.color, r: 4, type: B_RICE, life: 5.5, rot: a0,
+    });
+    // 半灵：三连斩，每拍按玩家「当时」的位置重算方向
+    const stages = clamp(Math.round(p.stages || 3), 1, 4);
+    const n2 = Math.max(2, Math.round(n * 0.6));
+    for (let k = 1; k <= stages; k++) {
+      try {
+        boss._scheduleLater?.(0.2 * k, (api2) => {
+          const b2 = api2 && (api2.bullets || api2.b);
+          if (!b2) return;
+          if (b2.activeCount > (boss.bulletBudget || 1180) * 0.9) return;
+          const src = phantomSrc(e) || boss;
+          const pxx = api2.px || boss.x;
+          const pyy = api2.py || boss.y + 240;
+          const ang = Math.atan2(pyy - src.y, pxx - src.x);
+          for (let i = 0; i < n2; i++) {
+            const t = n2 === 1 ? 0 : i / (n2 - 1) - 0.5;
+            const a = ang + t * 0.4 + rnd(-0.03, 0.03);
+            b2.spawn({
+              x: src.x, y: src.y,
+              vx: Math.cos(a) * sp * 1.04,
+              vy: Math.sin(a) * sp * 1.04,
+              color: '#c8ffe8', r: 3.5, type: B_RICE, life: 5.5,
+              rot: ang, scaleIn: 0.1,
+            });
+          }
+        });
+      } catch (err) {
+        /* 没有延迟队列就只留本体那一刀 */
+      }
+    }
+  },
+
+  /**
+   * 断灵「剑楼阁」：以半灵为圆心的剑环（3 段缺口，每拍旋转）
+   * ＋ 玩家头顶落下的一排剑柱（排内 46px 缝）。环不许站桩，柱不许直线逃。
+   */
+  phantomSwordArray(p, boss, ctx, fireT) {
+    const e = env(ctx, boss);
+    if (!e || !room(e, 0.88)) return;
+    const { rnd, ringN, count, varySpeed, clamp } = e;
+    const ph = phantomSrc(e);
+    const cx = ph ? ph.x : boss.x;
+    const cy = ph ? ph.y : boss.y;
+    const dir = e.pat.dir || 1;
+    const spin = (e.pat.angle || 0) + fireT * 0.38 * dir;
+    // 剑环：ringN 已吃完「环缝」护栏（ringLimit），再按卡面挖 3 段可站缺口
+    const n = ringN(p.n || 16, 8, 60);
+    const sp = varySpeed(p.speed || 150);
+    // 缺口数跟着实际弹数走（弹少时只留一扇门），半缝 = 1.2 个弹距，
+    // 保证缺口总弧长不超过整圈的 ~1/3——否则 nScale 一掉，缺口会互相吃掉、整圈归零。
+    const step = TAU / n;
+    const gaps = clamp(Math.min(Math.round(p.gaps || 3), Math.max(1, Math.floor(n / 6))), 1, 6);
+    const gapW = step * 1.2;
+    for (let i = 0; i < n; i++) {
+      const a = spin + i * step;
+      let blocked = false;
+      for (let g = 0; g < gaps; g++) {
+        const ga = spin + (g / gaps) * TAU + 0.4;
+        const d = Math.atan2(Math.sin(a - ga), Math.cos(a - ga));
+        if (Math.abs(d) < gapW) { blocked = true; break; }
+      }
+      if (blocked) continue;
+      shot(e, cx, cy, a, sp * rnd(0.92, 1.08), {
+        color: p.color || e.color, r: 4, type: B_STAR, life: 7.5,
+        spin: 1.3, wobbleAmp: 4, wobbleFreq: 1.4,
+      });
+    }
+    // 剑柱：隔拍从玩家头顶斜落一排（有缝、可横移穿过）
+    if ((boss.volleys || 0) % 2 === 0) {
+      const m = count(p.pillars || 5, 2, 10);
+      const topY = Math.min(boss.y, e.py) - 520;
+      for (let i = 0; i < m; i++) {
+        const x = e.px + (i - (m - 1) / 2) * 46 + rnd(-6, 6);
+        shot(e, x, topY, Math.PI / 2 + rnd(-0.05, 0.05), sp * 1.25, {
+          color: '#e6fff5', r: 4.5, type: B_RICE, life: 9,
+        });
+      }
+    }
+  },
+
+  /**
+   * 呼吸拍：半灵自己旋出一圈慢速灵弹，本体只补两发瞄准弹。
+   * 半灵被断后这一拍只剩本体稀疏发弹 —— 密度自动变松。
+   */
+  spiritTrace(p, boss, ctx, fireT) {
+    const e = env(ctx, boss);
+    if (!e || !room(e, 0.9)) return;
+    const { b, rnd, count, varySpeed } = e;
+    const sp = varySpeed(p.speed || 132);
+    const ph = phantomSrc(e);
+    if (ph) {
+      const n = count(p.n || 8, 3, 22);
+      b.ring(ph.x, ph.y, n, sp, {
+        angle: (e.pat.angle || 0) + fireT * 1.05 * (e.pat.dir || 1),
+        color: p.color || '#c8ffe8', r: 5, type: B_STAR, life: 8.5,
+        spin: 0.8, wobbleAmp: 12, wobbleFreq: 1.2,
+      });
+    }
+    const m0 = count(p.bossShot || 2, 1, 4);
+    const m = ph ? m0 : Math.max(1, Math.round(m0 * 0.5));
+    const a0 = e.aim();
+    for (let i = 0; i < m; i++) {
+      shot(e, boss.x, boss.y, a0 + (i - (m - 1) / 2) * 0.16 + rnd(-0.04, 0.04), sp * 1.3, {
+        color: p.color || e.color, r: 4, type: B_CIRCLE, life: 7,
+      });
     }
   },
 };

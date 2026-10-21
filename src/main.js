@@ -23,6 +23,8 @@ import {
   stageStoryFor,
   extraIntroFor,
   extraPostFor,
+  midbossPreFor,
+  midbossPostFor,
 } from './game/story.js';
 import { DIFFICULTY_KEYS, DIFFICULTIES, getDifficulty } from './game/difficulty.js';
 import { ensureCharArt } from './art/genchars.js';
@@ -883,10 +885,14 @@ class Game {
     const startLives = this.runLives ?? this.lives;
     this.runLives = startLives;
     seedReset?.(); // ?seed= 时把关卡随机序列拨回起点，保证弹幕可复现
-    // 本关音乐：配了 musicPre 的关卡（目前 1–4 面）先进道中曲，Boss 登场时再切 Boss 曲；
+    // 本关音乐：配了 musicPre 的关卡（1–6 面 + EXTRA）先进道中曲，Boss 登场时再切 Boss 曲；
     // 其余关卡没有 musicPre，照旧一首到底。必须在 beginBoss() 之前登记——resumeBoss 会在
     // 建完 Stage 后立刻开战并同步触发 bossStart，那时就得知道本关该放哪首。
-    this._levelMusic = { pre: def.musicPre || null, boss: def.music || null };
+    this._levelMusic = {
+      pre: def.musicPre || null,
+      mid: def.musicMid || null,   // 只有 EXTRA 用：道中 → 雷米莉亚拦路 → 回道中 → 关底
+      boss: def.music || null,
+    };
     // 本次进关还没切到 Boss 曲；resumeBoss 时下面的 beginBoss() 会同步把它翻成 true，
     // 稍后的播曲那里就不会把道中曲再盖上去。
     this._bossMusicSwitched = false;
@@ -916,7 +922,7 @@ class Game {
     // 自机动作帧高优先级预载（幂等）：进关前抢带宽，避免开局只有柔光
     ensureCharArt((isExtra && this.extraChar) ? this.extraChar : this.char);
     const _partner = this.char === 'marisa' ? 'reimu' : 'marisa';
-    this.dialogue?.preparePortraits?.([this.char, _partner, def.boss]);
+    this.dialogue?.preparePortraits?.([this.char, _partner, def.boss, def.midboss?.key].filter(Boolean));
     // 道中剧情节点：重来 / 再战 / EXTRA 不再重复播放
     this._midShown = [false, false];
     this._skipBeats = !!(isExtra || opts.skipIntro || opts.resumeBoss);
@@ -944,6 +950,8 @@ class Game {
 
     // 重挑战回 Boss：把玩家放回 Boss 前的检查点，Boss 直接登场，
     // 不用把整段跑图再走一遍（战前对白也跳过，因为已经看过）。
+    // STAGE5 有两场 Boss：opts.bossKey / bossMid 指明重开的是哪一场（打妖梦时续命不能直接放幽幽子）；
+    // 妖梦已击破（呼吸区里翻车）则没有 bossKey，只把 midbossDone 带过去，让玩家走完全程。
     if (!isExtra && opts.resumeBoss) {
       const p = this.stage.player;
       if (p && typeof p.reset === 'function') {
@@ -952,7 +960,8 @@ class Game {
         p.setCheckpoint?.(p.x, p.y);
         p.vx = 0; p.vy = 0;
         p.invuln = Math.max(p.invuln || 0, 1.5);  // 出场给一小段无敌，别一复活就挨弹
-        this.stage.beginBoss();
+        this.stage.midbossDone = !!opts.midbossDone;
+        if (opts.bossKey) this.stage.beginBoss(opts.bossKey, { midboss: !!opts.bossMid });
         this.stage.camera?.snapTo?.(p.x + p.w / 2);
       }
     }
@@ -1065,10 +1074,18 @@ class Game {
         seedReset?.(); // 从开战这一帧把随机序列拨回起点，弹幕才有复现意义
         this.hud.banner(data.name || '', data.title || '', 2.0);
         this.audio.play?.('menu');
-        // 道中曲 → Boss 曲：只有配了 musicPre 的关卡这么切，其余保持原样
+        // 道中曲 → Boss 曲：只有配了 musicPre 的关卡这么切，其余保持原样。
+        // 平台关的「道中中途战」（STAGE5 妖梦）沿用道中曲，把 Boss 曲留给关底；
+        // EXTRA 是三段式：中段（雷米莉亚拦路）切 musicMid，姐姐认输后 midbossClear 切回道中曲，
+        // 关底芙兰登场才轮到 Boss 曲（U.N.）。_bossMusicSwitched 在这里也置 true，
+        // 免得 _createStage 末尾把道中曲盖到中段曲上（resumeBoss 会同步走到这里）。
         {
           const lm = this._levelMusic;
-          if (lm && lm.pre && lm.boss && !this._bossMusicSwitched) {
+          const keepForMid = !this.inExtra && data.midboss;
+          if (lm && lm.mid && this.inExtra && data.midboss) {
+            this._bossMusicSwitched = true;
+            this.audio.playMusic?.(lm.mid);
+          } else if (lm && lm.pre && lm.boss && !this._bossMusicSwitched && !keepForMid) {
             this._bossMusicSwitched = true;
             this.audio.playMusic?.(lm.boss);
           }
@@ -1080,13 +1097,23 @@ class Game {
       case 'midbossClear':
         this.hud.banner('MID BOSS CLEAR', '', 1.4);
         this.audio.play?.('win');
-        // 姐姐认输的几句话：等横幅播完再弹，别把 MID BOSS CLEAR 盖掉
-        if (this.inExtra) {
+        // EXTRA：姐姐认输 → 回道中曲（血月编），并放开 _bossMusicSwitched，
+        // 6:00 芙兰朵露登场时 ensure 还能切到 Boss 曲。
+        if (this.inExtra && this._levelMusic && this._levelMusic.pre) {
+          this._bossMusicSwitched = false;
+          this.audio.playMusic?.(this._levelMusic.pre);
+        }
+        // 中途 Boss 的战后对话：EXTRA 是姐姐认输的几句，平台关（STAGE5 妖梦）走 story.js
+        // 的兜底键。脚本为空就什么都不排：横幅照播，道中照走，state 不动。
+        {
           const st = this.stage;
-          if (st && !st.skipBossDialogue) {
+          const script = this.inExtra
+            ? (STORY.extra.midBossOut || [])
+            : this._midbossStory('post');
+          if (st && !st.skipBossDialogue && script.length) {
             this._after(1.8, () => {
               if (this.stage !== st || this.state !== 'play') return;
-              this._playDialogue(STORY.extra.midBossOut || [], () => {
+              this._playDialogue(script, () => {
                 if (this.stage === st) this.state = 'play';
               });
             });
@@ -1118,7 +1145,11 @@ class Game {
       else if (data && data.midboss) script = STORY.extra.midBoss || [];
       else script = [];
     } else {
-      script = stageStoryFor(this.char, STAGE_KEY(this.levelIndex)).preBoss || [];
+      // STAGE5 现在有两场 Boss：道中妖梦（midboss）有自己的登场对话，幽幽子仍走 preBoss。
+      // 对话键路径由 story.js 决定，这里按候选顺序兜底，取不到就安全跳过（见 _midbossStory）。
+      script = (data && data.midboss)
+        ? this._midbossStory('pre')
+        : (stageStoryFor(this.char, STAGE_KEY(this.levelIndex)).preBoss || []);
     }
     const start = () => {
       this.state = 'play';
@@ -1126,6 +1157,42 @@ class Game {
     };
     if (script.length) this._playDialogue(script, start);
     else start();
+  }
+
+  /**
+   * 取「道中中途 Boss」的战前 / 战后对话（目前是 STAGE5 的妖梦）。
+   *
+   * 正式键由剧情侧确定：STORY.stages.<stage>.youmuPre / youmuPost，
+   * 由 story.js 的 midbossPreFor() / midbossPostFor() 读取（缺失返回 []）。
+   * 这里先走官方函数，再按候选顺序兜底；全部拿不到就返回空数组，
+   * 调用方按「没有对话」处理 —— 绝不抛错。key 从关卡的 midboss 配置读，引擎里不写死。
+   */
+  _midbossStory(phase) {
+    const key = this.stage?.midbossCfg?.key;
+    if (!key) return [];
+    const post = phase === 'post';
+    const sk = STAGE_KEY(this.levelIndex);
+    // 1) story.js 官方入口（STORY.stages.<stage>.<key>Pre / <key>Post）
+    try {
+      const official = post ? midbossPostFor(this.char, sk) : midbossPreFor(this.char, sk);
+      if (Array.isArray(official) && official.length) return official;
+    } catch { /* 剧情表缺失也不该拦住 Boss 战 */ }
+    // 2) 兜底：路线层 → 关卡层 → 角色独立段（键名变了也不会哑火）
+    const route = stageStoryFor(this.char, sk) || {};
+    const top = (STORY.stages && STORY.stages[sk]) || STORY[sk] || {};
+    const solo = STORY[key] || {};
+    const names = post
+      ? [`${key}Post`, 'midBossOut', `${key}Out`, `${key}After`]
+      : [`${key}Pre`, 'midBoss', 'midBossPre', `${key}Intro`, `${key}Before`];
+    for (const pool of [route, top, solo]) {
+      for (const name of names) {
+        const v = pool ? pool[name] : null;
+        if (Array.isArray(v) && v.length) return v;
+      }
+    }
+    // 3) 另一套单人写法：STORY.youmu = { before: [...], after: [...] }
+    const alt = solo[post ? 'after' : 'before'] || solo[post ? 'post' : 'pre'];
+    return Array.isArray(alt) && alt.length ? alt : [];
   }
 
   _onStageClear() {
@@ -1219,6 +1286,8 @@ class Game {
     this.audio.play?.('die');
     // 已经打到 Boss 的话，重挑战回 Boss 场地而不是从头跑一遍
     const atBoss = this._canResumeBoss();
+    // 真正在 Boss 战里（而不是「妖梦已击破、关底还没出」的道中状态）
+    const midFight = !!this.stage?.bossStarted;
     // EXTRA 没有 platform Boss 检查点：_retryStage 会按时间轴回到 3:00 / 6:00 的检查点。
     // 这里用与 _retryStage 完全相同的判定算出恢复点，按钮文案必须跟实际接关位置一致，
     // 否则玩家看到「重新挑战本关」却直接从 3:00 雷米莉亚战开始，文案与行为不符。
@@ -1231,7 +1300,7 @@ class Game {
       ? (extraResume === 'final' ? '从芙兰战继续'
         : extraResume === 'midboss' ? '从雷米莉亚战继续'
           : '重新挑战本关')
-      : (atBoss ? '再战 Boss' : '重新挑战本关');
+      : (midFight ? '再战 Boss' : atBoss ? '从中途继续' : '重新挑战本关');
     const extraFoot = extraResume === 'final'
       ? '将从 6:00 芙兰战的检查点继续'
       : extraResume === 'midboss'
@@ -1244,7 +1313,11 @@ class Game {
     const foot = this.inExtra
       ? `EXTRA 关失败不会触发结局\n${extraFoot}`
       : [
-        atBoss ? '从 Boss 场地重新开始\n前面的进度不会丢失' : '',
+        atBoss
+          ? (midFight
+            ? '从 Boss 场地重新开始\n前面的进度不会丢失'
+            : '从中途战后的检查点继续\n前面的进度不会丢失')
+          : '',
         canTrue ? '续命将无法进入真结局，也无法解锁 EXTRA\n想要 TRUE ENDING 与 EXTRA，请一次通过' : 'EASY 难度没有真结局\nEXTRA 需要在 N/H/L 一次续命都不用地通关',
       ].filter(Boolean).join('\n');
     this._setPanel('游戏结束', sub, [
@@ -1253,10 +1326,15 @@ class Game {
     ], foot);
   }
 
-  /** 当前这关是否已经打到 Boss（重挑战可以直接回 Boss 场地） */
+  /**
+   * 当前这关是否有可恢复的进度（重挑战不用从头跑）。
+   * - 正在打关底 / 中途 Boss：bossStarted
+   * - 中途 Boss 已击破、关底还没出来：midbossDone（呼吸区里翻车不该重打一遍妖梦）
+   */
   _canResumeBoss() {
     const s = this.stage;
-    return !!(s && s.bossStarted && s.mode === 'platform' && s.player && !this.inExtra);
+    if (!s || s.mode !== 'platform' || !s.player || this.inExtra) return false;
+    return !!(s.bossStarted || (s.midbossDone && !s.finished));
   }
 
   _retryStage() {
@@ -1284,6 +1362,11 @@ class Game {
         skipIntro: true,
         resumeBoss: true,
         checkpoint: s.player.checkpoint || s._safeSpot || null,
+        // 恢复点带上「正在打哪一场」：打妖梦时续命不能把幽幽子直接放出来；
+        // 妖梦已击破（呼吸区里翻车）则没有 bossKey，只把 midbossDone 带过去。
+        bossKey: s.bossStarted ? (s.boss?.key || null) : null,
+        bossMid: !!s.bossStarted && !!s.bossMid,
+        midbossDone: !!s.midbossDone,
       });
     } else this.startStage(this.levelIndex, { skipIntro: true });
   }

@@ -243,9 +243,38 @@ const KAGUYA = [
   ],
 ];
 
+/* ============================================================
+   5 面 · 中途 Boss：魂魄妖梦（半灵二天一流）
+   三张卡的签名弹型分别是「突进宽斩 / 追踪多段斩 / 半灵剑阵」，
+   每张卡都由「本体一拍 + 半灵一拍」合成；半灵被断灵后只剩本体一侧。
+   ============================================================ */
+const YOUMU = [
+  // 人符「现世斩」——突进斩击压迫：宽扇贴脸，隔拍突进，半灵补反向斜斩
+  [
+    { typeName: 'presentSlash', rate: 0.62, n: 10, speed: 300, spread: 1.45, weight: 3 },
+    { typeName: 'presentSlash', rate: 0.84, n: 14, speed: 272, spread: 1.95, weight: 2 },
+    { typeName: 'spiritTrace', rate: 0.5, n: 8, speed: 128, weight: 1.4 },
+    { typeName: 'presentSlash', rate: 1.02, n: 7, speed: 336, spread: 1.1, weight: 1.1 },
+  ],
+  // 人鬼「未来永劫斩」——多段斩闪追踪：本体一刀 + 半灵三连斩（每斩重瞄）
+  [
+    { typeName: 'eternalSlash', rate: 0.95, n: 5, speed: 272, stages: 3, weight: 3 },
+    { typeName: 'eternalSlash', rate: 1.18, n: 7, speed: 246, stages: 3, weight: 2 },
+    { typeName: 'spiritTrace', rate: 0.56, n: 10, speed: 142, weight: 1.3 },
+    { typeName: 'presentSlash', rate: 0.86, n: 9, speed: 296, spread: 1.5, weight: 1.1 },
+  ],
+  // 断灵「剑楼阁」——半灵剑阵终盘：带缺口的剑环 + 玩家头顶剑柱
+  [
+    { typeName: 'phantomSwordArray', rate: 0.72, n: 16, gaps: 3, pillars: 5, speed: 152, weight: 3 },
+    { typeName: 'phantomSwordArray', rate: 0.96, n: 22, gaps: 3, pillars: 7, speed: 136, weight: 2 },
+    { typeName: 'eternalSlash', rate: 0.9, n: 6, speed: 256, stages: 3, weight: 1.3 },
+    { typeName: 'spiritTrace', rate: 0.46, n: 12, speed: 158, weight: 1.1 },
+  ],
+];
+
 /**
  * 逐卡弹幕设计表：key = BOSS_DEFS 的键，value = 按卡序的 pattern 数组。
- * 只覆盖 stage1–6 的 28 张卡；EXTRA 的 remilia / flandre 不在此表（保持原样）。
+ * 只覆盖 stage1–6 的 28 张卡 + 5 面中途妖梦的 3 张；EXTRA 的 remilia / flandre 不在此表（保持原样）。
  */
 export const CARD_PATTERNS = {
   rumia: RUMIA,
@@ -254,11 +283,12 @@ export const CARD_PATTERNS = {
   aya: AYA,
   yuyuko: YUYUKO,
   kaguya: KAGUYA,
+  youmu: YOUMU,
 };
 
 /**
  * 取某 Boss 第 i 张卡的弹幕覆盖表。
- * @param {string} key 'rumia' | 'wriggle' | 'cirno' | 'aya' | 'yuyuko' | 'kaguya'
+ * @param {string} key 'rumia' | 'wriggle' | 'cirno' | 'aya' | 'yuyuko' | 'kaguya' | 'youmu'
  * @param {number} i 卡序号（0-based）
  * @returns {Array<object>|null} 没有覆盖时返回 null（boss.js 回退原 BOSS_DEFS patterns）
  */
@@ -276,6 +306,7 @@ export const CARD_INDEX = {
   cirno: ['冰符「冰柱落下」', '雹符「冰雹风暴」', '冻符「完美冻结」', '雪符「钻石风暴」'],
   aya: ['风符「风神一扇」', '疾风「风神少女」', '岐符「天之八衢」', '风神「天狗颪」', '「幻想风靡」'],
   yuyuko: ['幽雅「死出诱蛾灯」', '蝶符「花之舞」', '蝶符「死蝶之华尔兹」', '亡乡「亡我乡 -宿罪-」', '冥符「常夜樱」', '反魂蝶「八分咲」'],
+  youmu: ['人符「现世斩」', '人鬼「未来永劫斩」', '断灵「剑楼阁」'],
   kaguya: ['难题「龙颈之玉 -五色的弹丸-」', '神宝「耀眼的龙玉」', '难题「佛御石之钵 -不碎的意志-」', '神宝「佛体的金刚石」', '难题「火鼠的皮衣 -不焦躁的内心-」', '神宝「火蜥蜴之盾」', '难题「燕之子安贝 -不死之药-」', '神宝「蓬莱的玉枝 -梦色之乡-」'],
 };
 

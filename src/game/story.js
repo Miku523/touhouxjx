@@ -20,6 +20,10 @@
  *
  * 每关五个对话点：intro / mid[0] / mid[1] / preBoss / postBoss。
  * 中段两处由 main.js 按关卡进度触发，不再只等面末 Boss。
+ *
+ * 中途 Boss（midboss）另有战前/战后两段，放在关卡层级（不分自机路线）：
+ *   STORY.stages.stage5.youmuPre / youmuPost —— 魂魄妖梦（幽幽子之前的守门战）
+ * 取用请走 story.js 底部导出的 midbossPreFor / midbossPostFor，缺失时返回空数组。
  */
 export const STORY = {
   /* ================================================================
@@ -835,6 +839,70 @@ export const STORY = {
           { who: 'narrator', text: '魔理沙把帽子往下压了压，没再说话。' },
         ],
       },
+
+      /* ------------- 中途 Boss · 魂魄妖梦（幽幽子之前的守门战） -------------
+       * 不分自机路线：她守的是「路」，不是「谁」。台词里不出现玩家名。
+       */
+      youmuPre: [
+        { who: 'narrator', text: '花海尽头，石阶断在半空。阶前站着一个银白发的少女，两把刀都还没出鞘。' },
+        { who: 'youmu', text: '站住。前面的路，今晚不通。' },
+        { who: 'player', text: '谁说的。' },
+        { who: 'youmu', text: '西行寺家的庭师，魂魄妖梦。奉主人之命，清场。' },
+        { who: 'player', text: '清什么场。这里是冥界，本来就没人。' },
+        { who: 'youmu', text: '有人。花下面全是。' },
+        { who: 'youmu', text: '把该睡下的按回床上，是我的差事。今天晚上，多出来的活计是你们。' },
+        { who: 'player', text: '我们不是死人。' },
+        { who: 'youmu', text: '我知道。所以你们还有得选。' },
+        { who: 'player', text: '你的主人呢。' },
+        { who: 'youmu', text: '在更里面。赏花。' },
+        { who: 'youmu', text: '说是赏花，其实是把整片冥界的花都叫醒，然后坐在正中间发呆。' },
+        { who: 'player', text: '那她自己怎么不来拦。' },
+        { who: 'youmu', text: '她不想被打扰。可她也不肯亲自来说这句话。' },
+        { who: 'youmu', text: '……这种事，向来做的人是我。' },
+        { who: 'narrator', text: '她说得很平，像在念一张早就写好的差事单。' },
+        { who: 'player', text: '两把刀。' },
+        { who: 'youmu', text: '长的叫楼观剑，斩断迷惘。你们站在这里犹豫的每一秒，它都听得见。' },
+        { who: 'youmu', text: '短的是白楼剑，斩断迷茫——斩的是握着它的人自己的。' },
+        { who: 'player', text: '所以你不迷惘。' },
+        { who: 'youmu', text: '不。所以我每天都要拔它一次。' },
+        { who: 'narrator', text: '她侧过身。身后浮起一个半透明的、和她一模一样的影子，动作比她慢半拍。' },
+        { who: 'player', text: '那是……你？' },
+        { who: 'youmu', text: '半灵。我的一半。它没跟我一起长，也没跟我一起死。' },
+        { who: 'youmu', text: '魂魄家的人生下来就是两个人的分量。一个站在地上，一个站在旁边看着。' },
+        { who: 'player', text: '哪个是真的。' },
+        { who: 'youmu', text: '都真。所以我才用两把刀。一刀是我，一刀是它。合起来，才叫二天一流。' },
+        { who: 'player', text: '这不像守门该说的话。' },
+        { who: 'youmu', text: '守门本来也不该说这么多。是你们问的。' },
+        { who: 'narrator', text: '两把刀同时出鞘，声音却只有一个。' },
+        { who: 'youmu', text: '请回吧。这是最后一次好言相劝。' },
+        { who: 'player', text: '不。' },
+        { who: 'youmu', text: '……好。那我就不劝了。' },
+      ],
+      youmuPost: [
+        { who: 'narrator', text: '白楼剑脱手，插进湿土里。半灵先散了，像一口白气被风抽走。' },
+        { who: 'youmu', text: '……输了。' },
+        { who: 'player', text: '让开。' },
+        { who: 'youmu', text: '让。我本来也没打算拦到最后。' },
+        { who: 'player', text: '为什么。' },
+        { who: 'youmu', text: '拦得住的和拦不住的，我分得清。' },
+        { who: 'youmu', text: '你的弹比我的刀快。快的东西挡不住——这是常识，不是认输。' },
+        { who: 'player', text: '……' },
+        { who: 'youmu', text: '而且我也有私心。' },
+        { who: 'player', text: '说。' },
+        { who: 'youmu', text: '幽幽子大人的弹幕，我看了三百年，还是看不透。' },
+        { who: 'youmu', text: '她不用瞄准。她只是把花撒出去，然后站在原地，等你自己走进那些花里。' },
+        { who: 'player', text: '怎么走。' },
+        { who: 'youmu', text: '慢一点。别急着穿第一波——她的第二波，总是从你以为安全的地方长出来。' },
+        { who: 'youmu', text: '还有。别盯着她的眼睛看太久。看着看着，会忘了自己为什么来。' },
+        { who: 'narrator', text: '她把双刀收回鞘里，侧身让开石阶。' },
+        { who: 'youmu', text: '庭师能做的就到这儿。剩下的是主人的事。' },
+        { who: 'player', text: '你的半灵。' },
+        { who: 'youmu', text: '散了。过一会儿会回来。它从来不会走太远。' },
+        { who: 'youmu', text: '喂。' },
+        { who: 'youmu', text: '要是你赢了，别笑话她。她这辈子输的时候比赢的时候多，可每次还是坐得端端正正。' },
+        { who: 'narrator', text: '石阶尽头，花的颜色深了一层。有人在那边哼着歌。' },
+        { who: 'youmu', text: '去吧。她在等。' },
+      ],
     },
 
     /* ---------------- STAGE 6 · 蓬莱山辉夜 ---------------- */
@@ -1095,4 +1163,33 @@ export function extraIntroFor(char) {
 
 export function extraPostFor(char) {
   return STORY.extra.postBoss[routeOf(char)] || STORY.extra.postBoss.reimu;
+}
+
+/**
+ * 中途 Boss 的剧情段：先取自机路线的同名键，没有再退回关卡层级（不分线的公共版本）。
+ * 现在只有 STAGE5 的魂魄妖梦：STORY.stages.stage5.youmuPre / youmuPost。
+ * 取不到一律返回空数组，调用方（main.js）可以无脑播。
+ * @param {string} char 'reimu' | 'marisa'
+ * @param {string} key  关卡键，如 'stage5'
+ * @param {'pre'|'post'} phase
+ * @returns {Array<{who:string,text:string,mood?:string}>}
+ */
+export function midbossStoryFor(char, key, phase) {
+  const st = STORY.stages[key];
+  if (!st) return [];
+  const field = phase === 'post' ? 'youmuPost' : 'youmuPre';
+  const route = st[routeOf(char)];
+  const own = route && route[field];
+  if (Array.isArray(own) && own.length) return own;
+  return Array.isArray(st[field]) ? st[field] : [];
+}
+
+/** 中途 Boss 战前对话（缺失返回 []） */
+export function midbossPreFor(char, key) {
+  return midbossStoryFor(char, key, 'pre');
+}
+
+/** 中途 Boss 战后对话（缺失返回 []） */
+export function midbossPostFor(char, key) {
+  return midbossStoryFor(char, key, 'post');
 }

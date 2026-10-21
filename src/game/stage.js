@@ -387,6 +387,13 @@ export class Stage {
     this.pendingBossKey = null;
     this.pendingBossMid = false;
     this.midbossDone = false;
+    // 平台关的中途 Boss（目前只有 STAGE5 的妖梦）：
+    // 触发线 / 舞台 / 呼吸区全部来自关卡配置 def.midboss（与 levelgen 共用同一份对象），
+    // 引擎里不写死任何 Boss key —— EXTRA 的雷米莉亚走的是下面另一套时间轴。
+    this.midbossCfg = this.mode === 'platform' ? (this.def.midboss || null) : null;
+    this.pendingBossFromEnd = null; // 下一个 Boss 的登场站位（距关卡右端像素）
+    this._midClearX = 0;            // 击破中途 Boss 时的玩家 x：呼吸区的距离基准
+    this._midClearT = 0;            // 击破中途 Boss 后的道中计时：呼吸区的时间保险
     this.extraT = 0;
     // 中途 / 终盘再战：跳过已经看过的 Boss 战前对白
     this.skipBossDialogue = false;
@@ -632,20 +639,22 @@ export class Stage {
       } else if (before !== 'dead' && this.boss.state === 'dead') {
         this._onBossDefeated();
       }
+      // 中途 Boss 被击破后 this.boss 已经置空（平台关此前没有这个时序，EXTRA 是 STG 不走到这些分支），
+      // 所以下面所有「撞 Boss / 踩头 / 破势」的互动都必须再加一次 this.boss 判定。
       // 冲刺撞 Boss
-      if (this.mode === 'platform' && p.dashing) {
+      if (this.mode === 'platform' && this.boss && p.dashing) {
         if (this.boss.hitByDash(p, this.fx)) {
           this.camera.shake(8, 0.2);
           this.onEvent('bossHit');
         }
       }
       // 平台关：从上方踩 Boss 头顶（STG 关没有平台跳跃，不启用）
-      if (this.mode === 'platform' && p.alive && this.boss.stompBy(p, this.fx)) {
+      if (this.mode === 'platform' && this.boss && p.alive && this.boss.stompBy(p, this.fx)) {
         this.camera.shake(10, 0.25);
         this.onEvent('bossStomp');
       }
       // 平台关：破势打满 / 俯冲落地的演出反馈（音效 + 震屏）
-      if (this.mode === 'platform') {
+      if (this.mode === 'platform' && this.boss) {
         if (this._seenStagger !== this.boss.staggerCount) {
           this._seenStagger = this.boss.staggerCount;
           this.camera.shake(12, 0.35);
@@ -669,6 +678,65 @@ export class Stage {
     this._ambientTick(dt);
 
     if (input.down('shoot')) this._tryShoot(input);
+  }
+
+  /**
+   * 平台关的 Boss 触发判定（一关两场：道中 midboss → 呼吸区 → 关底）。
+   *
+   * ① 中途 Boss：关卡 def.midboss 存在且尚未击破，越过 `w - triggerFromEnd` 就排队；
+   * ② 呼吸区：中途 Boss 击破后，玩家必须先离开击破点 `breathDist` 像素、
+   *    且道中时间过 `breathSec` 秒（距离 + 时间双保险，避免击破瞬间就被下一场对话接走）；
+   * ③ 关底 Boss：沿用原来的手感 —— 触发线 = min(终点旗前 120px, Boss 前 420px)。
+   *
+   * 全部位置从关卡配置推导，引擎不认 Boss key（EXTRA 的雷米莉亚走另一套时间轴）。
+   *
+   * @param {number} px 玩家中心 x
+   * @returns {{key:string|null, mid:boolean}|null} 本帧被排队的 Boss，null = 不触发
+   */
+  _checkPlatformBossTrigger(px) {
+    if (this.bossStarted || this.bossPending || this.state !== 'play') return null;
+    const cfg = this.midbossCfg;
+
+    // ① 道中 → 中途 Boss
+    if (cfg && !this.midbossDone) {
+      if (px > this.level.w - (cfg.triggerFromEnd || 5400)) {
+        return this._queueBoss(cfg.key || null, true, cfg.arenaFromEnd || 520);
+      }
+      return null; // 中途 Boss 没打掉之前，关底不参与判定
+    }
+
+    // ② 击破中途 Boss 后的呼吸区
+    if (cfg) {
+      const walked = px - this._midClearX;
+      if (walked < (cfg.breathDist || 0) || this._midClearT < (cfg.breathSec || 0)) return null;
+    }
+
+    // ③ 关底 Boss：触发线贴着 Boss 场地，保证 Boss 出现时就在视野里
+    const bossX = this.level.w - 520;
+    const triggerX = Math.max(200, Math.min(this.goalX - 120, bossX - 420));
+    if (px > triggerX) return this._queueBoss(this.level.boss || null, false, 520);
+    return null;
+  }
+
+  /**
+   * 排队一场 Boss 战并落地检查点。
+   * bossPending 期间会挡住重复触发；真正的登场在 Game 播完战前对话后调 beginBoss()。
+   *
+   * @param {string|null} key     Boss key（null = 用关卡默认关底）
+   * @param {boolean} mid         是否中途 Boss
+   * @param {number} fromEnd      登场位置距关卡右端的像素
+   * @returns {{key:string|null, mid:boolean}}
+   */
+  _queueBoss(key, mid, fromEnd) {
+    this.bossPending = true;
+    this.pendingBossKey = key;
+    this.pendingBossMid = !!mid;
+    this.pendingBossFromEnd = Number.isFinite(fromEnd) && fromEnd > 0 ? fromEnd : null;
+    if (this._safeSpot) {
+      this.player.setCheckpoint(this._safeSpot.x, this._safeSpot.y);
+      this.onEvent('checkpoint', { x: this._safeSpot.x, y: this._safeSpot.y });
+    }
+    return { key: key || null, mid: !!mid };
   }
 
   _updatePlatform(dt, input) {
@@ -706,19 +774,14 @@ export class Stage {
     // 记录最后一次站稳的位置：Boss 战触发时作为兜底检查点，避免死后回到起点
     if (p.alive && p.onGround) this._safeSpot = { x: p.x, y: p.y };
 
-    // 触发 Boss（先由 Game 播完战前对话，再调 beginBoss）
-    if (!this.bossStarted && !this.bossPending && this.state === 'play') {
-      // 触发线贴着 Boss 场地，保证 Boss 出现时就在视野里
-      const bossX = this.level.w - 520;
-      const triggerX = Math.max(200, Math.min(this.goalX - 120, bossX - 420));
-      if (p.x + p.w / 2 > triggerX) {
-        this.bossPending = true;
-        if (this._safeSpot) {
-          p.setCheckpoint(this._safeSpot.x, this._safeSpot.y);
-          this.onEvent('checkpoint', { x: this._safeSpot.x, y: this._safeSpot.y });
-        }
-        this.onEvent('bossTrigger');
-      }
+    // 触发 Boss（先由 Game 播完战前对话，再调 beginBoss）。
+    // 中途 Boss 的呼吸区计时只在「能自由跑图」时推进：Boss 战 / 对话 / 复活倒计时都暂停。
+    if (this.midbossDone && this.state === 'play' && !this.bossPending && !this.bossStarted) {
+      this._midClearT += dt;
+    }
+    const fired = this._checkPlatformBossTrigger(p.x + p.w / 2);
+    if (fired) {
+      this.onEvent('bossTrigger', fired.mid ? { midboss: true, key: fired.key } : { key: fired.key });
     }
   }
 
@@ -1127,10 +1190,16 @@ export class Stage {
     this.bossMid = isMid;
     this.pendingBossKey = null;
     this.pendingBossMid = false;
+    // 平台关登场站位：中途 Boss 站关卡配置里的舞台中心（复活重试直接 beginBoss 也走这里），
+    // 关底维持 w-520 的老手感；STG（含 EXTRA）不看这个值。
+    const fromEnd = opts.fromEnd
+      || this.pendingBossFromEnd
+      || (isMid && this.midbossCfg ? (this.midbossCfg.arenaFromEnd || 520) : 520);
+    this.pendingBossFromEnd = null;
 
     const bx = this.mode === 'stg'
       ? this.stg.scroll + 900
-      : this.level.w - 520;
+      : this.level.w - fromEnd;
     const by = this.mode === 'stg' ? 380 : this.level.h - 240;
 
     this.boss = new Boss(key, bx, by, {
@@ -1149,6 +1218,10 @@ export class Stage {
     this._seenDive = 'idle';
     this.camera.shake(18, 0.6);
     this.fx.flash(bx, by - 80, this.boss.def.accent, 40);
+    // 中途战开场补火力：它的舞台段按配置取消了小怪（见 levels.js 的 midboss.directPower），
+    // 这里把原本该段拿到的小怪火力一次性补进来，进战火力与改动前持平。
+    // 只在 isMid 生效（关底不会重复补）；复活重试是新建 Stage，也不会叠加。
+    if (isMid && this.midbossCfg?.directPower) this._addPower(this.midbossCfg.directPower);
     this.onEvent('bossStart', {
       key,
       name: this.boss.def.name,
@@ -1174,6 +1247,10 @@ export class Stage {
     // 残机不补，但给一点点喘息的护身时间，别一睁眼就撞进新刷的妖精堆里
     const p = this.player;
     if (p) p.invuln = Math.max(p.invuln || 0, 1.2);
+    // 呼吸区基准：以击破瞬间的玩家位置为原点，再往前走 breathDist 像素才放关底；
+    // 计时器归零后由 _updatePlatform 在「能自由跑图」时累加。
+    this._midClearT = 0;
+    this._midClearX = p ? p.x + p.w / 2 : 0;
     this.onEvent('midbossClear', { key: b ? b.key : 'remilia' });
   }
 

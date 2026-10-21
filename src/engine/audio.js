@@ -4,7 +4,9 @@
  * 实现要点：
  * 1. constructor 只做字段初始化，绝不创建 AudioContext（浏览器需要用户手势）；
  *    unlock() 时才创建/恢复 AudioContext，可重复调用，幂等。
- * 2. 全部音效与 BGM 都用 WebAudio 振荡器 + 增益包络实时合成，无任何外部音频文件。
+ * 2. 音效与常规 BGM 都用 WebAudio 振荡器 + 增益包络实时合成，不依赖音频文件；
+ *    例外：曲目数据里带 audio 字段时（如 EX 曲），改为 fetch + decodeAudioData 播放
+ *    离线渲染好的音频文件并无缝循环，加载失败时自动回退到合成数据。
  * 3. BGM 曲库来自 ./songs/index.js（每关 BOSS 的原作主题曲 + 标题/失败/结局原创曲），
  *    每首曲子是「按秒排好的音符事件表」，前瞻调度、无缝循环。
  * 4. 曲目切换：playMusic(name) 立即换曲（先掐掉旧曲已排期的节点，不会叠音）；
@@ -64,6 +66,8 @@ export class AudioEngine {
 
     this._sfxVoices = new Set();   // 一次性音效节点，仅用于回收引用
     this._musicVoices = new Set(); // BGM 节点，切歌/关闭时强制 stop
+    this._audioCache = new Map();  // 音频文件曲目：url → AudioBuffer（解码一次复用）
+    this._audioPending = null;     // 正在加载的音频曲目 key，防重复请求
   }
 
   /* ------------------------------------------------------------------ */
@@ -644,7 +648,75 @@ export class AudioEngine {
     if (!this.ctx || this._musicOn) return; // 幂等守卫：绝不叠音
     const name = this._songName || 'title';
     const song = SONGS[name];
-    if (!song || !song.duration) return; // 没有曲目数据就保持安静
+    if (!song || !(song.duration || song.audio)) return; // 没有曲目数据就保持安静
+    // 带 audio 字段的曲目直接播音频文件（离线渲染的成品），合成数据留作加载失败时的回退
+    if (song.audio) {
+      this._startAudioMusic(name, song);
+      return;
+    }
+    this._startSynthMusic(name, song);
+  }
+
+  /** 走音频文件的 BGM：fetch → decodeAudioData → 无缝循环播放 */
+  _startAudioMusic(name, song) {
+    if (!this.ctx || this._musicOn || this._audioPending === name) return;
+    const url = song.audio;
+    const begin = (buf) => {
+      this._audioPending = null;
+      if (!buf || !this.ctx) return;
+      // 加载期间已经切走/关掉音乐就不要再起播
+      if (this._songName !== name || !this._musicRequested) return;
+      try {
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        src.connect(this._musicOut());
+        const when = this.ctx.currentTime + 0.06;
+        src.start(when);
+        this._song = Object.assign({}, song, { duration: buf.duration });
+        this._songStart = when;
+        this._songIdx = 0;
+        this._songLoop = 0;
+        this._events = [];
+        this._musicOn = true;
+        this._musicVoices.add(src);
+        this.onSongStart?.(name);
+      } catch (e) {
+        // 播放失败就退回合成
+      }
+    };
+    this._audioPending = name;
+    const cached = this._audioCache.get(url);
+    if (cached) {
+      begin(cached);
+      return;
+    }
+    if (typeof fetch !== 'function') {
+      // 老环境没有 fetch：直接回退合成，别让 BGM 空着
+      this._audioPending = null;
+      this._startSynthMusic(name, song);
+      return;
+    }
+    fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error('http ' + r.status);
+        return r.arrayBuffer();
+      })
+      .then((ab) => new Promise((res, rej) => this.ctx.decodeAudioData(ab, res, rej)))
+      .then((buf) => {
+        this._audioCache.set(url, buf);
+        begin(buf);
+      })
+      .catch(() => {
+        // 文件缺失 / 解码失败：回退到合成器版本
+        this._audioPending = null;
+        if (this._songName === name && this._musicRequested) this._startSynthMusic(name, song);
+      });
+  }
+
+  /** 走实时合成的 BGM（曲库音符事件表 + 前瞻调度） */
+  _startSynthMusic(name, song) {
+    if (!this.ctx || this._musicOn) return;
     this._song = song;
     this._songSoft = !!song.soft;
     this._songWarm = !!song.warm;
@@ -662,6 +734,7 @@ export class AudioEngine {
 
   _stopMusic() {
     this._musicOn = false;
+    this._audioPending = null;
     if (this._musicTimer !== null) {
       clearTimeout(this._musicTimer);
       this._musicTimer = null;
