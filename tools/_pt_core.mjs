@@ -41,7 +41,9 @@ export async function launch(opts = {}) {
   const W = opts.width ?? 1280, H = opts.height ?? 720;
   const profile = mkdtempSync(join(tmpdir(), 'edge-pt-'));
   const args = [
-    '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run',
+    ...(opts.headless === false ? [] : ['--headless=new']),
+    ...(opts.gpu === true ? [] : ['--disable-gpu']),
+    '--hide-scrollbars', '--no-first-run',
     '--no-default-browser-check', '--autoplay-policy=no-user-gesture-required',
     '--mute-audio', '--disable-background-timer-throttling',
     '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
