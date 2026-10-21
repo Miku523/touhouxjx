@@ -14,6 +14,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
+import { PLAYER_ATK_SCALE } from '../src/game/balance.js';
 
 const argv = {};
 {
@@ -44,7 +45,11 @@ const TARGET = {
   poiseMin: 130, poiseMax: 150,
   exTotalTol: 0.10, exPeakTol: 0.05,
   bossPeakRatio: [1.12, 1.22],
-  shots: { reimu: { special: 2.0925, main: 5.4 }, marisa: { special: 2.7675, main: 10.8 } },
+  // #6 运行时伤害 = profile 值 × 当前 PLAYER_ATK_SCALE（不写死，倍率调整后自动跟随）
+  shots: {
+    reimu: { special: 1.55 * PLAYER_ATK_SCALE, main: 4 * PLAYER_ATK_SCALE },
+    marisa: { special: 2.05 * PLAYER_ATK_SCALE, main: 8 * PLAYER_ATK_SCALE },
+  },
 };
 const r2 = (v) => (v == null || !Number.isFinite(+v) ? null : Math.round(+v * 100) / 100);
 const r3 = (v) => (v == null || !Number.isFinite(+v) ? null : Math.round(+v * 1000) / 1000);

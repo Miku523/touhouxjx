@@ -19,7 +19,7 @@
  */
 import { T } from './level.js';
 import { drawGenFairy } from '../art/genfairy.js';
-import { scaleEnemyHp } from './balance.js';
+import { scaleEnemyHp, scalePlayerDamage } from './balance.js';
 
 /**
  * 五色宝石色系。
@@ -339,8 +339,8 @@ export class EnemyManager {
         const playerBottom = player.y + player.h;
         const isStomp = player.vy > 60 && playerBottom < e.y + e.h * 0.62;
         if (isStomp) {
-          // 小怪血量整体上调后，踩踏伤害同步提高：普通妖精 1 脚、重装 2 脚仍能踩死
-          e.hp -= 8;
+          // 踩踏同样走全局自机倍率：攻击力翻倍后杂兵基本一脚带走
+          e.hp -= scalePlayerDamage(8);
           opts.onStomp?.(e);
           player.vy = -560;
           player.jumpsLeft = 1;
@@ -348,8 +348,8 @@ export class EnemyManager {
           fx?.burst(e.x + e.w / 2, e.y + e.h / 2, e.colors.glow, 8, 200);
           if (e.hp <= 0) this._kill(e, fx, opts);
         } else if (player.dashing) {
-          // 冲刺是有限资源，给得比踩踏更重：轻装 1 冲、重装 2 冲
-          e.hp -= 10;
+          // 冲刺是有限资源，基础值给得比踩踏更重（10 vs 8），同样吃全局倍率
+          e.hp -= scalePlayerDamage(10);
           opts.onStomp?.(e);
           fx?.burst(e.x + e.w / 2, e.y + e.h / 2, e.colors.glow, 10, 240);
           if (e.hp <= 0) this._kill(e, fx, opts);

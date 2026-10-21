@@ -113,3 +113,12 @@ node tools/_sim_player.mjs --stage 0 --diff N --god 1 --maxSteps 60000 --out _pt
 - 六个主线 Boss 的 `hpMul` 统一 ×0.8（每面 −20%），EX（芙兰 / 蕾米莉亚）不动；`poiseMax 140`、互动机制、非 EX 密度 ×1.18 均保持不变。
 - 第 1 节的「道中 30% : Boss 70%」不再作为验收约束；按新血量，占比约 64–66%（道中未改）。
 - 新增验收：主线 Boss 血量落「首版 ×0.8 ±1%」，破势次数仍 2–4 次/场，同屏峰值 ≤ 难度预算；实测数据见 `docs/QA_BALANCE_REPORT.md` 第 8 节。
+
+## 7. 追加调整（2026-10-21，用户要求）
+
+用户要求「两名自机攻击力翻一倍」，据此：
+
+- `balance.js`：`PLAYER_ATK_SCALE` 1.35 → 2.7（正好 ×2）；普通弹、符卡、冲刺撞击 Boss、踩踏 Boss、破势球、符卡核心击破全部同步翻倍；`ENEMY_HP_SCALE 0.9` 与 Boss 血量、破势阈值不动。
+- `enemies.js`（踩踏 8 / 冲刺 10）与 `stg.js`（冲刺撞击 12）原先写死的道中杂兵碰撞伤害改为走 `scalePlayerDamage()`，保证「自机所有直接伤害」都吃全局倍率。
+- 击杀耗时约为上一版（1.35）的 1/2、初版的 1/3。
+- 复核：`node tools/_test_boss_melee.mjs` 无新增失败（仍为历史遗留的 10 条俯冲/硬直状态机检查，与伤害断言无关）；`_verify_shots` / `_verify_compare` 的 #6 期望值改为由 `PLAYER_ATK_SCALE` 现算，倍率再调不会误报。

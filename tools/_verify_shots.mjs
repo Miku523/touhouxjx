@@ -5,9 +5,9 @@
  * 判定依据（docs/BALANCE_TARGETS.md #6）：
  *   - 灵梦 special.damage 2.4 → 1.55；魔理沙 special.damage 3.2 → 2.05（profile 值）
  *   - 主弹 damage 不变（4 / 8）
- *   - 运行时 b.damage = scalePlayerDamage(profile) = profile × PLAYER_ATK_SCALE(1.35)
- *       灵梦副弹 1.55×1.35 = 2.0925；魔理沙副弹 2.05×1.35 = 2.7675
- *       灵梦主弹 4×1.35  = 5.4  ；魔理沙主弹 8×1.35  = 10.8
+ *   - 运行时 b.damage = scalePlayerDamage(profile) = profile × PLAYER_ATK_SCALE
+ *       期望值不写死，直接 import balance.js 现算，倍率调整后断言自动跟随：
+ *       灵梦副弹 1.55×倍率、魔理沙副弹 2.05×倍率；灵梦主弹 4×倍率、魔理沙主弹 8×倍率。
  *
  * 实测方式：页面内 startStage(0) 并冻结 rAF，用官方自动玩家连续 240 逻辑步，
  * 逐帧从 stage.shots.pool 采样 active 子弹的 damage（special / 主弹分开），
@@ -18,6 +18,7 @@
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { PLAYER_ATK_SCALE } from '../src/game/balance.js';
 
 const argv = {};
 for (let i = 2; i < process.argv.length; i++) {
@@ -37,8 +38,8 @@ process.env.PT_BASE = URL_BASE; // _pt_core 在 import 时读 BASE
 const { launch } = await import('./_pt_core.mjs');
 
 const EXPECT = {
-  reimu: { special: 2.0925, main: 5.4 },
-  marisa: { special: 2.7675, main: 10.8 },
+  reimu: { special: 1.55 * PLAYER_ATK_SCALE, main: 4 * PLAYER_ATK_SCALE },
+  marisa: { special: 2.05 * PLAYER_ATK_SCALE, main: 8 * PLAYER_ATK_SCALE },
 };
 const TOL = 1e-3;
 

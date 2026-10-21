@@ -12,7 +12,7 @@ import { drawGenChar, drawCharAura, DRAW_H, POSE_RATIO } from '../art/genchars.j
 import { drawGenFairy } from '../art/genfairy.js';
 import { drawHitbox } from '../art/hitbox.js';
 import { POWER, powerLevel, canSpell, spendPower } from './power.js';
-import { scaleEnemyHp } from './balance.js';
+import { scaleEnemyHp, scalePlayerDamage } from './balance.js';
 
 const SPEED = 340;
 const ACCEL = 3200;
@@ -909,8 +909,8 @@ export class StgStage {
       for (const e of this.enemies) {
         if (!e.alive) continue;
         if (Math.abs(e.x - px) < 44 && Math.abs(e.y - py) < 44) {
-          // 杂兵血量上调后冲刺同步加伤：轻装 1 冲、重装 2~3 冲
-          e.hp -= 12;
+          // 冲刺撞击同样走全局自机倍率：攻击力翻倍后杂兵基本一冲带走
+          e.hp -= scalePlayerDamage(12);
           if (e.hp <= 0) {
             e.alive = false;
             fx?.burst(e.x, e.y, e.k.color, 14, 300);
