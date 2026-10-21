@@ -659,7 +659,7 @@ class Game {
       glow: c.glow,
       hotkey: `Digit${c.digit}`,
       html:
-        '<span class="cc-portrait" style="background-image:url(\'' + c.img + '\')"></span>' +
+        '<span class="cc-portrait"><img src="' + c.img + '" alt="" decoding="async" draggable="false" /></span>' +
         '<span class="cc-key">' + c.digit + '</span>' +
         '<span class="cc-body">' +
           '<span class="cc-en">' + c.en + '</span>' +
@@ -679,6 +679,27 @@ class Game {
       '← → 选择　ENTER 确认　ESC 返回难度',
       { screen: true, en: 'SELECT HEROINE', grid: 'cc-grid', scene: 'shrine', select: this.char === 'marisa' ? 1 : 0 }
     );
+    this._bindPortraitArt();
+  }
+
+  /**
+   * 角色卡立绘兜底：首次加载失败（CDN 抖动 / 缓存损坏 / 被拦）时带 cache-bust 参数重试一次。
+   * 以前这里用 CSS background-image，请求失败后没有任何重试路径，卡片就一直是空的，只能整页刷新。
+   */
+  _bindPortraitArt() {
+    for (const img of document.querySelectorAll('.cc-portrait img')) {
+      if (img.dataset.artBound === '1') continue;
+      img.dataset.artBound = '1';
+      img.addEventListener('error', () => {
+        if (img.dataset.artRetried === '1') {
+          console.warn('[charselect] 立绘重试仍失败：', img.src);
+          return;
+        }
+        img.dataset.artRetried = '1';
+        console.warn('[charselect] 立绘加载失败，正在重试：', img.src);
+        img.src = img.src.split('?')[0] + '?retry=' + Date.now();
+      });
+    }
   }
 
   /** 开始游戏后的难度选择：E / N / H / L（卡牌式） */

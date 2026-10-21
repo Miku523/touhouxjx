@@ -1562,13 +1562,26 @@ body {
   position: absolute;
   inset: 0;
   z-index: 0;
-  background-size: contain;
-  background-position: right 5% bottom 0;
-  background-repeat: no-repeat;
-  opacity: .82;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  overflow: hidden;
+  opacity: .86;
   transform-origin: right bottom;
-  transition: opacity .22s, transform .3s, filter .22s;
+  transition: opacity .22s, transform .3s;
+}
+.cc-portrait img {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  margin-right: 5%;
+  object-fit: contain;
+  object-position: right bottom;
   filter: drop-shadow(0 0 calc(var(--s) * 18px) rgba(0, 0, 0, .55));
+  transition: filter .22s;
+  user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
 }
 .overlay.screen-mode .cc-card:hover,
 .overlay.screen-mode .cc-card.sel {
@@ -1585,6 +1598,9 @@ body {
 .overlay.screen-mode .cc-card.sel .cc-portrait {
   opacity: 1;
   transform: scale(1.035);
+}
+.overlay.screen-mode .cc-card:hover .cc-portrait img,
+.overlay.screen-mode .cc-card.sel .cc-portrait img {
   filter: drop-shadow(0 0 calc(var(--s) * 26px) rgba(var(--glow, 255, 200, 200), .35));
 }
 .cc-body {
