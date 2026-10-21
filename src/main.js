@@ -188,6 +188,8 @@ class Game {
     window.addEventListener('keydown', (e) => {
       // 只用键盘启动的玩家也要解锁音频：浏览器策略只认用户手势，按键同样算
       this._unlockAudio();
+      // 隐藏跳关：Shift + 1–6 直达主线第 1–6 面（回忆室 / 改键页里会让位）
+      if (this._tryStageWarp(e)) return;
       // 音乐回忆室是整屏页面：按键先交给它，消费掉就不再漏进标题菜单
       if (this.musicRoom?.handleKey(e)) return;
       this._onMenuKey(e);
@@ -583,6 +585,8 @@ class Game {
     this._pendingTimeout = 0;
     this.dialogue?.stop?.();
     this.ending?.stop?.();
+    // 还在等立绘开播的剧本也一并作废，否则它会在回标题后把画面抢走
+    this._flowGen = (this._flowGen || 0) + 1;
     this.inExtra = false;
     this.state = 'menu';
     this.stage = null;
@@ -896,6 +900,58 @@ class Game {
     const def = list[index];
     if (!def) { this._onAllCleared(); return; }
     this._createStage(def, index, false, opts);
+  }
+
+  /**
+   * 隐藏跳关的按键判定：按住 Shift 再按 1–6（主键盘 / 小键盘都认）。
+   * 正在录音新键、或者音乐回忆室整屏接管时让位，别抢它们的按键。
+   * @returns {boolean} 是否已消费这次按键
+   */
+  _tryStageWarp(e) {
+    if (!e || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (!e.shiftKey || this._captureAction) return false;
+    // 按键设置页里 Shift 本身可能正被绑成某个动作，别抢它的按键
+    if (this.state === 'paused' && this._page === 'keybinds') return false;
+    if (this.musicRoom?.visible) return false;
+    const m = /^(?:Digit|Numpad)([1-6])$/.exec(e.code || '');
+    if (!m) return false;
+    e.preventDefault();
+    this._warpToStage(Number(m[1]));
+    return true;
+  }
+
+  /**
+   * 隐藏跳关：从主线第 n 面（1–6）重新开一局。
+   *
+   * 按「从这一面重新开始」处理：残机回到设置值，续命次数、1UP 进度、
+   * 上一关带过来的残机与火力全部清零；跳过开场与道中剧情，直接落进关卡。
+   * 跳关本身不写任何存档，跳进去之后正常打完的结算规则与平时一致
+   * （所以 EASY 也能跳第 6 面，但 EASY 没有真结局）。
+   */
+  _warpToStage(n) {
+    const all = MAIN_STAGES();
+    if (!all.length) return;
+    // 需求写的是 1–6；万一关卡表更短就夹到最后一关，绝不越界
+    const index = Math.max(0, Math.min(all.length, 6, n) - 1);
+    // 上一局的残留全部掐断：结局层、对话、等横幅的延迟回调、改键捕获。
+    // _flowGen 让还在等立绘的旧剧本作废，免得它过几秒把画面抢回旧对话。
+    this._pendingTimeout = 0;
+    this._flowGen = (this._flowGen || 0) + 1;
+    this.dialogue?.stop?.();
+    this.ending?.stop?.();
+    this._captureAction = null;
+    this._hidePanel();
+    this.inExtra = false;
+    // 「重开一局」的开局状态：只保留当前难度与自机
+    this.lives = Math.max(1, Math.min(4, Number(this.lives) || 3));
+    this.continues = 0;
+    this.runLives = null;
+    this.carryExtend = 0;
+    this.carryPower = 16;
+    this.levelIndex = index;
+    this.audio.unlock?.();
+    // skipIntro 只跳过开场对白；跳关是捷径，道中剧情也一并跳过（_skipBeats 会置 true）
+    this._createStage(all[index], index, false, { skipIntro: true });
   }
 
   _createStage(def, index, isExtra, opts = {}) {
@@ -1462,7 +1518,11 @@ class Game {
 
   _playDialogue(script, onEnd) {
     if (!script || !script.length) { onEnd?.(); return; }
+    // 本轮剧本的代号：等立绘期间若被跳关 / 回标题打断，旧的 begin 直接作废，
+    // 不会在几秒后把新画面抢回旧对话。
+    const gen = this._flowGen = (this._flowGen || 0) + 1;
     const begin = () => {
+      if (gen !== this._flowGen) return;
       this._preState = this.state;
       this.state = 'dialogue';
       this.dialogue.setPlayerChar(this.char);
