@@ -69,6 +69,7 @@ export const LEVELS = [
     theme: 'mountain',
     mode: 'stg',
     boss: 'aya',
+    musicPre: 'pre4',
     music: 'stage4',
     hint: '方向键 自由飞行　空格 加速　Z 连射　X 释放符卡',
     fairyTint: { main: 'green', mix: ['blue', 'yellow', 'purple'] },

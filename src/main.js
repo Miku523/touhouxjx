@@ -883,7 +883,7 @@ class Game {
     const startLives = this.runLives ?? this.lives;
     this.runLives = startLives;
     seedReset?.(); // ?seed= 时把关卡随机序列拨回起点，保证弹幕可复现
-    // 本关音乐：配了 musicPre 的关卡（1 / 2 面）先进道中曲，Boss 登场时再切 Boss 曲；
+    // 本关音乐：配了 musicPre 的关卡（目前 1–4 面）先进道中曲，Boss 登场时再切 Boss 曲；
     // 其余关卡没有 musicPre，照旧一首到底。必须在 beginBoss() 之前登记——resumeBoss 会在
     // 建完 Stage 后立刻开战并同步触发 bossStart，那时就得知道本关该放哪首。
     this._levelMusic = { pre: def.musicPre || null, boss: def.music || null };

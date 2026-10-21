@@ -130,8 +130,25 @@ export const MUSIC_TRACKS = [
       '重编版把低频压得很低，因为冰面下的雾之湖本来就是闷的。',
   },
   {
-    key: 'stage4',
+    key: 'pre4',
     no: '08',
+    title: 'フォールオブフォール ～ 秋めく滝',
+    sub: '射命丸文 · 道中',
+    cat: 'STAGE 4 · 道中',
+    place: '妖怪之山 · 瀑布溪谷',
+    orig: '原曲「フォールオブフォール ～ 秋めく滝」/ 作曲：ZUN / 和风重编',
+    tone: '#9fd8c4',
+    glow: '159, 216, 196',
+    time: 64.8,
+    note:
+      '上山的路上先把瀑布的声音还给你。163 拍原速不动，钢琴的瀑布动机拆成木吉他、弦乐与琴三把' +
+      '轮着接水；低音换成锯齿贝斯加正弦 sub，山体才够沉。' +
+      '四十四小节一整段，尾句走到原曲开头同一个和弦上，所以它循环的时候你听不出接缝——' +
+      '文说自己只是把录音剪成了一条不会停的瀑布。',
+  },
+  {
+    key: 'stage4',
+    no: '09',
     title: '風神少女',
     sub: '射命丸文',
     cat: 'STAGE 4',
@@ -147,7 +164,7 @@ export const MUSIC_TRACKS = [
   },
   {
     key: 'stage5',
-    no: '09',
+    no: '10',
     title: '幽雅に咲かせ、墨染の桜 ～ Border of Life',
     sub: '西行寺幽幽子',
     cat: 'STAGE 5',
@@ -163,7 +180,7 @@ export const MUSIC_TRACKS = [
   },
   {
     key: 'stage6',
-    no: '10',
+    no: '11',
     title: '竹取飛翔 ～ Lunatic Princess',
     sub: '蓬莱山辉夜',
     cat: 'STAGE 6',
@@ -179,7 +196,7 @@ export const MUSIC_TRACKS = [
   },
   {
     key: 'extra',
-    no: '11',
+    no: '12',
     title: 'U.N.オーエンは彼女なのか？',
     sub: '芙兰朵露·斯卡雷特',
     cat: 'EXTRA',
@@ -195,7 +212,7 @@ export const MUSIC_TRACKS = [
   },
   {
     key: 'gameover',
-    no: '12',
+    no: '13',
     title: '失われた道標',
     sub: '旅途中断',
     cat: 'GAME OVER',
@@ -210,7 +227,7 @@ export const MUSIC_TRACKS = [
   },
   {
     key: 'ending',
-    no: '13',
+    no: '14',
     title: '帰り道の夕暮れ',
     sub: '结局 A / B',
     cat: 'ENDING',
@@ -226,7 +243,7 @@ export const MUSIC_TRACKS = [
   },
   {
     key: 'endingW',
-    no: '14',
+    no: '15',
     title: '魔法少女達の百年祭',
     sub: '8bit 柔和版',
     cat: 'EXTRA ENDING',

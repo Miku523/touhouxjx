@@ -34,6 +34,7 @@ import { MERGE_STAGE1 } from './merge_stage1.js';
 import { MERGE_STAGE2 } from './merge_stage2.js';
 import { YUUHEI_PRE3 } from './yuuhei_pre3.js';
 import { ATEAM_STAGE3 } from './ateam_stage3.js';
+import { FALL_PRE4 } from './fall_pre4.js';
 
 export const SONGS = {
   ...ORIGINAL_SONGS,
@@ -51,6 +52,8 @@ export const SONGS = {
   stage2: MERGE_STAGE2.stage2,
   // 3 面道中：ルーネイトエルフ —— 幽閉サテライト 风重编（见 tools/yuuhei_pre3.py）
   pre3: YUUHEI_PRE3.pre3,
+  // 4 面道中：フォールオブフォール ～ 秋めく滝 —— 瀑布动机 × 和风 × 重低频（见 tools/pre4_fall.py）
+  pre4: FALL_PRE4.pre4,
   // 3 面 Boss：おてんば恋娘 —— Ateam 重低频编 + 花映塚 + 完美教室（见 tools/ateam_stage3.py）
   stage3: ATEAM_STAGE3.stage3,
 };
