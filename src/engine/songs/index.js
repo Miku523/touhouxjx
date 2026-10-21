@@ -35,6 +35,14 @@ import { MERGE_STAGE2 } from './merge_stage2.js';
 import { YUUHEI_PRE3 } from './yuuhei_pre3.js';
 import { ATEAM_STAGE3 } from './ateam_stage3.js';
 import { FALL_PRE4 } from './fall_pre4.js';
+import { AYA_STAGE4 } from './aya_stage4_b.js';
+import { TILLWHEN_PRE5 } from './tillwhen_pre5.js';
+import { VOYAGE_PRE6 } from './voyage_pre6.js';
+import { YUGA_STAGE5 } from './yuuga_stage5.js';
+import { KAGUYA_STAGE6 } from './kaguya_stage6.js';
+import { UN_MAD } from './un_mad.js';
+import { TEPES_EX } from './tepes_ex.js';
+import { REMILIA_EX } from './septette_ex.js';
 
 export const SONGS = {
   ...ORIGINAL_SONGS,
@@ -54,6 +62,25 @@ export const SONGS = {
   pre3: YUUHEI_PRE3.pre3,
   // 4 面道中：フォールオブフォール ～ 秋めく滝 —— 瀑布动机 × 和风 × 重低频（见 tools/pre4_fall.py）
   pre4: FALL_PRE4.pre4,
+  // 5 面道中：広有射怪鳥事 ～ Till When? —— 摇滚乐队编制，原曲主旋律占大头（见 tools/pre5_tillwhen.py）
+  pre5: TILLWHEN_PRE5.pre5,
+  // 6 面道中：ヴォヤージュ1970 —— 原谱钢琴托卡塔顶线原样 × 六段起伏重编（见 tools/pre6_voyage.py）
+  pre6: VOYAGE_PRE6.pre6,
+  // EX 道中：ツェペシュの幼き末裔 —— 照 ZUN 扒谱 1:1 直译，对照原曲录音校音（见 tools/ex_tepes.py）
+  ex_pre: TEPES_EX.ex_pre,
+  // EX 中段（雷米莉亚拦路）：亡き王女の為のセプテット —— 主旋律照原曲扒谱、编制照 194s 蓝本重排到 160 BPM 圆舞（见 tools/ex_septette2.py）
+  ex_mid: REMILIA_EX.ex_mid,
   // 3 面 Boss：おてんば恋娘 —— Ateam 重低频编 + 花映塚 + 完美教室（见 tools/ateam_stage3.py）
   stage3: ATEAM_STAGE3.stage3,
+  // 4 面 Boss：風神少女 —— 原曲双旋律原封不动 × 新编伴奏按原曲逐小节和声重写（见 tools/build/_fusion_b.py）
+  stage4: AYA_STAGE4.stage4,
+  // 5 面 Boss：幽雅に咲かせ、墨染の桜 ～ Border of Life —— 照原曲 1:1 直译（见 tools/boss5_murasaki.py）
+  stage5: YUGA_STAGE5.stage5,
+  // 6 面 Boss：竹取飛翔 ～ Lunatic Princess —— 原曲三条轨逐音原样，外加月光琶音 / 铺底 / 补鼓（见 tools/kaguya_fuse2.py）
+  stage6: KAGUYA_STAGE6.stage6,
+  // EX Boss：U.N.オーエンは彼女なのか？～ 495年の孤独 —— 168 BPM 重编：主奏/副旋律/铺底/贝斯
+  // 仍是游戏内原曲逐音搬移，新写鼓组、bII 强力和弦块、半音颤音与底鼓真空（见 tools/un_mad.py）
+  // （audio 让引擎直接播离线渲染成品 src/assets/bgm/extra_mad.wav，
+  //  fetch 失败时自动回退到 un_mad.js 里的合成数据）
+  extra: { ...UN_MAD.extra, audio: 'src/assets/bgm/extra_mad.wav' },
 };

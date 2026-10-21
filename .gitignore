@@ -76,3 +76,16 @@ tools/_shots/
 _pt/
 _hit/
 tools/build/musicroom_*.png
+
+# 根目录的试听渲染（单个 10–14MB，按需重跑生成）
+/*.wav
+
+# 分析脚本生成的数据产物（脚本本身入库，数据不入库）
+tools/build/*.npy
+tools/build/*.npz
+tools/build/*.txt
+tools/build/*.md
+tools/build/*.mp3
+tools/build/_ref*/
+tools/build/_k*_feat/
+tools/build/_old_layer.js
