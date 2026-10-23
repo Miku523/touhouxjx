@@ -28,9 +28,9 @@ import { BOSS_SONGS } from './touhou.js';
 import { ORIGINAL_SONGS } from './original.js';
 import { EXTRA_ENDING } from './extra_ending.js';
 import { TITLE_FULL } from './title_full.js';
-import { PRE1_WARM } from './warm_variants.js';
+import { HONOU_PRE1 } from './honou_pre1.js';
+import { YOUMA_STAGE1 } from './youma_stage1.js';
 import { PRE2_EURO } from './eurobeat_pre2.js';
-import { MERGE_STAGE1 } from './merge_stage1.js';
 import { MERGE_STAGE2 } from './merge_stage2.js';
 import { YUUHEI_PRE3 } from './yuuhei_pre3.js';
 import { ATEAM_STAGE3 } from './ateam_stage3.js';
@@ -50,12 +50,12 @@ export const SONGS = {
   ...EXTRA_ENDING,
   // 标题画面：13 作主题曲融合 medley 的完整曲式版（去 8bit 音色，见 tools/title_arrange.py）
   title: TITLE_FULL.title,
-  // 1 面道中：ほおずきみたいに紅い魂（骨架重置 + 柔和配器，见 tools/preboss_rewrite.py → tools/warmify.py）
-  pre1: PRE1_WARM.pre1,
+  // 1 面道中：ほおずきみたいに紅い魂 —— 照 ZUN 扒谱 1:1 直译（见 tools/pre1_honou.py）
+  pre1: HONOU_PRE1.pre1,
   // 2 面道中：幻視の夜 ～ Ghostly Eyes（EUROBEAT 157 BPM，见 tools/midi_to_eurobeat.py）
   pre2: PRE2_EURO.pre2,
-  // 1 面 Boss：妖魔夜行 —— PHOENIX 版 × 游戏原本 ZUN 版 融合（见 tools/merge_stage1.py）
-  stage1: MERGE_STAGE1.stage1orig,
+  // 1 面 Boss：妖魔夜行 —— 照 ZUN 扒谱 1:1 直译（见 tools/stage1_youma.py）
+  stage1: YOUMA_STAGE1.stage1,
   // 2 面 Boss：蠢々秋月 —— 融合版 × 游戏内原曲混合，贝斯贴原曲音高（见 tools/merge_stage2.py）
   stage2: MERGE_STAGE2.stage2,
   // 3 面道中：ルーネイトエルフ —— 幽閉サテライト 风重编（见 tools/yuuhei_pre3.py）

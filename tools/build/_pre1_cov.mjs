@@ -1,0 +1,11 @@
+import { HONOU_PRE1 } from '../../src/engine/songs/honou_pre1.js';
+const s = HONOU_PRE1.pre1;
+const W0=19.07, W1=38.9;
+const lead = s.tracks[0].notes;
+const inA = lead.filter(n=>n[0]>=W0&&n[0]<W1);
+let cov=0; for(const n of inA) cov += Math.min(n[2], W1-n[0]);
+console.log('A段 小号', inA.length, '音  覆盖', (cov/(W1-W0)*100).toFixed(0)+'%');
+const ds = lead.map(n=>n[2]).sort((a,b)=>a-b);
+console.log('lead d p10/med/p90', ds[Math.floor(ds.length*0.1)].toFixed(2), ds[Math.floor(ds.length*0.5)].toFixed(2), ds[Math.floor(ds.length*0.9)].toFixed(2));
+console.log('tracks', s.tracks.map(t=>t.wave+'/'+t.gain+'/'+t.notes.length).join(' '));
+console.log('duration', s.duration, 'bpm', s.bpm, 'drums', s.drums.length);

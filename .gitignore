@@ -89,3 +89,5 @@ tools/build/*.mp3
 tools/build/_ref*/
 tools/build/_k*_feat/
 tools/build/_old_layer.js
+
+/.dsh-ops/
