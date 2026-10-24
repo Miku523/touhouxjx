@@ -99,6 +99,12 @@ class Game {
     // 场景底图在空闲时预热，避免第一次进设置页 / 难度页时闪一下黑底
     this._warmScenes();
 
+    // 标题页右下角的版本号跟着入口 ?v= 走：以前这里写死 ver 1.1，缓存版本串早就
+    // 涨到 1.4.x 了，玩家看到的仍是很旧的版本，反馈时容易对不上号。
+    const entryVer = new URL(import.meta.url).searchParams.get('v');
+    const verEl = document.querySelector('.title-ver');
+    if (entryVer && verEl) verEl.textContent = 'Chronicle of Gensokyo · ver ' + entryVer;
+
     this.input.pointerHandler = () => this._unlockAudio();
 
     this.state = 'menu';
