@@ -293,3 +293,17 @@
   - 标题页右下角实测显示 `ver 1.4.5`。
 
 
+
+## 十四、1.6.2 线上部署与回归（2026-10-24 21:4x–21:5x）
+
+- 发布提交：`f6d771b` `release(1.6.2): 全流程试玩修复、移动端/PWA 与四语、流畅性优化`；GitHub Pages 从 `main` 根目录自动重建，无构建步骤。
+- 版本串：`index.html` 5 处 `?v=` / `src/ui/platform.js` `PLATFORM_VERSION` / `sw.js` `CACHE_VERSION` 全部 `1.6.2`；线上入口标题右下角实测 `ver 1.6.2`。
+- 线上验收（https://mikuascendlog.com/touhouxjx/）：
+  - 入口 HTTP 200（13560 B）；`src/main.js` 线上 sha1 `6f3b25435c9e5c21d9baa66384d38e2ca5ec4624` 与本地 `HEAD` 完全一致。
+  - 1280×720 GPU 快速试玩：标题 → 难度 N → 灵梦 → 开场对话，`state=dialogue`；0 console error / 0 netFail / 0 httpBad；截图 `_pt/qa/deploy/live_title.png`。
+  - `manifest.webmanifest` 返回 `Content-Type: application/manifest+json`；`sw.js` 在第二次加载后 controller=true，Cache Storage 只有 `hks-v1.6.2`。
+  - 断网（CDP offline）后 reload 仍能回到标题并 `_bootDone=true`，离线壳可用；首次访问需刷新一次才由 SW 接管，属正常行为。
+  - 旧地址 `https://miku523.github.io/touhouxjx/` 仍 301 到自定义域名。
+- 本地全流程（发布前）：N 灵梦 6 面 1375.8s / 82545 步 / 0 死亡 / 0 报错，正常进结局回标题；资源 137 个请求全部 200。
+- 体感/性能：720p backing 1.5→1.25、暂停/对话限帧、弹幕精灵字段缓存、标题压暗层预合成、辉光自动恢复。
+
