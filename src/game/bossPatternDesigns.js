@@ -200,11 +200,13 @@ const KAGUYA = [
     { typeName: 'shiningJewel', rate: 0.72, rays: 4, speed: 340, orbSpeed: 74, weight: 1.2 },
   ],
   // #2 难题「佛御石之钵 -不碎的意志-」——缺口石钵围栏缓慢收缩 + 落石
+  // 2026-10-24 用户反馈「聚圈包住角色时不好躲」：围栏弹数 −15%、豁口加宽（gapFrac 0.55 → 0.75），
+  // 让玩家试几次就能从缺口穿过去；落石与收圈速度不变，难度不至于塌掉。
   [
-    { typeName: 'stoneBowl', rate: 0.62, n: 18, radius: 250, gaps: 2, speed: 74, stones: 2, weight: 3 },
-    { typeName: 'stoneBowl', rate: 0.9, n: 24, radius: 280, gaps: 2, speed: 62, stones: 3, weight: 2 },
+    { typeName: 'stoneBowl', rate: 0.62, n: 15, radius: 250, gaps: 2, gapFrac: 0.75, speed: 74, stones: 2, weight: 3 },
+    { typeName: 'stoneBowl', rate: 0.9, n: 21, radius: 280, gaps: 2, gapFrac: 0.75, speed: 62, stones: 3, weight: 2 },
     { typeName: 'adamant', rate: 1.05, arms: 4, rays: 4, speed: 120, weight: 1.3 },
-    { typeName: 'stoneBowl', rate: 0.48, n: 14, radius: 220, gaps: 3, speed: 86, stones: 1, weight: 1.2 },
+    { typeName: 'stoneBowl', rate: 0.48, n: 12, radius: 220, gaps: 3, gapFrac: 0.8, speed: 86, stones: 1, weight: 1.2 },
   ],
   // #3 神宝「佛体的金刚石」——旋转菱形晶阵 + 定时硬直激光
   [

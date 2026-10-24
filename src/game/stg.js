@@ -82,7 +82,7 @@ export class StgPlayer {
     return e;
   }
 
-  /** 当前火力等级（1–4） */
+  /** 当前火力等级（1–5） */
   get fireLevel() {
     return powerLevel(this.power);
   }

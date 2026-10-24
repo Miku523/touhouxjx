@@ -18,10 +18,10 @@
  * - effect  卡面玩家效果键，合法键见 src/game/cardEffects.js 的 EFFECT_KEYS
  *           （none / darkSpot / devourPull / frostSlide / diamondFocus / tailwind /
  *            stormEye / sinGravity / jewelGaze / dreamBough / bloomGrace）
- * - dps     满火力（POWER 64 → 火力 Lv4）基准 hp/s = 早期验收实测有效 DPS ×0.76。
+ * - dps     三挡火力（Lv3 = power 48）基准 hp/s = 2026-10-25 当前构建实测有效 DPS（主线 3 seeds / EXTRA 8 seeds 取中位）。
  *           运行期血量 = Math.max(1, Math.round(limit * dps * CARD_HP_ANCHOR))，不乘难度血量系数。
  *           survival 卡不承伤、不参与血量反推 → null。
- * - hp      可选：直接钉死该卡基础血量，优先于 limit × dps × CARD_HP_ANCHOR。
+ * - hp      可选：直接钉死该卡基础血量，优先于 limit × dps × CARD_HP_ANCHOR（EXTRA 12 张里的击破 / 双条件卡走这条）。
  * - densityMul / speedMul  该卡自身的基础密度 / 弹速倍率（默认 1），会与 tier 相乘。
  * - name    与 src/game/boss.js 里 BOSS_DEFS[key].phases[i].name 完全一致，仅供数据校验 / 调试；
  *           运行期卡名仍以 BOSS_DEFS 为准。
@@ -29,10 +29,16 @@
  *
  * 2026-10-24 重定标（用户口述）：
  *  - 所有限时按用户新给的秒数整体压缩（主线 3189s → 1736s），EXTRA 12 张首次接入限时与结算奖励。
- *  - 血量保底线从「满火力 Lv4」下调到「火力 Lv2 / Lv3」：见 CARD_HP_ANCHOR。
- *  - 存活卡仅保留 5 张：4-5、5-4、6-7、芙-4、芙-7；芙-10 为双条件卡。
+ *  - 血量保底线从「满火力 Lv4」下调到「火力 Lv2 / Lv3」：见 CARD_HP_ANCHOR（2026-10-25 三挡重定标起统一为 Lv3）。
+ *  - 存活卡收敛为 4 张：4-5、5-4、6-7、芙-4（芙-7 QED 深夜改回击破卡 90s）；芙-10 为双条件卡。
  *    （4-2 / 6-1 / 6-8 用户拍定改回普通击破卡）
  *
+ * 2026-10-25 三挡重定标（用户口述）：「1 面到 EX 面血量都偏低，适当往上调高，保证三挡火力
+ * 打完还能剩 5~6 秒（60 秒卡）」；EXTRA 再硬 15~20%（用户要求 1:1.15~1.2）。
+ *  - 主线：每卡 dps 换成当前构建 Lv3 实测 DPS，锚点 CARD_LV3_SHARE = 0.72（bot 口径占限时 72%，
+ *    真人折算 0.87~0.97 → 60 秒卡剩 5~6 秒）。
+ *  - EXTRA：11 张击破 / 双条件卡显式 hp = round(CARD_EX_SHARE × limit × 实测dps)，CARD_EX_SHARE = 0.85 = 0.72 × 1.18。
+
  * 暂不写入的可选字段：patterns（覆盖该卡 pattern 数组）。
  */
 
@@ -52,26 +58,30 @@ export const CARD_TIER_MUL = Object.freeze({
 });
 
 /**
- * 血量保底火力档（换算成「当前自机攻击力」下的血量系数）。
+ * 血量锚点：三挡火力（Lv3 = power 48）打完还剩 5~6 秒（按 60 秒卡折算）。
  *
- * 推导：
- *  - 0.4 = 2026-10-24 校准时的火力 Lv2 与 Lv4 主弹数比（2 发 / 5 发）→ Lv2 输出 ≈ 0.4 × Lv4；
- *    之后 Lv4 主弹减到 4 发（同日手感调整），这里保留 0.4 不重算：Lv2 卡的血量与耗时不变，
- *    满火力清卡反而稍慢，与「减少弹数、降低攻击」的方向一致；
- *  - PLAYER_ATK_SCALE = 自机攻击力相对「dps 标定那一版」的倍数。本表里的 dps 是
- *    2026-10-21 攻击力上调 1.35→2.7 之前测的，所以运行期要把它补回来，否则同样血量
- *    现在只要 1/2.7 的时间就打空，手感会整体偏软；
- *  - 两者相乘，再乘 CARD_DPS_CAL（实测折损 0.85）就是「Lv2 玩家按当前攻击力打完这张卡所需血量」。
- * 效果（2026-10-24 bot 实测校准后）：Lv2 ≈ 0.76×limit 打空、Lv3 ≈ 0.51×、Lv4 ≈ 0.30×
- * （Lv4 主弹 5→4 后约 0.38×，即满火力击破同样一张卡比校准时稍慢）。
- * 用户原话（2026-10-24）：「保证 60 秒内可以击破，需要玩家三档火力…或者说两档吧，
- * 三档到两档这个区间之内；反正玩家不能死，死了就过不去。」
- *  （Lv2 时约 0.76×limit，掉一条命降到 Lv1 ≈ 0.2 → 需要 1.5×limit，必超时）
+ * 2026-10-25 重定标（用户口述）：「1 面到 EX 面血量都偏低，适当往上调高；保证三挡火力打完
+ * 还能剩 5~6 秒（60 秒卡），换算到别的限时按同一比例」。
+ *  - 本表每张卡的 dps = 当前构建下、三挡火力（Lv3 / power 48）实测有效 DPS
+ *    （CDP 无头 Edge + tools/sim_bot.js，god + 不放炸弹；主线 3 seeds、EXTRA 8 seeds 取中位）。
+ *    旧口径的 dps 是「2026-10-21 攻击力上调前的满火力实测 ×0.76」，靠 CARD_HP_ANCHOR 补偿；
+ *    现在 dps 直接换成当前构建的 Lv3 实测值，锚点只表示「目标占比」，不再需要 ×PLAYER_ATK_SCALE。
+ *  - CARD_LV3_SHARE = 0.72：bot 口径占限时 72%。真人对同一张卡通常比 bot 慢 1.2~1.35×
+ *    （bot 开 god 敢贴脸输出），折算约 0.87~0.97 → 60 秒卡打完剩 5~6 秒，符合用户目标。
+ *  - 想整体更紧/更松只改这一个常量：血量与它线性相关，改完复跑
+ *    `node tools/_verify_bosscards.mjs --plan "N:1-6" --power 48 --lockPower 48 --targetRatio 0.72`。
+ */
+export const CARD_LV3_SHARE = 0.72;
+export const CARD_HP_ANCHOR = CARD_LV3_SHARE;
+/** EXTRA 单独口径：在主线目标占比之上再 ×1.18（用户要求 EX 比正常比例再硬 15~20%）。 */
+export const CARD_EX_SHARE = 0.85;
+/**
+ * 旧锚点（火力 Lv2 口径，2026-10-24 用，已废弃）：0.884 = 0.4 × 2.6 × 0.85。
+ * 保留导出仅为文档 / 旧脚本引用，运行期不再使用。
  */
 export const CARD_LV2_SHARE = 0.4;
-/** 实测折损：2026-10-24 bot 实测满火力 DPS 只有「2.7 倍线性外推」的 ~0.85（站位/命中率所致）。 */
 export const CARD_DPS_CAL = 0.85;
-export const CARD_HP_ANCHOR = CARD_LV2_SHARE * PLAYER_ATK_SCALE * CARD_DPS_CAL;   // ≈ 0.884 → 0.88
+export const CARD_HP_ANCHOR_LEGACY = CARD_LV2_SHARE * PLAYER_ATK_SCALE * CARD_DPS_CAL;   // ≈ 0.884
 
 /** 取档位对应的倍率；非法 / 未填 = 档 3（不改变现有手感） */
 export function tierMultipliers(tier) {
@@ -86,12 +96,12 @@ export const BOSS_CARD_TUNING = {
       {
         name: '宵暗「月之暗面」', note: '黑暗氛围',
         limit: 50, mode: 'damage', tier: 3, fx: 'moon', accent: '#b48cff',
-        effect: 'none', dps: 176,
+        effect: 'none', dps: 235.7,
       },
       {
         name: '暗符「黑暗吞噬」', note: '黑暗吞噬氛围；被漩涡吸住',
         limit: 60, mode: 'damage', tier: 3, fx: 'night', accent: '#8f6bd8',
-        effect: 'devourPull', dps: 178,
+        effect: 'devourPull', dps: 240.9,
       },
     ],
   },
@@ -103,18 +113,18 @@ export const BOSS_CARD_TUNING = {
       {
         name: '灯符「萤火虫现象」', note: '萤火虫氛围',
         limit: 60, mode: 'damage', tier: 3, fx: 'fireflies', accent: '#a8ff8f',
-        effect: 'none', dps: 164,
+        effect: 'none', dps: 237.3,
       },
       {
         name: '蠢符「小虫风暴」', note: '2026-10-24 用户改为 60s（原 105）',
         limit: 60, mode: 'damage', tier: 3, fx: 'fireflies', accent: '#a8ff8f',
-        effect: 'none', dps: 170,
+        effect: 'none', dps: 223.9,
       },
       {
         name: '隐虫「萤火虫之夜」',
         note: '2026-10-24 用户改为 70s（原 90）；黑暗聚光：玩家周围亮、其余全黑，fx 必须为 darkSpot',
         limit: 70, mode: 'damage', tier: 3, fx: 'darkSpot', accent: '#a8ff8f',
-        effect: 'darkSpot', dps: 156,
+        effect: 'darkSpot', dps: 217.1,
       },
     ],
   },
@@ -126,22 +136,22 @@ export const BOSS_CARD_TUNING = {
       {
         name: '冰符「冰柱落下」', note: '冰柱下落氛围',
         limit: 30, mode: 'damage', tier: 2, fx: 'hail', accent: '#bfeaff',
-        effect: 'none', dps: 166,
+        effect: 'none', dps: 215.9,
       },
       {
         name: '雹符「冰雹风暴」', note: '2026-10-24 用户改为 60s（原 120）',
         limit: 60, mode: 'damage', tier: 3, fx: 'hail', accent: '#bfeaff',
-        effect: 'none', dps: 156,
+        effect: 'none', dps: 217.6,
       },
       {
         name: '冻符「完美冻结」', note: '2026-10-24 用户改为 80s（原 90）；脚下打滑',
         limit: 80, mode: 'damage', tier: 4, fx: 'freeze', accent: '#a8e8ff',
-        effect: 'frostSlide', dps: 162,
+        effect: 'frostSlide', dps: 214.1,
       },
       {
         name: '雪符「钻石风暴」', note: '限时不变 99s；冰晶风暴氛围，晶光晃眼',
         limit: 99, mode: 'damage', tier: 4, fx: 'freeze', accent: '#bfeaff',
-        effect: 'diamondFocus', dps: 150,
+        effect: 'diamondFocus', dps: 209.8,
       },
     ],
   },
@@ -153,24 +163,24 @@ export const BOSS_CARD_TUNING = {
       {
         name: '风符「风神一扇」', note: '2026-10-24 用户改为 36s（原 66）',
         limit: 36, mode: 'damage', tier: 3, fx: 'wind', accent: '#ff9a9a',
-        effect: 'none', dps: 125,
+        effect: 'none', dps: 354.5,
       },
       {
         name: '疾风「风神少女」',
         note: '2026-10-24 用户改为 40s（原 30），并拍定为「击破卡」而非存活卡；'
-          + 'dps 按实测回填（整关跑满火力 Lv4 击破耗时 18.1s / 原血量 5581 ≈ 308 dps → dps 取 102）',
+          + 'dps 按三挡实测回填 231.8（2026-10-25 重定标；旧满火力估算 102 作废）',
         limit: 40, mode: 'damage', tier: 4, fx: 'wind', accent: '#ff6b6b',
-        effect: 'tailwind', dps: 102,
+        effect: 'tailwind', dps: 231.8,
       },
       {
         name: '岐符「天之八衢」', note: '2026-10-24 用户改为 60s（原 90）',
         limit: 60, mode: 'damage', tier: 4, fx: 'wind', accent: '#ff9a9a',
-        effect: 'none', dps: 137,
+        effect: 'none', dps: 288.9,
       },
       {
         name: '风神「天狗颪」', note: '2026-10-24 用户改为 80s（原 90）',
         limit: 80, mode: 'damage', tier: 4, fx: 'wind', accent: '#ff6b6b',
-        effect: 'none', dps: 122,
+        effect: 'none', dps: 322.6,
       },
       {
         name: '「幻想风靡」',
@@ -188,17 +198,17 @@ export const BOSS_CARD_TUNING = {
       {
         name: '幽雅「死出诱蛾灯」', note: '2026-10-24 用户改为 30s（原 50）',
         limit: 30, mode: 'damage', tier: 3, fx: 'night', accent: '#ffa8d8',
-        effect: 'none', dps: 153,
+        effect: 'none', dps: 200.2,
       },
       {
         name: '蝶符「花之舞」', note: '2026-10-24 用户改为 45s（原 60）；花瓣氛围',
         limit: 45, mode: 'damage', tier: 3, fx: 'petals', accent: '#ffa8d8',
-        effect: 'none', dps: 154,
+        effect: 'none', dps: 203.2,
       },
       {
         name: '蝶符「死蝶之华尔兹」', note: '2026-10-24 用户改为 90s（原 150）',
         limit: 90, mode: 'damage', tier: 4, fx: 'petals', accent: '#ffa8d8',
-        effect: 'none', dps: 154,
+        effect: 'none', dps: 217.8,
       },
       {
         name: '亡乡「亡我乡 -宿罪-」',
@@ -209,12 +219,12 @@ export const BOSS_CARD_TUNING = {
       {
         name: '冥符「常夜樱」', note: '2026-10-24 用户改为 90s（原 120）；夜樱花瓣氛围',
         limit: 90, mode: 'damage', tier: 4, fx: 'petals', accent: '#ff8fd0',
-        effect: 'none', dps: 154,
+        effect: 'none', dps: 191.5,
       },
       {
         name: '反魂蝶「八分咲」', note: '2026-10-24 用户改为 100s（原 180）；花开八分、节奏被带快',
         limit: 100, mode: 'damage', tier: 5, fx: 'petals', accent: '#ffa8d8',
-        effect: 'bloomGrace', dps: 148,
+        effect: 'bloomGrace', dps: 215.4,
       },
     ],
   },
@@ -227,32 +237,32 @@ export const BOSS_CARD_TUNING = {
         name: '难题「龙颈之玉 -五色的弹丸-」',
         note: '2026-10-24 用户改为 40s（原 60）并拍定为「击破卡」；宝光定身，dps 估算待实测',
         limit: 40, mode: 'damage', tier: 4, fx: 'moon', accent: '#ffe9b0',
-        effect: 'jewelGaze', dps: 152,
+        effect: 'jewelGaze', dps: 220.9,
       },
       {
         name: '神宝「耀眼的龙玉」', note: '2026-10-24 用户改为 60s（原 99）；宝玉夜光氛围',
         limit: 60, mode: 'damage', tier: 4, fx: 'night', accent: '#fff8d0',
-        effect: 'none', dps: 154,
+        effect: 'none', dps: 208.9,
       },
       {
         name: '难题「佛御石之钵 -不碎的意志-」', note: '2026-10-24 用户改为 80s（原 120）',
         limit: 80, mode: 'damage', tier: 4, fx: 'darkVeil', accent: '#fff8d0',
-        effect: 'none', dps: 152,
+        effect: 'none', dps: 222.6,
       },
       {
         name: '神宝「佛体的金刚石」', note: '2026-10-24 用户改为 60s（原 180）',
         limit: 60, mode: 'damage', tier: 4, fx: 'freeze', accent: '#fff8d0',
-        effect: 'none', dps: 147,
+        effect: 'none', dps: 201.6,
       },
       {
         name: '难题「火鼠的皮衣 -不焦躁的内心-」', note: '2026-10-24 用户改为 90s（原 360）',
         limit: 90, mode: 'damage', tier: 5, fx: 'voidFlame', accent: '#ffe9b0',
-        effect: 'none', dps: 150,
+        effect: 'none', dps: 213.4,
       },
       {
         name: '神宝「火蜥蜴之盾」', note: '2026-10-24 用户拍定 30s（原 240s，此前待确认）',
         limit: 30, mode: 'damage', tier: 5, fx: 'voidFlame', accent: '#ffe9b0',
-        effect: 'none', dps: 148,
+        effect: 'none', dps: 196.2,
       },
       {
         name: '难题「燕的子安贝 -永命线-」',
@@ -264,7 +274,7 @@ export const BOSS_CARD_TUNING = {
         name: '神宝「蓬莱的玉枝 -梦色之乡-」',
         note: '限时不变 66s；2026-10-24 用户拍定为「击破卡」，金枝托底、动作轻快，dps 估算待实测',
         limit: 66, mode: 'damage', tier: 5, fx: 'fairyDust', accent: '#ffe9b0',
-        effect: 'dreamBough', dps: 152,
+        effect: 'dreamBough', dps: 193.5,
       },
     ],
   },
@@ -278,42 +288,39 @@ export const BOSS_CARD_TUNING = {
       {
         name: '人符「现世斩」', note: '中途 Boss；2026-10-24 用户改为 30s（原 34）',
         limit: 30, mode: 'damage', tier: 3, fx: 'fairyDust', accent: '#9fe8d0',
-        effect: 'none', dps: 150,
+        effect: 'none', dps: 282.9,
       },
       {
         name: '人鬼「未来永劫斩」', note: '中途 Boss；2026-10-24 用户改为 30s（原 38）',
         limit: 30, mode: 'damage', tier: 3, fx: 'petals', accent: '#7fe0c8',
-        effect: 'none', dps: 146,
+        effect: 'none', dps: 236.3,
       },
       {
         name: '断灵「剑楼阁」', note: '中途 Boss 终盘；2026-10-24 用户改为 45s（原 46）',
         limit: 45, mode: 'damage', tier: 4, fx: 'night', accent: '#c8ffe8',
-        effect: 'none', dps: 155,
+        effect: 'none', dps: 247.2,
       },
     ],
   },
 
   // ── EXTRA · 中途 Boss · 蕾米莉亚·斯卡雷特（2 张）─────────────────────
   // 2026-10-24 首次接入逐卡限时：此前 EXTRA 完全不在本表 → 不限时、无卡面 fx、无结算奖励。
-  // 血量标定：本表其余卡的 dps 是 2026-10-21 攻击力上调前的旧标定，靠 CARD_HP_ANCHOR 补偿；
-  // EXTRA 这 12 张没有历史 dps，用 20 seeds 的「带 tier 的实测 Lv4 dps」直接反推 hp
-  // = round(0.304 × limit × 实测dps)（0.304 让 Lv4 ≈ 30%、Lv3 ≈ 51%、Lv2 ≈ 76% 限时）。
-  // 下面 dps 字段保留的是「裸血量时期」的测量值，仅供对照，不参与 hp 计算（EX 一律显式 hp）。
+  // 血量标定（2026-10-25 三挡重定标）：EXTRA 12 张一律显式 hp
+  // = round(CARD_EX_SHARE × limit × 三挡实测dps)，CARD_EX_SHARE = 0.85 = 主线 0.72 × 1.18。
+  // 下面的 dps = 当前构建三挡火力（Lv3）实测有效 DPS（8 seeds 中位），供复算 / 对照。
   remilia: {
     cards: [
       {
         name: '咒诅「弗拉德·特佩斯」',
-        note: 'EXTRA 中途第 1 卡；用户 2026-10-24 定 60s，要求 2–3 档火力可在 60s 内击破；'
-          + '带 tier 实测 Lv4 dps 318.7（20 seeds），hp 按 0.304×60×318.7 反推',
+        note: 'EXTRA #1（中途）；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 13601（10-seed 实测时的血量）× 42.0 / 中位耗时 58.45s',
         limit: 60, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 318.7, hp: 5813,
+        effect: 'none', dps: 246.3, hp: 11299,
       },
       {
         name: '天罚「大卫之星」',
-        note: 'EXTRA 中途第 2 卡；用户 2026-10-24 定 60s，难度「中偏高」；'
-          + '带 tier 实测 Lv4 dps 273.5（20 seeds），hp 按 0.304×60×273.5 反推',
+        note: 'EXTRA #2（中途）；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 6105（10-seed 实测时的血量）× 42.0 / 中位耗时 20.95s',
         limit: 60, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 273.5, hp: 4989,
+        effect: 'none', dps: 216.3, hp: 9342,
       },
     ],
   },
@@ -323,21 +330,21 @@ export const BOSS_CARD_TUNING = {
     cards: [
       {
         name: '禁忌「蔓越莓陷阱」',
-        note: 'EXTRA #1；用户定 60s；实测 Lv4 dps 226.6',
+        note: 'EXTRA #1；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 9741（10-seed 实测时的血量）× 42.0 / 中位耗时 40.73s',
         limit: 60, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 226.6, hp: 4133,
+        effect: 'none', dps: 241.9, hp: 12057,
       },
       {
         name: '禁忌「雷瓦汀」',
-        note: 'EXTRA #2；用户定 60s；实测 Lv4 dps 343.9',
+        note: 'EXTRA #2；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 17164（10-seed 实测时的血量）× 42.0 / 中位耗时 56.88s',
         limit: 60, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 343.9, hp: 6273,
+        effect: 'none', dps: 315.4, hp: 15858,
       },
       {
         name: '禁忌「四重存在」',
-        note: 'EXTRA #3；用户定 60s；实测 Lv4 dps 298',
+        note: 'EXTRA #3；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 9384（10-seed 实测时的血量）× 42.0 / 中位耗时 38.22s',
         limit: 60, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 298, hp: 5436,
+        effect: 'none', dps: 218.6, hp: 11846,
       },
       {
         name: '秘弹「然后就一个人都不剩了？」',
@@ -347,41 +354,39 @@ export const BOSS_CARD_TUNING = {
       },
       {
         name: '禁弹「星弧破碎」',
-        note: 'EXTRA #5；用户定 45s；实测 Lv4 dps 190.1',
+        note: 'EXTRA #5；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 38.3s → hp = 8760（10-seed 实测时的血量）× 38.3 / 中位耗时 34.82s',
         limit: 45, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 190.1, hp: 2601,
+        effect: 'none', dps: 203.1, hp: 6280,
       },
       {
         name: '禁弹「折反射」',
-        note: 'EXTRA #6；用户定 60s；实测 Lv4 dps 345',
+        note: 'EXTRA #6；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 10810（10-seed 实测时的血量）× 42.0 / 中位耗时 36.85s',
         limit: 60, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 345, hp: 6293,
+        effect: 'none', dps: 259.8, hp: 12791,
       },
       {
         name: 'QED「495年的波纹」',
-        note: 'EXTRA #7；用户 2026-10-24 拍定为「存活卡」，坚持 120s 即过关',
-        limit: 120, mode: 'survival', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: null,
+        note: 'EXTRA #7；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 7686（10-seed 实测时的血量）× 42.0 / 中位耗时 53.37s',
+        limit: 90, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
+        effect: 'none', dps: 156.3, hp: 11397,
       },
       {
         name: '禁忌「吸血鬼之宴」',
-        note: 'EXTRA #8；用户定 40s；实测 Lv4 dps 215.2',
+        note: 'EXTRA #8；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 34.0s → hp = 2617（10-seed 实测时的血量）× 34.0 / 中位耗时 14.62s',
         limit: 40, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 215.2, hp: 2617,
+        effect: 'none', dps: 199.5, hp: 8289,
       },
       {
         name: '禁忌「破坏之瞳」',
-        note: 'EXTRA #9；用户定 30s；实测 Lv4 dps 272.5',
+        note: 'EXTRA #9；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 25.5s → hp = 2485（10-seed 实测时的血量）× 25.5 / 中位耗时 7.88s',
         limit: 30, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 272.5, hp: 2485,
+        effect: 'none', dps: 247.9, hp: 6263,
       },
       {
         name: '未明「长夜不醒之约」',
-        note: 'EXTRA #10 终盘；用户定 60s，并拍定为「双条件卡」：撑满 60s 或打空血条都算过关。'
-          + '用户要求「它的血量肯定是最高的」→ 血量给 0.55×limit×实测 dps = 6778，仍是全 EXTRA 最高；'
-          + '满火力约 33s 打空（55%），三档 ~92% 勉强能杀，二档只能走「撑满 60s」',
-        limit: 60, mode: 'both', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 205.4, hp: 6778,
+        note: 'EXTRA #10 双条件卡：限时 120s（用户口述），血量按用户口述在上一版 6778 的基础上翻一倍 = 13556（全 EXTRA 最高）；撑满 120s 或打空血条都算过关，5-seed 实测打空约 61–78s。',
+        limit: 120, mode: 'both', tier: 5, fx: 'redMist', accent: '#ff4d6a',
+        effect: 'none', dps: 206.9, hp: 18897,
       },
     ],
   },

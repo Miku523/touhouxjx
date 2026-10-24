@@ -10,7 +10,8 @@
  * 3. BGM 曲库来自 ./songs/index.js（每关 BOSS 的原作主题曲 + 标题/失败/结局原创曲），
  *    每首曲子是「按秒排好的音符事件表」，前瞻调度、无缝循环。
  * 4. 曲目切换：playMusic(name) 立即换曲（先掐掉旧曲已排期的节点，不会叠音）；
- *    setMusic(false) 清定时器并停掉所有音乐节点；setMusic(true) 恢复当前曲目。
+ *    setMusic(false) 清定时器并停掉所有音乐节点；setMusic(true) 恢复当前曲目；
+ *    playOutMusic() 让当前曲目把这一轮放完，再用 5 秒渐出（fadeOutMusic）收尾。
  * 5. 所有对外方法在 unlock() 之前调用都是安全 no-op，任何情况不抛错。
  * 6. 音量克制：单次音效峰值 ≤ 0.25，BGM 单声部峰值 ≤ 0.16。
  * 7. 总线：master ← sfxGain（音效）/ musicGain（BGM）。音量 0~1 与开关
@@ -28,6 +29,11 @@ function midiToFreq(m) {
 const WAVES = ['square', 'triangle', 'sawtooth', 'sine'];
 /** 事件表里 kind = 4 表示打击乐 */
 const DRUM_KIND = 4;
+/**
+ * 「放完渐出」默认时长（秒）：本轮循环放完后，音乐在这么多秒内线性淡出到静音，
+ * 再真正停掉。避免半句被硬切，也给剧情收尾留出呼吸。
+ */
+const MUSIC_FADE_OUT = 5;
 
 export class AudioEngine {
   constructor() {
@@ -57,6 +63,10 @@ export class AudioEngine {
     this._songStart = 0;       // 本轮循环的绝对起始时间（ctx 时间）
     this._songIdx = 0;         // 事件指针
     this._songLoop = 0;        // 已循环轮数
+    this._songPlayOut = 0;     // >0 = 本轮放完后渐出（秒数），见 playOutMusic()
+    this._fadeTimer = null;    // 渐出结束后的收尾定时器（fadeOutMusic 起）
+    this._playOutTimer = null; // 音频文件曲目：等到循环点再开始渐出的定时器
+    this._audioSrc = null;     // 音频文件曲目正在播的 BufferSource
     /**
      * 曲目真正开始发声时的回调（音乐回忆室用来记录「听过的曲子」）。
      * 音乐关着时 playMusic 只记住曲目、不触发；等 setMusic(true) 真正开播才触发。
@@ -169,10 +179,12 @@ export class AudioEngine {
    */
   playMusic(name) {
     if (!name || typeof name !== 'string') return;
-    if (this._songName === name && this._musicOn) return;
+    // 同一首且正在播就直接返回；但正在渐出收尾时不算「在播」，要重新起播把它拉回来
+    if (this._songName === name && this._musicOn && this._fadeTimer === null) return;
     this._songName = name;
-    // 正在播就立刻换：先掐掉旧曲排期的节点，避免两首叠在一起
-    if (this._musicOn) this._stopMusic();
+    // 正在播就立刻换：先掐掉旧曲排期的节点，避免两首叠在一起。
+    // 「放完渐出」留下的尾音也归这里管——换曲时照样收干净。
+    if (this._musicOn || this._musicVoices.size) this._stopMusic();
     if (this._musicRequested && this.ctx) this._startMusic();
   }
 
@@ -196,6 +208,75 @@ export class AudioEngine {
     return { elapsed: t - loop * duration, duration, loop };
   }
 
+  /**
+   * 让当前 BGM 把这一轮放完，再用 fadeSec 秒渐出到静音（默认 5 秒），最后完全停掉。
+   *
+   * 给剧情收尾用（五面：妖梦击破后让道中曲自己放完，渐出后再安静下来，等幽幽子登场再切曲）：
+   *  - 合成曲目：先把本轮事件排完（不会半句硬切）；到本轮末尾开始渐出，
+   *    渐出期间继续排下一轮的音符，听感是音乐自己淡下去，收尾后 _musicOn 置 false。
+   *  - 音频文件曲目：等这一轮播到头再渐出，渐出结束后停掉循环。
+   * 收尾后曲目名一并清空：这一曲算「放完了」，再开关 BGM 也不会从头重播。
+   * 期间 playMusic / setMusic(false) 仍会立即切掉它。没有在播时是安全的空操作。
+   * @param {number} [fadeSec] 渐出时长（秒）
+   */
+  playOutMusic(fadeSec = MUSIC_FADE_OUT) {
+    if (!this._musicOn) return;
+    const sec = Math.max(0.5, Number(fadeSec) || MUSIC_FADE_OUT);
+    // 已经点过一次就等它走完，别叠定时器
+    if (this._songPlayOut || this._fadeTimer !== null || this._playOutTimer !== null) return;
+    const src = this._audioSrc;
+    if (src) {
+      // 音频文件曲目：算出这一轮还剩多久，到循环点再开始渐出（循环保持开着，渐出期间不断音）
+      const dur = Number(src.buffer && src.buffer.duration) || 0;
+      const now = this.ctx ? this.ctx.currentTime : 0;
+      const elapsed = dur > 0 ? ((now - this._songStart) % dur + dur) % dur : 0;
+      const remain = dur > 0 ? Math.max(0.05, dur - elapsed) : 0.05;
+      this._playOutTimer = setTimeout(() => {
+        this._playOutTimer = null;
+        this.fadeOutMusic(sec);
+      }, remain * 1000);
+      return;
+    }
+    // 合成曲目：记下渐出时长，等 _musicTick 走到本轮末尾再开始渐出
+    this._songPlayOut = sec;
+  }
+
+  /**
+   * 让当前 BGM 在 sec 秒内线性淡出到静音，然后真正停掉。
+   *
+   * 渐出期间照常排下一轮音符（音乐是连贯淡下去，而不是残响突然没声）；
+   * 结束后由 _stopMusic 收尾，并把 BGM 总线增益恢复，下一首照常音量。
+   * 没有在播时是安全的空操作；重复调用只认第一次。
+   * @param {number} [sec] 渐出时长（秒）
+   */
+  fadeOutMusic(sec = MUSIC_FADE_OUT) {
+    if (!this.ctx || !this._musicGain || !this._musicOn) return;
+    if (this._fadeTimer !== null) return;
+    const s = Math.max(0.2, Number(sec) || MUSIC_FADE_OUT);
+    this._songPlayOut = 0;
+    if (this._playOutTimer !== null) {
+      clearTimeout(this._playOutTimer);
+      this._playOutTimer = null;
+    }
+    try {
+      const now = this.ctx.currentTime;
+      const g = this._musicGain.gain;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(g.value, now);
+      g.linearRampToValueAtTime(0.0001, now + s);
+    } catch (e) {
+      // 忽略
+    }
+    this._fadeTimer = setTimeout(() => {
+      this._fadeTimer = null;
+      // 这时总线已经收到听不见，stop 不会有断口；总线增益也在这里恢复。
+      // 曲目名一并清掉：这一曲是「放完了」，不是「被暂停」——
+      // 之后玩家再打开 BGM 也不该从头重播，而是安静等到下一场 Boss 的 playMusic。
+      this._stopMusic();
+      this._songName = null;
+    }, (s + 0.08) * 1000);
+  }
+
   /** 开/关 BGM。true 可重复调用而不会叠音。 */
   setMusic(on) {
     if (on) {
@@ -206,6 +287,18 @@ export class AudioEngine {
       this._musicRequested = false;
       this._stopMusic();
     }
+  }
+
+  /**
+   * 静音进关：停掉当前 BGM（标题曲 / 上一关的曲子都一起），但不动音乐开关意图。
+   *
+   * 给「开场准备区与剧情全静音、等第一场 Boss 战才起播」的关卡用（五面）：
+   * 曲目留空后，音乐开着时下一次 playMusic(name) 会直接起播；音乐关着就安静等 setMusic(true)。
+   * 与 setMusic(false) 的区别是保留 _musicRequested，不会把用户的「音乐开」设置改成关。
+   */
+  silenceMusic() {
+    this._songName = null;
+    this._stopMusic();
   }
 
   /** 全局静音。 */
@@ -646,9 +739,13 @@ export class AudioEngine {
 
   _startMusic() {
     if (!this.ctx || this._musicOn) return; // 幂等守卫：绝不叠音
-    const name = this._songName || 'title';
+    // 显式「静音进关」状态（silenceMusic 把曲目留空）：没有待播曲目就保持安静，
+    // 别把空曲目当成标题曲放出来。
+    const name = this._songName;
+    if (!name) return;
     const song = SONGS[name];
     if (!song || !(song.duration || song.audio)) return; // 没有曲目数据就保持安静
+    this._songPlayOut = 0; // 起播一律从「循环」开始，收尾由 playOutMusic() 现点
     // 带 audio 字段的曲目直接播音频文件（离线渲染的成品），合成数据留作加载失败时的回退
     if (song.audio) {
       this._startAudioMusic(name, song);
@@ -679,7 +776,16 @@ export class AudioEngine {
         this._songLoop = 0;
         this._events = [];
         this._musicOn = true;
+        this._audioSrc = src;
         this._musicVoices.add(src);
+        src.onended = () => {
+          this._musicVoices.delete(src);
+          // 只有自然放完 / 被 stop 的曲目会走到这儿；渐出收尾由 fadeOutMusic 的定时器负责
+          if (this._audioSrc !== src) return;
+          this._audioSrc = null;
+          this._songPlayOut = 0;
+          this._musicOn = false;
+        };
         this.onSongStart?.(name);
       } catch (e) {
         // 播放失败就退回合成
@@ -735,9 +841,29 @@ export class AudioEngine {
   _stopMusic() {
     this._musicOn = false;
     this._audioPending = null;
+    this._songPlayOut = 0;
+    this._audioSrc = null;
     if (this._musicTimer !== null) {
       clearTimeout(this._musicTimer);
       this._musicTimer = null;
+    }
+    if (this._fadeTimer !== null) {
+      clearTimeout(this._fadeTimer);
+      this._fadeTimer = null;
+    }
+    if (this._playOutTimer !== null) {
+      clearTimeout(this._playOutTimer);
+      this._playOutTimer = null;
+    }
+    // 渐出把 BGM 总线压到 0 了：停完把增益恢复，下一首才是正常音量
+    if (this._musicGain && this.ctx) {
+      try {
+        const g = this._musicGain.gain;
+        g.cancelScheduledValues(this.ctx.currentTime);
+        g.setValueAtTime(0.9 * this._musicVolume, this.ctx.currentTime);
+      } catch (e) {
+        // 忽略
+      }
     }
     // 打断所有已排期的 BGM 节点，立即静音且不残留
     this._musicVoices.forEach((node) => {
@@ -791,6 +917,14 @@ export class AudioEngine {
         if (this._songIdx >= evs.length) {
           this._songIdx = 0;
           this._songLoop++;
+          // playOutMusic()：这一轮放完了，开始渐出（默认 5 秒）。
+          // 注意这里不 return、也不调 _stopMusic：渐出期间还要继续排下一轮的音符，
+          // 听感才是音乐自己淡下去；收尾由 fadeOutMusic 的定时器负责。
+          if (this._songPlayOut) {
+            const fadeSec = this._songPlayOut;
+            this._songPlayOut = 0;
+            this.fadeOutMusic(fadeSec);
+          }
         }
       }
     } catch (e) {

@@ -46,9 +46,9 @@ const STAGE5_MIDBOSS = {
   arenaHalf: 900,
   breathDist: 700,
   breathSec: 0.8,
-  // 第一个道中已取消：开场先铺四枚 P 点（每枚 POWER.pickup = 4，合 16 点）和一枚 1UP
+  // 第一个道中已取消：开场先铺六枚 P 点（每枚 POWER.pickup = 4，合 24 点 = 一级火力）和一枚 1UP
   // 在舞台左侧的准备区，玩家一路走过去自己捡；捡完越线才进妖梦战。
-  opening: { power: 4, life: 1 },
+  opening: { power: 6, life: 1 },
   // 妖梦击破 → 舞台地面落下一枚 1UP，不用再等 99 点 POWER 的累计。
   dropLife: 1,
 };
@@ -116,6 +116,14 @@ export const LEVELS = [
     // 幽幽子之前先打魂魄妖梦（midboss）：开场准备区 → 妖梦 → 第二道中（呼吸区）→ 幽幽子。
     // 第一个道中已取消，关卡从妖梦舞台左侧开场；触发线 / 舞台 / 呼吸区 / 补给全在这份配置里。
     midboss: STAGE5_MIDBOSS,
+    // 音乐流程（和其余面不同）：
+    //   musicIntro:false  进关不自动播 BGM —— 开场准备区（捡 P 点 / 1UP）与开场、道中对话全静音；
+    //   musicMid:'pre5'   妖梦登场（bossStart）才起播五面道中曲；
+    //   musicMidOnce:true 妖梦击破后让这首自己放完，再用 5 秒渐出收尾（不循环），呼吸区静音；
+    //   music:'stage5'    幽幽子登场时再切她的 Boss 曲。
+    musicIntro: false,
+    musicMid: 'pre5',
+    musicMidOnce: true,
     musicPre: 'pre5',
     music: 'stage5',
     hint: '纵向高台落差更大　砖块踩久会塌　↑／↓ 上下射击',

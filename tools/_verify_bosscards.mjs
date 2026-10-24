@@ -37,6 +37,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
+import { POWER, cardClearPower, cardNoHitPower } from '../src/game/power.js';
 
 /* ------------------------------------------------------------------ CLI */
 const argv = {};
@@ -74,6 +75,8 @@ const PLAN = String(argv.plan || argv.diffPlan || 'N:1-6;E:1,4;H:2,3;T:1;D:1');
 // 整关跑：这些面不传送/不强开 Boss，让 bot 正常打道中到 Boss（stg 关 force-boss 站位失真时用）
 const FULL_RUN = parseStageList(argv.fullRun || '');
 const PLAYER_POWER = Number(argv.power || 128);          // 开局火力（模拟正常玩家：死一次后 respawnKeep=0.5 → 32=Lv3）
+// --lockPower N：把玩家 POWER 每帧钉死在 N（测「固定挡位火力」的卡血量用；避免吃到 P 点升档污染 DPS）
+const LOCK_POWER = argv.lockPower === undefined ? null : Number(argv.lockPower);
 const DPS_ORACLE = Number(argv.dpsOracle || 200);        // 血量公式的基准 DPS（calibration 前后不同）
 // 2026-10-21 口径变更：血量按「满火力实测 ×0.76」重算后，满火力 bot 应在 0.80×limit 击破，
 // 而不是贴到 1.00×limit。判定口径（ratio = elapsed / limit）：
@@ -89,11 +92,13 @@ const HPSCALE_MODE = String(argv.hpScaleMode || 'auto'); // auto|applied|none：
 // 2026-10-24 新机制：符卡结算基础 1/4P（16）+ 无伤 1/2P（32）；满槽时基础转 1 命（99 点 extend 通道）；
 // 超时 +10 点。擦弹每颗 0.075 POWER（POWER 收益，不再计入 extend）+ 0.02 点 1UP 进度，
 // 所以 1UP 进度实际增量是 0.02/颗（POWER 与 1UP 两账分开）。
+// 直接读 src/game/power.js：POWER 改版（2026-10-24 上限 128 / 5 档）后这里的期望值会自动跟上，
+// 不再和游戏内常量脱钩（原来的硬编码 64/16 曾把 32/64 奖励误判成 FAIL）。
 const POWER_SPEC = {
-  max: 64, perLevel: 16, extend: 99,
-  graze: 0.075, grazePoints: 0.02,
-  cardClear: 0.25, cardNoHit: 0.5,
-  cardClearPower: 16, cardNoHitPower: 32,
+  max: POWER.max, perLevel: POWER.perLevel, extend: POWER.extend,
+  graze: POWER.graze, grazePoints: POWER.grazePoints,
+  cardClear: POWER.cardClear, cardNoHit: POWER.cardNoHit,
+  cardClearPower: cardClearPower(), cardNoHitPower: cardNoHitPower(),
 };
 const GRAZE_EXTEND_PER_BULLET = POWER_SPEC.grazePoints; // 0.02：POWER 0.075 不再计入 1UP
 const POWER_CFG_KEYS = ['perLevel', 'max', 'extend', 'graze', 'grazePoints', 'cardClear', 'cardNoHit', 'cardClearPower', 'cardNoHitPower'];
@@ -910,6 +915,10 @@ async function runOne(run, runIndex) {
     const probeSrc = '(' + probeClient.toString() + ')(' + JSON.stringify(cfg) + ')';
     const probeOk = await evaluate(probeSrc);
     if (!probeOk) throw new Error('probe install failed');
+    // --lockPower：每帧把 POWER 钉死（测固定挡位火力时用；P 点被吃掉也不会升档）
+    if (LOCK_POWER != null && Number.isFinite(LOCK_POWER)) {
+      await evaluate(`(() => { const g = window.__game; const getP = () => (g.player || (g.stage && g.stage.player) || null); if (g.__lockPowerPatched) { g.__lockPowerValue = ${LOCK_POWER}; return true; } const orig = g.update.bind(g); g.update = function (dt) { orig(dt); const p = getP(); if (p && p.power !== g.__lockPowerValue) p.power = g.__lockPowerValue; }; g.__lockPowerValue = ${LOCK_POWER}; g.__lockPowerPatched = true; return true; })()`);
+    }
     // 完全停掉 rAF 循环：paused 只挡逻辑，渲染仍会消耗 Math.random（粒子），
     // 会造成「同 seed 两次跑结果不同」；stop() 后由截图前手动 render(1) 补画。
     if (PAUSE_LOOP) await evaluate('(() => { const g = window.__game; if (g.loop) { try { g.loop.stop && g.loop.stop(); } catch (e) {} g.loop.paused = true; } })()');
@@ -987,9 +996,11 @@ async function runOne(run, runIndex) {
           stage: snap.stage ? { state: snap.stage.state, name: snap.stage.name, px: snap.stage.px, sx: snap.stage.sx, t: snap.stage.t } : null,
           prog: v.progress, caps: v.captures, clearT: v.stageClearT, overrun: v.overrun,
           vcErrors: v.errors.length,
+          dbg: (() => { const g = window.__game; const p = g && g.stage && g.stage.player; let act = 0; try { const pool = g.stage.shots && g.stage.shots.pool; if (pool) for (let i = 0; i < pool.length; i++) if (pool[i].active && !pool[i].special) act++; } catch (e) {} return { patched: !!(g && g.__lockPowerPatched), lock: g && g.__lockPowerValue, power: p ? p.power : null, maxPower: p ? p.maxPower : null, fireLevel: p ? p.fireLevel : null, mainShots: act }; })(),
           death: v.deathTest ? { respawned: !!v.deathTest.respawned, err: v.deathTest.error || null } : null,
         };
       })()`);
+      if (chunkNo === 0 && res.dbg) console.log('[dbg-power]', JSON.stringify(res.dbg));
       chunkNo++;
       snap = res;
       if (res.steps === steps) stallChunks++; else stallChunks = 0;

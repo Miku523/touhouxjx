@@ -43,7 +43,7 @@ export const EXTRA_TIMELINE = Object.freeze({
   midbossKey: 'remilia', // 中途 Boss 的键：时间轴与「再战」共用，别两处写死
   midbossAt: 120,   // 2:00 雷米莉亚
   finalAt: 180,     // 3:00 芙兰登场（中途 Boss 击破后还有 1 分钟道中）
-  retryPower: 48,   // 中途 / 终盘再战时的起手火力（Lv.4 起手，别让复习从零开始）
+  retryPower: 72,   // 中途 / 终盘再战时的起手火力（Lv.4 起手，别让复习从零开始）
 });
 
 /* ------------------------------------------------------------------
@@ -997,7 +997,7 @@ export class Stage {
     if (p.shootCd > 0) return;
     // Shift 低速（显示判定点）时收束扇形：优先读本帧输入，玩家身上的 focus 在 STG 里晚一帧
     const focus = !!(input && input.down && input.down('slow')) || !!p.focus;
-    // 火力等级由 POWER 决定：Lv.1–4 → 弹数 1 / 2 / 3 / 4
+    // 火力等级由 POWER 决定：Lv.1–5 → 弹数 1 / 2 / 3 / 4 / 5
     const level = p.fireLevel || powerLevel(p.power);
     if (this.mode === 'stg') {
       p.shootCd = 0.075;

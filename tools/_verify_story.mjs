@@ -111,11 +111,12 @@ for (const s of STAGE_KEYS) {
 /* ---------------- 3. EXTRA ---------------- */
 const ex = STORY.extra || {};
 const exKeys = Object.keys(ex).join(',');
-if (exKeys !== 'intro,midBoss,midBossOut,postBoss') {
-  fail(`extra 键应为 intro,midBoss,midBossOut,postBoss，实际 ${exKeys}`);
+if (exKeys !== 'intro,midBoss,midBossOut,preBoss,postBoss') {
+  fail(`extra 键应为 intro,midBoss,midBossOut,preBoss,postBoss，实际 ${exKeys}`);
 }
 for (const r of ['reimu', 'marisa']) {
   checkLines(`extra.intro.${r}`, ex.intro?.[r], [12, 18]);
+  checkLines(`extra.preBoss.${r}`, ex.preBoss?.[r], [20, 28]);
   checkLines(`extra.postBoss.${r}`, ex.postBoss?.[r], [12, 18]);
 }
 checkLines('extra.midBoss', ex.midBoss, [10, 16]);
@@ -185,7 +186,7 @@ if (!Array.isArray(MUSIC_TRACKS) || MUSIC_TRACKS.length !== 19) {
 }
 
 /* ---------------- 7. 与引擎的接口 ---------------- */
-for (const fn of ['routeOf', 'openingFor', 'stageStoryFor', 'extraIntroFor', 'extraPostFor', 'midbossStoryFor', 'midbossPreFor', 'midbossPostFor']) {
+for (const fn of ['routeOf', 'openingFor', 'stageStoryFor', 'extraIntroFor', 'extraPreFor', 'extraPostFor', 'midbossStoryFor', 'midbossPreFor', 'midbossPostFor']) {
   if (!read('src/game/story.js').includes(`export function ${fn}`)) fail(`story.js 缺少导出函数 ${fn}`);
 }
 if (!/this\._midShown = \[false, false, false\]/.test(read('src/main.js'))) {

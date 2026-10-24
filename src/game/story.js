@@ -1534,6 +1534,67 @@ export const STORY = {
       { who: 'flandre', text: '客人会来吗。……我在这里等着。' },
       { who: 'flandre', text: '我不会到宅子外面去的。' },
     ],
+    preBoss: {
+      reimu: [
+        { who: 'narrator', text: '走廊到了头。这一间比楼上哪一间都亮，灯挂在四面墙的钉子上，一盏挨一盏。' },
+        { who: 'narrator', text: '屋角一张屋台，台上剩着炒面。面上结了皮，皮上落了灰。' },
+        { who: 'narrator', text: '芙兰朵露坐在木箱上，手里捏着一页纸。和服下摆铺开，脚垂着，没有鞋。' },
+        { who: 'narrator', text: '她在数灯。数到四十七，停下来，抬头。' },
+        { who: 'flandre', text: '客人。' },
+        { who: 'player', text: '信是你姐姐写的。' },
+        { who: 'flandre', text: '嗯。字是她的，话是我说的。' },
+        { who: 'flandre', text: '今年她也不来。……我知道的哦。' },
+        { who: 'player', text: '知道还等。' },
+        { who: 'flandre', text: '等又不花钱。' },
+        { who: 'narrator', text: '她把那页纸折起来，折得很小，塞进腰带。' },
+        { who: 'narrator', text: '然后从箱子上跳下来。脚踩在地上，没有声音。' },
+        { who: 'flandre', text: '陪我玩。' },
+        { who: 'player', text: '天亮以前，我得回去挂灯。' },
+        { who: 'flandre', text: '三十七盏？' },
+        { who: 'player', text: '三十七盏。' },
+        { who: 'flandre', text: '那就玩到天亮。', mood: 'smile' },
+        { who: 'player', text: '天亮以前打不完呢。' },
+        { who: 'flandre', text: '打不完，你明年再来。' },
+        { who: 'player', text: '你输了呢。' },
+        { who: 'narrator', text: '她抿起嘴，想了很久。久到墙上有一盏灯闪了一下。' },
+        { who: 'flandre', text: '想不出来。' },
+        { who: 'player', text: '你走到门口。' },
+        { who: 'narrator', text: '门在那边，看得见半扇。门缝底下还是那条线。' },
+        { who: 'flandre', text: '门里？' },
+        { who: 'player', text: '门里。' },
+        { who: 'narrator', text: '她点头，点得很快。四面墙上的灯开始灭，一盏，两盏。' },
+        { who: 'narrator', text: '最后只剩她指尖那一点红。' },
+      ],
+      marisa: [
+        { who: 'narrator', text: '走廊到了头。门开着。屋里十几盏灯全点着，一个人也没有。' },
+        { who: 'narrator', text: '屋角一张屋台，台上摊着炒面。两只碗，一只空着，一只没动过。' },
+        { who: 'narrator', text: '芙兰朵露坐在木箱上，攥着一页纸。攥得久，纸边都卷了。' },
+        { who: 'flandre', text: '客人。' },
+        { who: 'player', text: '我不是。我是替人来的。' },
+        { who: 'flandre', text: '嗯。她不来。' },
+        { who: 'player', text: '不来。' },
+        { who: 'flandre', text: '哦。' },
+        { who: 'narrator', text: '她把那页纸摊开看了一眼，又攥回去。' },
+        { who: 'player', text: '这张，没送出去。' },
+        { who: 'flandre', text: '写坏了。送出去的那张，是姐姐替我写的。' },
+        { who: 'narrator', text: '她把纸塞进腰带，塞得很快。' },
+        { who: 'flandre', text: '你替我玩一局吧。' },
+        { who: 'player', text: '玩什么。' },
+        { who: 'flandre', text: '玩这个。' },
+        { who: 'narrator', text: '她抬起手。墙上灭了一盏灯。' },
+        { who: 'flandre', text: '我赢了，你明年还来。' },
+        { who: 'player', text: '行。输了明年再来一趟，又不远。', mood: 'smug' },
+        { who: 'player', text: '我赢了呢。' },
+        { who: 'flandre', text: '我还没想好。……输了会怎么样，我没想过。' },
+        { who: 'player', text: '现在想。那碗面，你吃了。' },
+        { who: 'narrator', text: '她低头看那碗面，看了有一会儿。' },
+        { who: 'flandre', text: '凉的。' },
+        { who: 'player', text: '凉的也吃。' },
+        { who: 'flandre', text: '……好。' },
+        { who: 'narrator', text: '她用筷子挑了一口，没往嘴里送。' },
+        { who: 'narrator', text: '墙上的灯一盏一盏灭下去。最后剩她指尖那一点红，照见两只碗。' },
+      ],
+    },
     postBoss: {
       reimu: [
         { who: 'narrator', text: '弹幕散尽。地下室的灯一盏一盏亮起来，亮得慢。' },
@@ -1600,6 +1661,10 @@ export function stageStoryFor(char, key) {
 
 export function extraIntroFor(char) {
   return STORY.extra.intro[routeOf(char)] || STORY.extra.intro.reimu;
+}
+
+export function extraPreFor(char) {
+  return STORY.extra.preBoss[routeOf(char)] || STORY.extra.preBoss.reimu;
 }
 
 export function extraPostFor(char) {

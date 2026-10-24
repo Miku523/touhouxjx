@@ -153,7 +153,7 @@ export class Hud {
       this._levelChanged = this._levelChanged || (prevLv > 0 && prevLv !== lv);
     }
 
-    // 符卡消耗刻度（6 / 16 ≈ 38%）+ 可施放时的发光提示
+    // 符卡消耗刻度（48 / 128 ≈ 38%）+ 可施放时的发光提示
     const castCost = stageState.castCost ?? POWER.castCost;
     const costPct = Math.round((castCost / stageState.maxPower) * 100);
     if (costPct !== this._castPct) {

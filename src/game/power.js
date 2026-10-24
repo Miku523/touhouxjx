@@ -8,20 +8,20 @@
  *  - 被弹 / 落命也会损失一部分 POWER，火力跟着掉
  *  - 累计 99 点（拾取 POWER / 擦弹 0.02 点 / 符卡奖励）→ 恢复 1 条残机（1UP），计数清零后循环
  *
- * POWER 是连续值（0–64），每 16 点一个火力等级：
- *   Lv.1  0–15    Lv.2  16–31    Lv.3  32–47    Lv.4  48–64
+ * POWER 是连续值（0–128），每 24 点一个火力等级（共 5 级）：
+ *   Lv.1  0–23    Lv.2  24–47    Lv.3  48–71    Lv.4  72–95    Lv.5  96–128
  *
- * 上限 64 是「加长」过的：满槽是早先 16 的四倍，一整条 64 点。
- * 为了不让条变成「吃了没反应」的长条，P 的供给同时改成「稀但值钱」：
- * 掉落率 ×0.5（src/assets/levelgen.js 的 P_DROP_SCALE），单颗 1 → 4 点，
- * 吃一颗条跳 6%，前两面满打满吃约 2.8 条满槽。
+ * 上限 128 是「加长」过的：满槽是早先 16 的八倍，一整条 128 点（32 颗 P）。
+ * 槽变长时单颗 P 的点数不跟着涨（仍是 4 点）：吃一颗条跳 3.1%，
+ * 前两面满打满吃约 2.8 条满槽（掉落率 ×0.5 见 src/assets/levelgen.js 的 P_DROP_SCALE）。
+ * 因为满槽变长了，升满 5 级需要的补给也更多：Lv.5 要 96 点 = 24 颗 P。
  */
 export const POWER = Object.freeze({
-  max: 64,
-  perLevel: 16,
-  levels: 4,
-  castCost: 24,      // 符卡消耗（约 4 成槽，和原作的 Bomb 费用手感一致）
-  pickup: 4,         // 吃一枚 P 点回复（掉落率砍半换来的「值钱 P」：4 点 = 满槽的 1/16）
+  max: 128,
+  perLevel: 24,
+  levels: 5,
+  castCost: 48,      // 符卡消耗（约 4 成槽，和原作的 Bomb 费用手感一致）
+  pickup: 4,         // 吃一枚 P 点回复（不随上限变：4 点 = 满槽的 1/32，约 3.1%）
   kill: 1,           // 击破杂兵
   killStg: 1,        // STG 关击破
   graze: 0.075,      // STG 擦弹（每颗）：POWER（不再重复计入 1UP）
@@ -32,17 +32,17 @@ export const POWER = Object.freeze({
   respawnKeep: { platform: 0.5, stg: 0.6 },
 });
 
-/** 符卡击破 / 存活到点的基础奖励：1/4P（按满槽比例换算，当前 16） */
+/** 符卡击破 / 存活到点的基础奖励：1/4P（按满槽比例换算，当前 32） */
 export function cardClearPower() {
   return Math.round(POWER.max * POWER.cardClear);
 }
 
-/** 符卡无伤额外奖励：1/2P（按满槽比例换算，当前 32） */
+/** 符卡无伤额外奖励：1/2P（按满槽比例换算，当前 64） */
 export function cardNoHitPower() {
   return Math.round(POWER.max * POWER.cardNoHit);
 }
 
-/** POWER → 火力等级（1–4） */
+/** POWER → 火力等级（1–5） */
 export function powerLevel(power = 0) {
   const p = Math.max(0, power);
   return Math.min(POWER.levels, 1 + Math.floor(p / POWER.perLevel));

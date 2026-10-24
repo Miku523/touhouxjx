@@ -1,29 +1,49 @@
-import sys, os
-sys.path.insert(0, os.path.join(os.getcwd(), 'tools'))
-import midi2js as M
-MID = os.path.join(r'C:\Users\GuSheng\AppData\Local\Temp\thmidi\touhou-midi-collection-main\1 - Shooter Games',
-                   '6 - The Embodiment of Scarlet Devil', '12. The Young Descendant of Tepes (ZUN).mid')
-midi = M.parse_midi(MID)
-chans, segs, div = M.extract_channels(midi)
-PC = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
+# -*- coding: utf-8 -*-
+"""用 Krumhansl-Kessler 音级轮廓估计 MIDI 的调（用于核对扒谱是否移过调）。"""
+import sys, glob, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from midi2js import parse_midi, extract_channels
 
-def hist(ch, t0=None, t1=None, wdur=True):
-    h = {i:0.0 for i in range(12)}
-    for n in chans[ch]['notes']:
-        if t0 is not None and n['t'] < t0: continue
-        if t1 is not None and n['t'] >= t1: continue
-        h[n['m'] % 12] += n['d'] if wdur else 1
-    s = sum(h.values()) or 1
-    return dict(sorted(((PC[k], round(v/s,3)) for k,v in h.items() if v), key=lambda x:-x[1]))
+MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
+MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
 
-print('== ch12 melody full');  print(hist(12))
-print('== ch12 22.39-36');     print(hist(12, 22.39, 36))
-print('== ch12 36-50');        print(hist(12, 36, 50))
-print('== ch2 arp 22-50');     print(hist(2, 22, 50))
-print('== ch3 chords 22-50');  print(hist(3, 22, 50))
-print('== ch1 bass 22-50');    print(hist(1, 22, 50))
-print('== ch13 22-50');        print(hist(13))
-# ch12 每个音的序列（音高）
-ns = sorted([n for n in chans[12]['notes']], key=lambda n: n['t'])
-print('ch12 音级序列: ' + ' '.join(PC[n['m']%12] + str(n['m']//12-1) for n in ns[:40]))
-print('ch13 音高:', sorted(set(n['m'] for n in chans[13]['notes']))[:20])
+
+def hist(path):
+    midi = parse_midi(path)
+    chans, segs, div = extract_channels(midi)
+    h = [0.0] * 12
+    for ch, c in chans.items():
+        if ch == 9:
+            continue
+        for n in c['notes']:                      # {'t','d','m','v','p'}
+            d = max(0.02, n['d'])
+            h[n['m'] % 12] += d * (0.4 + 0.6 * n['v'] / 127.0)
+    s = sum(h) or 1.0
+    return [x / s for x in h]
+
+
+def score(h, prof, tonic):
+    p = [prof[(i - tonic) % 12] for i in range(12)]
+    mh = sum(h) / 12.0
+    mp = sum(p) / 12.0
+    num = sum((h[i] - mh) * (p[i] - mp) for i in range(12))
+    den = (sum((h[i] - mh) ** 2 for i in range(12)) * sum((p[i] - mp) ** 2 for i in range(12))) ** 0.5
+    return num / den if den else 0.0
+
+
+def best(path):
+    h = hist(path)
+    out = []
+    for t in range(12):
+        out.append((score(h, MAJ, t), NAMES[t] + ' major'))
+        out.append((score(h, MIN, t), NAMES[t] + ' minor'))
+    out.sort(reverse=True)
+    return out[:3]
+
+
+if __name__ == '__main__':
+    for path in sys.argv[1:]:
+        print(os.path.basename(path))
+        for sc, k in best(path):
+            print('   %.3f  %s' % (sc, k))

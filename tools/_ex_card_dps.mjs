@@ -55,6 +55,9 @@ const PORT_BASE = Number(arg('port', '9410')) || 9410;
 // 让 Boss 构造拿到 cardTune=null → 用 BOSS_DEFS 原始 hp、无逐卡限时、不乘 tier 弹幕倍率。
 // --naked：运行期摘掉 bossTuning 的 remilia/flandre 条目，复现裸血量口径（诊断用）。
 const NAKED = argFlag('naked', false);
+// 起手火力：64=POWER.max（Lv4，历史默认口径）；32=Lv3（三挡火力口径）。--lockPower 每帧钉死 POWER。
+const START_POWER = Number(arg('power', '64')) || 64;
+const LOCK_POWER = arg('lockPower', '') === '' ? null : Number(arg('lockPower'));
 const W = 1280, H = 720;
 
 const EDGE = [
@@ -420,7 +423,7 @@ async function runSeed(seed, index) {
       g.char = '${CHAR}';
       g.extraChar = '${CHAR}';
       g.lives = 50;
-      g.carryPower = 64;      // POWER.max；Lv4 门槛 48
+      g.carryPower = ${START_POWER};      // 起手火力（64=POWER.max/Lv4，32=Lv3）
       g.continues = 0;
       g.musicOn = false;
       return { state: g.state, char: g.char, carryPower: g.carryPower, difficulty: g.difficulty };
@@ -463,6 +466,16 @@ async function runSeed(seed, index) {
       // 停 rAF：渲染/粒子会消耗 Math.random，破坏复跑一致性
       try { g.loop.stop && g.loop.stop(); } catch (e) {}
       g.loop.paused = true;
+      // --lockPower：每帧把 POWER 钉死（测 Lv3 这类固定挡位时，P 点被吃掉也不升档）
+      const lock = ${LOCK_POWER == null ? 'null' : LOCK_POWER};
+      if (lock != null) {
+        const orig = g.update.bind(g);
+        g.update = function (dt) {
+          orig(dt);
+          const pp = g.stage && g.stage.player;
+          if (pp && pp.power !== lock) pp.power = lock;
+        };
+      }
       return {
         state: g.state, stageState: s.state, mode: s.mode, extra: !!s.extra,
         difficulty: s.difficulty, levelW: s.level.w, levelBoss: s.level.boss,
@@ -473,7 +486,7 @@ async function runSeed(seed, index) {
     if (!start || start.err) throw new Error('start extra failed: ' + JSON.stringify(start));
     log('起关 OK', JSON.stringify({ diff: start.difficulty, levelW: start.levelW, power: start.power, lv: start.fireLevel, mode: start.mode }));
     if (start.mode !== 'stg' || !start.extra) throw new Error('不是 EXTRA STG 关: ' + JSON.stringify(start));
-    if (!(start.power >= 48)) throw new Error(`火力不足 Lv4: power=${start.power}`);
+    if (!(start.power >= Math.min(START_POWER, 48))) throw new Error(`火力不足 Lv4: power=${start.power}（起手 ${START_POWER}）`);
 
     await cdp.ev('(' + pageProbe.toString() + ')(' + JSON.stringify({ seed, cardTimeout: CARD_TIMEOUT }) + ')');
 
@@ -788,7 +801,9 @@ function aggregate(runs) {
     generatedAt: new Date().toISOString(),
     char: CHAR,
     god: GOD,
-    powerLevel: 4,
+    powerLevel: Math.min(4, 1 + Math.floor(START_POWER / 16)),
+    startPower: START_POWER,
+    lockPower: LOCK_POWER,
     difficulty: 'EX',
     stage: 'extra',
     naked: NAKED,   // true = 运行期剥掉 bossTuning 的裸血量口径（诊断）；false = 当前游戏实际状态

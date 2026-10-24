@@ -26,6 +26,7 @@ import {
   openingFor,
   stageStoryFor,
   extraIntroFor,
+  extraPreFor,
   extraPostFor,
   midbossPreFor,
   midbossPostFor,
@@ -140,8 +141,8 @@ class Game {
     this.difficulty = 'N';
     this.levelIndex = 0;
     this.inExtra = false;
-    // 开局给一点 POWER（16 = 火力 2 级），否则第一关 Boss 只能拿 1 级火力磨
-    this.carryPower = 16;
+    // 开局给一点 POWER（24 = 火力 2 级），否则第一关 Boss 只能拿 1 级火力磨
+    this.carryPower = 24;
     // 本次挑战内的残机与 1UP 进度：在设置页选的 lives 只是「开局值」，
     // 中途 1UP 拿到的残机、没满 99 的 extend 进度都要带进下一关，
     // 否则「99 点换一命」会在转关时凭空蒸发，等于白攒。
@@ -1220,7 +1221,7 @@ class Game {
       { ...row('help-act', tr('射击'), cap('shoot')), groupTitle: tr('战斗'), glyph: '戰' },
       row('help-act', tr('向上射击'), cap('up') + '<span class="help-tip">' + tr('按住打空中') + '</span>'),
       row('help-act', tr('向下射击'), cap('down') + '<span class="help-tip">' + tr('按住打脚下') + '</span>'),
-      // 冲刺只做高速位移，没有无敌帧（别照旧文案写「无敌」）；符卡消耗 POWER.castCost=24
+      // 冲刺只做高速位移，没有无敌帧（别照旧文案写「无敌」）；符卡消耗 POWER.castCost=48
       row('help-act', tr('冲刺'), cap('dash') + '<span class="help-tip">' + tr('可穿敌') + '</span>'),
       row('help-act', tr('符卡'), cap('cast') + '<span class="help-tip">' + tr('耗 24 · 火力下降') + '</span>'),
       { ...row('help-sys', tr('暂停菜单'), cap('pause')), groupTitle: tr('系统'), glyph: '系' },
@@ -1304,7 +1305,7 @@ class Game {
   startGame() {
     this._hidePanel();
     this.inExtra = false;
-    this.carryPower = 16;
+    this.carryPower = 24;
     this.continues = 0;
     this.levelIndex = 0;
     this.runLives = null;
@@ -1409,7 +1410,7 @@ class Game {
     this.continues = 0;
     this.runLives = null;
     this.carryExtend = 0;
-    this.carryPower = 16;
+    this.carryPower = 24;
     this.levelIndex = index;
     this.audio.unlock?.();
     // skipIntro 只跳过开场对白；跳关是捷径，道中剧情也一并跳过（_skipBeats 会置 true）
@@ -1432,8 +1433,10 @@ class Game {
     // 建完 Stage 后立刻开战并同步触发 bossStart，那时就得知道本关该放哪首。
     this._levelMusic = {
       pre: def.musicPre || null,
-      mid: def.musicMid || null,   // 只有 EXTRA 用：道中 → 雷米莉亚拦路 → 回道中 → 关底
+      mid: def.musicMid || null,   // 中途 Boss 战斗曲：EXTRA 的雷米莉亚（三段式）、STAGE5 的妖梦
       boss: def.music || null,
+      // STAGE5：妖梦击破后让 mid 曲自己放完，再 5 秒渐出（不循环），第二道中（呼吸区）静音
+      midOnce: !!def.musicMidOnce,
     };
     // 本次进关还没切到 Boss 曲；resumeBoss 时下面的 beginBoss() 会同步把它翻成 true，
     // 稍后的播曲那里就不会把道中曲再盖上去。
@@ -1502,7 +1505,7 @@ class Game {
         // reset() 会把 POWER 清零（Player.reset 的语义），但续命再战不能 0 火力：
         // 0 火力只有 Lv.1 单发、连符卡都放不出，等于把玩家直接推进死局。
         // 按「本关开局火力」补齐（和 1UP / 残机一起回到开局值），最多补到槽上限。
-        p.power = Math.min(p.maxPower || 64, Math.max(0, this.carryPower || 0));
+        p.power = Math.min(p.maxPower || 128, Math.max(0, this.carryPower || 0));
         p.setCheckpoint?.(p.x, p.y);
         p.vx = 0; p.vy = 0;
         p.invuln = Math.max(p.invuln || 0, 1.5);  // 出场给一小段无敌，别一复活就挨弹
@@ -1522,10 +1525,17 @@ class Game {
     // 横向卷轴面缩到 1.6s，平台面保持原来的节奏。
     const bannerSec = this.stage?.mode === 'stg' ? 1.6 : 2.6;
     this.hud.banner(isExtra ? 'EXTRA STAGE' : `STAGE ${index + 1}`, tr(def.title) || '', bannerSec);
-    if (!this._bossMusicSwitched) {
-      this.audio.playMusic?.(this._levelMusic.pre || this._levelMusic.boss || 'stage1');
+    // 五面：开场准备区（捡补给）与开场 / 道中对话先不放 BGM——连标题曲也一起停掉，
+    // 等妖梦登场（bossStart）才起播；def.musicIntro === false 的关卡都这么进关。
+    // 其余面照旧：进关就放道中曲（没有 musicPre 的面直接放 Boss 曲）。
+    if (def.musicIntro === false) {
+      if (!this._bossMusicSwitched) this.audio.silenceMusic?.();
+    } else {
+      if (!this._bossMusicSwitched) {
+        this.audio.playMusic?.(this._levelMusic.pre || this._levelMusic.boss || 'stage1');
+      }
+      this.audio.setMusic?.(this.musicOn !== false);
     }
-    this.audio.setMusic?.(this.musicOn !== false);
     this.audio.play?.('menu');
 
     // 关卡开场对话（Extra 的开场已经在外面播过了；重挑战本关时也跳过，直接继续）
@@ -1656,17 +1666,17 @@ class Game {
         this.hud.banner(tr(data.name || ''), tr(data.title || ''), 2.0);
         this.audio.play?.('menu');
         // 道中曲 → Boss 曲：只有配了 musicPre 的关卡这么切，其余保持原样。
-        // 平台关的「道中中途战」（STAGE5 妖梦）沿用道中曲，把 Boss 曲留给关底；
-        // EXTRA 是三段式：中段（雷米莉亚拦路）切 musicMid，姐姐认输后 midbossClear 切回道中曲，
-        // 关底芙兰登场才轮到 Boss 曲（U.N.）。_bossMusicSwitched 在这里也置 true，
-        // 免得 _createStage 末尾把道中曲盖到中段曲上（resumeBoss 会同步走到这里）。
+        // 中途 Boss 若配了 musicMid 就用它：EXTRA 的雷米莉亚（三段式），以及 STAGE5 的妖梦
+        // （五面道中曲只在妖梦战里放，Boss 曲不在这里占掉，留给幽幽子）。
+        // EXTRA 的姐姐认输后 midbossClear 切回道中曲；STAGE5 则让妖梦战曲放完再 5 秒渐出。
+        // _bossMusicSwitched 在这里置 true，免得 _createStage 末尾把道中曲盖到这首上
+        // （resumeBoss 会同步走到这里）。
         {
           const lm = this._levelMusic;
-          const keepForMid = !this.inExtra && data.midboss;
-          if (lm && lm.mid && this.inExtra && data.midboss) {
+          if (lm && lm.mid && data.midboss) {
             this._bossMusicSwitched = true;
             this.audio.playMusic?.(lm.mid);
-          } else if (lm && lm.pre && lm.boss && !this._bossMusicSwitched && !keepForMid) {
+          } else if (lm && lm.pre && lm.boss && !this._bossMusicSwitched && !data.midboss) {
             this._bossMusicSwitched = true;
             this.audio.playMusic?.(lm.boss);
           }
@@ -1684,6 +1694,11 @@ class Game {
         if (this.inExtra && this._levelMusic && this._levelMusic.pre) {
           this._bossMusicSwitched = false;
           this.audio.playMusic?.(this._levelMusic.pre);
+        } else if (this._levelMusic && this._levelMusic.midOnce) {
+          // STAGE5：妖梦击破 → 让妖梦战曲自己把这一轮放完，再用 5 秒渐出收尾（不硬切、不循环），
+          // 呼吸区安静下来；幽幽子登场时 bossStart 再切 Boss 曲。
+          this._bossMusicSwitched = false;
+          this.audio.playOutMusic?.();
         }
         // 中途 Boss 的战后对话：EXTRA 是姐姐认输的几句，平台关（STAGE5 妖梦）走 story.js
         // 的兜底键。脚本为空就什么都不排：横幅照播，道中照走，state 不动。
@@ -1722,11 +1737,11 @@ class Game {
     const stage = this.stage;
     let script;
     if (this.inExtra) {
-      // 中途 Boss（雷米莉亚）有自己的登场对话；终盘芙兰的战前对话已在开场播过。
+      // 中途 Boss（雷米莉亚）有自己的登场对话；终盘芙兰的战前对话走 extra.preBoss。
       // 再战（resumeExtra）时整段跳过，别把看过的台词重复一遍。
       if (stage.skipBossDialogue) script = [];
       else if (data && data.midboss) script = STORY.extra.midBoss || [];
-      else script = [];
+      else script = extraPreFor(this.char);
     } else {
       // STAGE5 现在有两场 Boss：道中妖梦（midboss）有自己的登场对话，幽幽子仍走 preBoss。
       // 对话键路径由 story.js 决定，这里按候选顺序兜底，取不到就安全跳过（见 _midbossStory）。
@@ -1783,7 +1798,7 @@ class Game {
     // 火力继承：打完这关的 POWER 带进下一关
     if (this.stage?.player) {
       const p = this.stage.player;
-      this.carryPower = Math.min(p.maxPower || 64, Math.round(p.power || 0));
+      this.carryPower = Math.min(p.maxPower || 128, Math.round(p.power || 0));
       // 残机与 1UP 进度同样继承：这关靠 99 点换来的命、没满的进度都不能蒸发
       this.runLives = p.lives;
       this.carryExtend = this.stage.extendPts || 0;

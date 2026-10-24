@@ -369,22 +369,22 @@ export class PlayerShots {
   }
 
   /**
-   * 开火。每一轮 = 固定直射主弹（数量随火力 1-4 成长）+ 每 2 轮的 1 发特殊副弹。
+   * 开火。每一轮 = 固定直射主弹（数量随火力 1-5 成长）+ 每 2 轮的 1 发特殊副弹。
    * @param {number} x 枪口 x
    * @param {number} y 枪口 y
    * @param {number} dir 朝向 1 / -1
    * @param {'reimu'|'marisa'} char
-   * @param {number} powerLevel 1-4
+   * @param {number} powerLevel 1-5
    * @param {number} [aim=0] 仰角（弧度，负数向上）
    * @param {number} [spread] 扇形总张角（默认按是否仰射自动取 fanAim / fanFlat）
    * @param {boolean} [focus=false] 按住 Shift 低速时收束扇形
    */
   fire(x, y, dir, char, powerLevel = 1, aim = 0, spread, focus = false) {
     const prof = SHOT_PROFILE[char] || SHOT_PROFILE.reimu;
-    const lv = Math.min(4, Math.max(1, powerLevel | 0));
-    // 主弹数成长：1 / 2 / 3 / 4 发（2026-10-24 从 1 / 2 / 3 / 5 减一发）；
+    const lv = Math.min(5, Math.max(1, powerLevel | 0));
+    // 主弹数成长：1 / 2 / 3 / 4 / 5 发（Lv.5 是 2026-10-24 新加的一档，回到旧版最高档的 5 发）；
     // 灵梦单发 4，魔理沙单发 8（普通弹两倍），最终都乘 balance.js 的全局攻击倍率
-    const shots = [1, 2, 3, 4][lv - 1];
+    const shots = [1, 2, 3, 4, 5][lv - 1];
     // 向上射击时用大扇形覆盖不同的高度/距离，平射用较小的散布；
     // 魔理沙的 fanFlat/fanAim 都比灵梦大，形成「扩散弹」
     let fan = spread === undefined ? (aim ? prof.fanAim : prof.fanFlat) : spread;

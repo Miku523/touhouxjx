@@ -174,7 +174,7 @@ export class Player {
     this.power = Math.min(this.maxPower, this.power + n);
   }
 
-  /** 当前火力等级（1–4），POWER 每 16 点升一级 */
+  /** 当前火力等级（1–5），POWER 每 24 点升一级 */
   get fireLevel() {
     return powerLevel(this.power);
   }
