@@ -207,7 +207,7 @@
 
 ## 十、遗留（第二轮更新）
 
-1. **仍未 commit**：工作区里另一条「剧情重制」会话正在改 `story.js / endings.js / musicRoom.js / musicTracks.js / boss.js / main.js / index.html / README`，本轮继续保持「只改自己的行、不提交」，避免把半成品扫进提交。
+1. **已部署**：2026-10-24 推 `main`（`03df556` + `3988508`），线上 1.4.5，验收见第十三节。工作区里并行会话的剧情重制已随本次提交一起上线；`docs/RE_STORY/artifacts/` 截图未入库（本地留存）。
 2. **真机 GPU 未测**：帧率数据都来自 headless + 软件光栅，真机应更好；进关 10s 冻结已在本环境消除（长任务 ≤199ms），建议真机复核一次首进关手感。
 3. **第 6 面坑区**：第四轮 5 连跑 0 死亡、5/5 越过（见 12.2），旧版约 1/3 掉坑未再复现。
 4. **EXTRA 时长**：实测 570–599s，与 `BOSS_TIMING_SPEC` 的目标约 960s 有差距；该文档明确「EXTRA 本轮不改」，属设计待定项，未擅改。
@@ -279,5 +279,16 @@
 | 阶段验收 | **11 / 11** ALL PASS（`_pt/lead_r3/accept2.log`） |
 | 软光栅帧探针 | 43.3ms avg / p95 50.1（1280×720 窗口，backing 1） |
 | 坑区 5 连跑 | 0 死亡 / 5 次到达 Boss |
+
+## 十三、线上部署（2026-10-24 16:3x–16:4x）
+
+- 仓库 `ssh://git@ssh.github.com:443/Miku523/touhouxjx.git`，GitHub Pages 托管 `main` 根目录、无构建。
+- 提交：`03df556`（剧情重制「未明之约」+ 四轮修复 + 缓存版本串 1.4.4→1.4.5）、`3988508`（标题页版本号跟随入口 `?v=`，不再写死 ver 1.1）。
+- 缓存处理：入口 CSS/JS 版本串升到 `1.4.5`；响应头 `Cache-Control: max-age=600`（CDN 约 10 分钟），无 Service Worker；老访客建议 `Ctrl+Shift+R`。
+- 线上验收（对 https://mikuascendlog.com/touhouxjx/ 直接跑）：
+  - 阶段验收 **11/11 ALL PASS**（含暂停四项、R 重开、死亡不穿地、900×600 布局、版本号跟随），见 `_pt/live_accept.log`。
+  - `_deploy_check.mjs`：101 个资源 0 error / 0 consoleError / 0 httpError，标题与第一面截图 `_pt/deploy_live_145b_*.png`。
+  - `src/main.js` 线上 sha1 与 `HEAD` 提交一致（`ee9df300…`）；`git ls-files src index.html` 共 138 个资源逐个请求全部 200。
+  - 标题页右下角实测显示 `ver 1.4.5`。
 
 
