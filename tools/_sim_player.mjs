@@ -240,7 +240,7 @@ if (!booted) fail('game boot timeout');
 
 // 清进度并设定开局
 await evaluate('localStorage.removeItem("hks.progress.v1")');
-await evaluate(`window.__game.unlockedExtra = true; window.__game.showTitle(); window.__game.difficulty='${DIFF}'; window.__game.char='${CHAR}'; window.__game.musicOn=false;`);
+await evaluate(`window.__game.unlockedExtra = true; window.__game.extraChars = { reimu: true }; window.__game.showTitle(); window.__game.difficulty='${DIFF}'; window.__game.char='${CHAR}'; window.__game.musicOn=false;`);
 
 // 注入 bot
 const installed = await evaluate(`import('/tools/sim_bot.js?t=${Date.now()}').then(m => !!m.install({ god: ${GOD}, maxRetries: 3 }))`);

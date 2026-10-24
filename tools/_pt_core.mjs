@@ -33,6 +33,7 @@ const KEYS = {
   Digit0: ['0', 48], Digit1: ['1', 49], Digit2: ['2', 50], Digit3: ['3', 51], Digit4: ['4', 52],
   Digit5: ['5', 53], Digit6: ['6', 54], Digit7: ['7', 55], Digit8: ['8', 56], Digit9: ['9', 57],
   Backspace: ['Backspace', 8], Delete: ['Delete', 46], Tab: ['Tab', 9],
+  Slash: ['/', 191], Backquote: ['`', 192], Minus: ['-', 189], Equal: ['=', 187],
   F5: ['F5', 116], F12: ['F12', 123],
 };
 

@@ -41,6 +41,8 @@ export class Renderer {
     this.w = VIEW_W;
     this.h = VIEW_H;
 
+    // 浏览器缩放 <100% 时 devicePixelRatio < 1：若照实乘进去，backing 会小于 CSS 像素，
+    // 画布被拉伸放大导致发虚（试玩反馈 P2-2，1600×900 + 80% 缩放）。backing 计算里按 ≥1 处理。
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.scale = 1;    // 逻辑像素 -> CSS 像素
     this.backing = 1;  // 逻辑像素 -> 设备像素
@@ -120,8 +122,12 @@ export class Renderer {
     // backing store：至少 1.5x 超采样，保证矢量描边和细字在 1x 屏上也不糊。
     // 软件光栅下超采样代价翻倍，降到 clamp(scale*dpr, 1.0, 1.25)（GPU 路径维持原样）。
     const floor = this.lowSpec ? 1.0 : 1.5;
-    const cap = this.lowSpec ? 1.25 : 2.5;
-    const backing = Math.min(Math.max(scale * this.dpr, floor), cap);
+    // 软件光栅在 1600×900 / 1920×1080 这类大窗口下，backing 1.25 实测只有 9–14fps
+    // （每帧 115ms，见 QA 第三轮）；超过 1.0 全是逐像素光栅成本，而矢量画风对
+    // 合成器放大 1.25× 的柔化不敏感。这里锁 1.0（1280×720）换可玩帧率。
+    const cap = this.lowSpec ? 1.0 : 2.5;
+    const dprForBacking = Math.max(1, this.dpr);
+    const backing = Math.min(Math.max(scale * dprForBacking, floor), cap);
     this.backing = backing;
 
     this.canvas.width = Math.round(VIEW_W * backing);

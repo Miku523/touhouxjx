@@ -220,6 +220,14 @@ export class Input {
   setBind(action, code) {
     const target = this.binds.get(action);
     if (!target || !code || target.primary === code) return false;
+    // 选的正好是本动作当前的副键：把主副对调，别让 UI 显示成「A / A」
+    if (target.alt === code) {
+      const prev = target.primary;
+      target.primary = code;
+      target.alt = prev;
+      saveBinds(this.binds);
+      return true;
+    }
     for (const [other, b] of this.binds) {
       if (other !== action && b.primary === code) {
         b.primary = target.primary; // 互换，保证没人失去按键

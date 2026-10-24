@@ -212,6 +212,9 @@ export class MusicRoom {
     this._preview = null;
     this._previewDone = false;
     if (this.d?.cut) this.d.cut.classList.add('hidden');
+    // 从确认弹窗切进来的曲目可能不是当前选中行：详情面板必须跟着真正播放的那首。
+    const at = this.tracks.indexOf(tr);
+    if (at >= 0) this.index = at;
     const same = this.audio.currentSong === tr.key;
     if (same && this.audio.musicOn) {
       // 再按一次 = 停：留声机抬针
@@ -249,6 +252,9 @@ export class MusicRoom {
   }
 
   _startPreview(tr) {
+    // 试听同样要保证「选中行 = 正在响的那首」（确认弹窗里的「试听 30 秒」也走这里）。
+    const at = this.tracks.indexOf(tr);
+    if (at >= 0) this.index = at;
     this.audio.play?.('select');
     this.audio.playMusic(tr.key);
     this.audio.setMusic(true);
@@ -296,6 +302,10 @@ export class MusicRoom {
   _closeWarn() {
     this._warn = null;
     this._hideWarn();
+    // 弹窗一关，鼠标底下那行会立刻收到 pointerenter：确认「播放」时手指还停在
+    // 按钮原来的位置（正好压在列表某一行上），光标的选中就会被抢走，详情面板
+    // 变成另一首歌。关窗后短暂冻结悬停选中，等这一次点击彻底收尾。
+    this._hoverLock = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + 320;
   }
 
   _hideWarn() {
@@ -474,7 +484,7 @@ export class MusicRoom {
           '<div class="mr-count">' +
             '<b class="mr-count-num">0</b>' +
             '<span class="mr-count-sep">/</span>' +
-            '<span class="mr-count-all">11</span>' +
+            '<span class="mr-count-all">19</span>' +
             '<span class="mr-count-label">曲已回想</span>' +
           '</div>' +
         '</header>' +
@@ -515,7 +525,7 @@ export class MusicRoom {
                 '<div class="mr-stat"><span class="mr-stat-k">时长</span>' +
                   '<span class="mr-stat-v mr-len">--:--</span></div>' +
                 '<div class="mr-stat"><span class="mr-stat-k">唱片</span>' +
-                  '<span class="mr-stat-v mr-code">No.?? / 11</span></div>' +
+                  '<span class="mr-stat-v mr-code">No.?? / 19</span></div>' +
               '</div>' +
             '</div>' +
           '</article>' +
@@ -606,6 +616,8 @@ export class MusicRoom {
       refs.no.textContent = tr.no;
       li.addEventListener('pointerenter', () => {
         if (!this.visible || this._warn) return;
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        if (now < (this._hoverLock || 0)) return; // 刚关掉确认弹窗，别抢走这次点击的选中
         if (this.index !== i) {
           this.index = i;
           this._paint();

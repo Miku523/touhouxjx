@@ -191,6 +191,34 @@ try {
   console.log('  CLEAR', kill);
   ok(K.dead && K.bossNull && K.midDone === true, '妖梦击破后进入 midbossClear 收尾（boss 置空 / midbossDone）');
 
+  // ---- 妖梦打完之后，玩家必须真的能自己走出去（真实回归 bug：出口是一堵墙）----
+  const walk = await ev(`(()=>{
+    const g=__game,s=g.stage,p=s.player,inp=g.input;
+    g.dialogue?.close?.(); g.state='play'; s.state='play';
+    p.x=s._midClearX||p.x; p.y=0; p.vx=0; p.vy=0; p.hurtT=0;
+    const startX=p.x; let best=p.x; let stuckFrames=0;
+    inp._set('right',true);
+    const bossLine=s.level.w-940;
+    for(let i=0;i<720;i++){
+      // 走出舞台就收手，别一路冲到关底触发线（后面还要单独验「呼吸区」）
+      if(p.x>bossLine-700){inp._set('right',false);break;}
+      if(i%18===0){inp._emitAction('jump');} else if(i%18===2){inp._set('jump',false);}
+      p.hurtT=0;
+      g.update(1/60);
+      if(p.x>best+0.5){best=p.x;stuckFrames=0;} else stuckFrames++;
+    }
+    for(let i=0;i<30;i++){p.hurtT=0;g.update(1/60);}
+    inp._set('right',false); inp._set('jump',false);
+    const w=s.level.w;
+    return JSON.stringify({startX:Math.round(startX),endX:Math.round(p.x),best:Math.round(best),
+      moved:Math.round(best-startX),stuckFrames,rampTop:Math.round(w-4600-900+0),bossLine:Math.round(w-940)});
+  })()`);
+  const WK = JSON.parse(walk);
+  console.log('  WALKOUT', walk);
+  ok(WK.moved > 1500, `妖梦打完后能自己走出舞台（前进了 ${WK.moved}px）`);
+  ok(WK.stuckFrames < 60, `没有卡在台阶上（最长停滞 ${WK.stuckFrames} 帧）`);
+  await shot('tools/_live_youmu_ramp.png');
+
   // 呼吸区：先原地等，不应触发幽幽子
   const breath = await ev(`(()=>{
     const g=__game,s=g.stage;

@@ -390,9 +390,10 @@ export class Player {
       this._moveY(this.vy * dt);
       return;
     }
-    // 死亡坠落动画
+    // 死亡坠落动画：仍然走地形碰撞，尸体最终停在实心地面上。
+    // 旧版直接累加 y，尸体会穿过 Boss 场地地板掉出屏幕，试玩时被误判成「场地有坑、坠坑连掉命」。
     this.vy = Math.min(this.vy + TUNE.gravityFall * dt, TUNE.maxFall);
-    this.y += this.vy * dt;
+    this._moveY(this.vy * dt);
   }
 
   _moveX(dx) {

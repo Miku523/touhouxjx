@@ -981,7 +981,7 @@ export const BOSS_DEFS = {
         ],
       },
       {
-        name: '最终「永不结束的祭典」', hp: 3850, patterns: [
+        name: '未明「明けない夜の約束」', hp: 3850, patterns: [
           { typeName: 'ring', n: 40, speed: 150, color: '#ff4d6a', rate: 0.95, r: 7, rings: 2, spinAngle: 0.6 },
           { typeName: 'spiral', arms: 8, speed: 210, color: '#ff8fa8', rate: 0.05, spin: 4.0, r: 5, type: 3, weight: 0.95 },
           { typeName: 'laser', n: 10, speed: 620, color: '#ffffff', rate: 0.6, angle: 0, weight: 0.9 },

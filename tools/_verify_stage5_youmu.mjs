@@ -83,6 +83,29 @@ if (info) {
     if (ch !== 'G' && ch !== '#') { flat = false; break; }
   }
   ok(flat, '舞台地面是一整排平地（row ' + ground + '）');
+
+  // 出口缓坡：舞台地面是最低层，接回主路必须是「一列最多抬一格」的阶梯，
+  // 而且坡道上方的老地形必须被挖空 —— 否则打完整场后会被一堵高墙堵死（真实回归 bug）。
+  const h = rowsForScan.length;
+  const SOLID_CH = new Set(['G', '#', 'B']);
+  const topOf = (c) => {
+    for (let r = 0; r < h; r++) if (SOLID_CH.has(rowsForScan[r][c])) return r;
+    return h;
+  };
+  const me = info.to;
+  const rampLen = Math.min(14, rowsForScan[0].length - me - 51);
+  let stepOk = true;
+  let noOverhang = true;
+  for (let c = me; c < me + rampLen; c++) {
+    if (Math.abs(topOf(c + 1) - topOf(c)) > 1) stepOk = false;
+    if (topOf(c) > topOf(c - 1)) stepOk = false; // 坡道只能往上走
+    for (let r = 0; r < topOf(c); r++) if (SOLID_CH.has(rowsForScan[r][c])) noOverhang = false;
+  }
+  ok(rampLen > 0, `出口坡道长度 ${rampLen} 列`);
+  ok(stepOk, '坡道是每列最多抬一格的阶梯（能跳上去）');
+  ok(noOverhang, '坡道上方的旧地形已挖空（不会变成一堵墙）');
+  ok(topOf(me + rampLen) <= topOf(me) - 4, `坡道抬升了 ${topOf(me) - topOf(me + rampLen)} 格（接到主路）`);
+  ok(Math.abs(topOf(me + rampLen) - topOf(me + rampLen + 1)) <= 1, '坡顶与主路地面高差 ≤1 格（能走下去）');
 }
 
 // ---------------------------------------------------------------------------

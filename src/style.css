@@ -171,7 +171,8 @@ body {
   display: flex;
   align-items: center;
   gap: calc(var(--s) * 7px);
-  font-size: calc(var(--s) * 10px);
+  /* 900×600 下 --s≈0.70，10px 会缩成 7px 不可读（试玩反馈 P2-3）：给字号设下限 */
+  font-size: max(9px, calc(var(--s) * 10px));
   letter-spacing: .32em;
   color: var(--gold);
   opacity: .84;
@@ -189,7 +190,7 @@ body {
 .pdim {
   align-self: flex-end;
   padding-bottom: calc(var(--s) * 1px);
-  font-size: calc(var(--s) * 9.5px);
+  font-size: max(9px, calc(var(--s) * 9.5px));
   letter-spacing: .06em;
   color: rgba(242, 233, 216, .42);
   font-variant-numeric: tabular-nums;
@@ -262,12 +263,12 @@ body {
   display: flex;
   align-items: center;
   gap: calc(var(--s) * 5px);
-  font-size: calc(var(--s) * 9px);
+  font-size: max(9px, calc(var(--s) * 9px));
   letter-spacing: .12em;
   color: rgba(255, 235, 180, .9);
   white-space: nowrap;
 }
-.plv b { font-weight: 400; font-size: calc(var(--s) * 8px); letter-spacing: .14em; opacity: .62; }
+.plv b { font-weight: 400; font-size: max(8px, calc(var(--s) * 8px)); letter-spacing: .14em; opacity: .62; }
 .plv > i {
   font-style: normal;
   font-size: calc(var(--s) * 12px);
@@ -369,13 +370,14 @@ body {
 }
 .stage-line { display: flex; align-items: baseline; justify-content: flex-end; gap: calc(var(--s) * 10px); }
 .sn {
-  font-size: calc(var(--s) * 11px);
+  /* 小窗口（900×600）下 --s≈0.7，11px 会缩到 7px 不可读：给字号设下限 */
+  font-size: max(9px, calc(var(--s) * 11px));
   letter-spacing: .28em;
   color: var(--gold);
   opacity: .92;
 }
 .tm {
-  font-size: calc(var(--s) * 12.5px);
+  font-size: max(10px, calc(var(--s) * 12.5px));
   letter-spacing: .06em;
   color: rgba(242, 233, 216, .75);
   font-variant-numeric: tabular-nums;
@@ -385,7 +387,7 @@ body {
 .ss {
   display: block;
   margin-top: calc(var(--s) * 3px);
-  font-size: calc(var(--s) * 15.5px);
+  font-size: max(12px, calc(var(--s) * 15.5px));
   letter-spacing: .12em;
   color: var(--text);
   text-shadow: 0 calc(var(--s) * 2px) calc(var(--s) * 8px) rgba(0, 0, 0, .8);
@@ -397,7 +399,7 @@ body {
   pointer-events: auto;
   cursor: pointer;
   font-family: var(--serif);
-  font-size: calc(var(--s) * 11px);
+  font-size: max(9px, calc(var(--s) * 11px));
   letter-spacing: .18em;
   color: rgba(242, 233, 216, .72);
   background:
@@ -1528,6 +1530,10 @@ body {
 }
 .overlay.screen-mode .btn.help-row:last-child { border-bottom: 0; }
 .overlay.screen-mode .help-row .set-ctl { gap: calc(var(--s) * 6px); }
+/* 说明页一行里 label / 键帽 / tip 都要保持单行，否则窄栏会折行挤成一团（试玩反馈 P3-4） */
+.overlay.screen-mode .btn.help-row .set-label { white-space: nowrap; }
+.overlay.screen-mode .btn.help-row .set-ctl { flex: none; }
+.overlay.screen-mode .help-row .help-tip { overflow: hidden; text-overflow: ellipsis; }
 .help-tip {
   font-size: calc(var(--s) * 10px);
   letter-spacing: .04em;
@@ -1651,6 +1657,58 @@ body {
   background: rgba(0, 0, 0, .38);
   font-size: calc(var(--s) * 11px);
   color: rgba(242, 233, 216, .72);
+}
+
+/* ---------- EXTRA 选人：未解锁的主角卡 ----------
+   保留角色剪影让玩家知道「她是谁、差什么」，但整卡压暗去色、不抢焦点。
+   卡片仍然可点：点击只会弹出解锁条件，所以不吃 .btn.locked 的 pointer-events:none
+   （main.js 里给这类卡加了 feedback，内联 pointer-events:auto 已经覆盖）。 */
+.overlay.screen-mode .cc-card.locked,
+.overlay.screen-mode .cc-card.locked:hover,
+.overlay.screen-mode .cc-card.locked.sel {
+  cursor: pointer;
+  border-color: rgba(255, 255, 255, .07);
+  box-shadow: none;
+  background:
+    radial-gradient(circle at 6% 0%, rgba(126, 122, 138, .10), transparent 58%),
+    radial-gradient(ellipse 80% 70% at 100% 100%, rgba(126, 122, 138, .08), transparent 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, .02) 0%, rgba(0, 0, 0, .32) 42%, rgba(4, 2, 9, .88) 100%);
+}
+.overlay.screen-mode .cc-card.locked:hover {
+  border-color: rgba(255, 158, 174, .24);
+}
+.overlay.screen-mode .cc-card.locked .cc-portrait,
+.overlay.screen-mode .cc-card.locked:hover .cc-portrait,
+.overlay.screen-mode .cc-card.locked.sel .cc-portrait {
+  opacity: .4;
+  transform: none;
+}
+.overlay.screen-mode .cc-card.locked .cc-portrait img,
+.overlay.screen-mode .cc-card.locked:hover .cc-portrait img {
+  filter: grayscale(.92) brightness(.6) drop-shadow(0 0 calc(var(--s) * 14px) rgba(0, 0, 0, .7));
+}
+.overlay.screen-mode .cc-card.locked .cc-en,
+.overlay.screen-mode .cc-card.locked .cc-name,
+.overlay.screen-mode .cc-card.locked .cc-note {
+  color: rgba(200, 194, 206, .48);
+}
+.overlay.screen-mode .cc-card.locked .cc-key { opacity: .4; }
+/* 右上角「未解锁」徽标：和左上角数字圈错开 */
+.cc-lock {
+  position: absolute;
+  z-index: 2;
+  top: calc(var(--s) * 12px);
+  right: calc(var(--s) * 12px);
+  padding: calc(var(--s) * 3px) calc(var(--s) * 9px);
+  border: 1px solid rgba(255, 120, 145, .42);
+  border-radius: 999px;
+  background: rgba(10, 5, 10, .74);
+  color: rgba(255, 168, 182, .9);
+  font-size: calc(var(--s) * 9px);
+  line-height: 1.5;
+  letter-spacing: .16em;
+  text-indent: .16em;
+  white-space: nowrap;
 }
 
 .overlay.screen-mode .diff-grid {
@@ -2843,7 +2901,7 @@ body {
   padding: 0 calc(var(--s) * 2px);
 }
 .ex-tag {
-  font-size: calc(var(--s) * 8.5px);
+  font-size: max(8px, calc(var(--s) * 8.5px));
   letter-spacing: .26em;
   color: var(--cyan);
   opacity: .72;
@@ -2869,7 +2927,7 @@ body {
 }
 .extend > b {
   font-weight: 400;
-  font-size: calc(var(--s) * 8.5px);
+  font-size: max(9px, calc(var(--s) * 8.5px));
   letter-spacing: .06em;
   color: rgba(214, 251, 255, .66);
   font-variant-numeric: tabular-nums;

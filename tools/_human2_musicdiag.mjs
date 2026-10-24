@@ -1,0 +1,12 @@
+import { launch, sleep } from './_pt_core.mjs';
+const T = await launch({ port: 9624, headless: true });
+await T.boot();
+const a = await T.eval(`({ st: window.__game.state, ov: !document.getElementById('overlay').classList.contains('hidden'), mr: !!document.getElementById('musicRoom'), vis: window.__game.musicRoom && window.__game.musicRoom.visible })`);
+await T.key('KeyM');
+await sleep(800);
+const b = await T.eval(`({ st: window.__game.state, ov: !document.getElementById('overlay').classList.contains('hidden'), mr: !!document.getElementById('musicRoom'), vis: window.__game.musicRoom && window.__game.musicRoom.visible, warn: !!document.querySelector('.mr-warn'), cls: document.getElementById('musicRoom') && document.getElementById('musicRoom').className })`);
+console.log(JSON.stringify({ before: a, after: b }, null, 1));
+await T.key('Escape'); await sleep(500);
+const c = await T.eval(`({ st: window.__game.state, vis: window.__game.musicRoom.visible, cur: window.__game.audio.currentSong, on: window.__game.audio.musicOn })`);
+console.log(JSON.stringify({ afterEsc: c }, null, 1));
+await T.close();

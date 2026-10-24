@@ -822,29 +822,73 @@ class Builder {
     }
     // 出口缓坡：舞台地面在本关最低层，直接接主路会出现一堵跳不上去的高墙。
     // 用 8 列把地面抬回原高度（每列最多抬 1 格，与生成器的可跳性约束一致）。
-    const rampLen = Math.min(8, this.cols - me - 51);
+    // 8 列要抬 8 格太陡（每步都是 1 格宽的竖阶），留够长度时铺成 ~0.6 格/列，跳起来顺手
+    const rampLen = Math.min(14, this.cols - me - 51);
     if (rampLen > 0) {
       const exitTop = this.top[me + rampLen] || this.ground;
+      // 坡道这几列原来的地形可能比舞台高很多：flush() 只会把地面往下重写，
+      // 上层残留的实心块会变成一堵跳不上去的墙（打完妖梦卡在这里）。
+      // 先把坡道各列的「舞台地面以上」全部挖空，再交给 slope 落坡。
+      for (let i = 0; i < rampLen; i++) {
+        const c = me + i;
+        for (let r = 0; r < this.ground; r++) this.set(c, r, AIR);
+      }
       this.slope(me, rampLen, exitTop);
     }
     return { ms, me };
   }
 
+  /**
+   * 坑前起跳区：把每个无底坑左侧 3 列铺成同高、干净的平地。
+   *
+   * 生成器偶尔会在坑前留一格窄台阶（STAGE6 的 col 1109 就是「1 格窄台 + 3 列无底坑」），
+   * 起跳点只有 32px 宽：自动玩家会踩空，人手也容易踩偏。这里只动坑左侧 3 列，
+   * 取三列里最高的地面当基准（不往下挖，避免把金币/装饰擦掉），并夹到与更左一列
+   * 高差 <=1，保证「走近 → 站定 → 起跳」是一条平路。
+   *
+   * 只处理 Boss 场（最后 50 列）之前的坑，关底地形保持原样。
+   */
+  _widenPitRunways() {
+    const limit = Math.max(0, this.cols - 50);
+    for (let c = 3; c < limit; c++) {
+      if (!this.gap[c] || this.gap[c - 1]) continue; // 只看每段坑的第一列
+      let base = Math.min(this.top[c - 1], this.top[c - 2], this.top[c - 3]);
+      // 与再左一列的高差压到 1 格以内，别在起跳区左侧造一堵墙
+      const left = this.top[c - 4];
+      if (Number.isFinite(left)) base = Math.max(left - 1, Math.min(left + 1, base));
+      for (let d = 1; d <= 3; d++) {
+        const col = c - d;
+        const old = this.top[col];
+        // 先清掉这一列原来的地表以上所有东西（尖刺、单向台、蘑菇等）
+        for (let r = 0; r < Math.max(old, base); r++) this.set(col, r, AIR);
+        this.commit(col, base);
+      }
+    }
+  }
+
   placeEntities() {
     // 舞台先挖：见 _prepareMidbossArena 的注释
     const mid = this._prepareMidbossArena();
+    // 坑前起跳区（放在舞台之后：舞台出口坡道不会再被误抬）
+    this._widenPitRunways();
     const lastSafe = this.cols - 70;
     let lastBest = -1;
-    // 检查点：等距放在平地上；尖刺/水面/冰面/已有装饰占位的列跳过
+    // 检查点：等距放在平地上；尖刺/水面/冰面/蘑菇弹床/碎砖/已有装饰占位的列跳过。
+    // 只认「普通草皮/土」地表：检查点落在 'M' 上会让玩家复活瞬间被弹床弹飞，
+    // 落在碎砖 'B' 上会随砖块崩落而失效。
+    const cpSafe = (c) => {
+      const surf = this.surface[c];
+      return !this.gap[c] && (surf === GRASS || surf === DIRT);
+    };
     for (let target = this.nextCheckpoint; target < lastSafe; target += (this.checkpointGap || 260)) {
       let best = -1;
-      // 在 160 列内找一块干净的实地；真正找不到时兜底占用第一个非水面实地列
+      // 在 160 列内找一块干净的实地；真正找不到时兜底占用第一个安全实地列
       for (let d = 0; d < 160; d++) {
         const c = target + d;
         if (c >= lastSafe) break;
-        if (this.gap[c]) continue;
-        const surf = this.surface[c];
-        if (surf === 'W' || surf === 'I') continue;
+        if (!cpSafe(c)) continue;
+        // 脚下 3 列同高：避免落点压在 1 格窄台/台阶边缘，复活后一迈步就掉下去
+        if (this.top[c - 1] !== this.top[c] || this.top[c + 1] !== this.top[c]) continue;
         const row = this.top[c] - 1;
         if (row <= 1) continue;
         if (this.get(c, row) !== AIR) continue;
@@ -853,7 +897,7 @@ class Builder {
       }
       if (best < 0) {
         for (let c = target; c < Math.min(target + 160, lastSafe); c++) {
-          if (!this.gap[c] && this.surface[c] !== 'W') { best = c; this.set(c, this.top[c] - 1, AIR); break; }
+          if (cpSafe(c)) { best = c; this.set(c, this.top[c] - 1, AIR); break; }
         }
       }
       if (best < 0) continue;

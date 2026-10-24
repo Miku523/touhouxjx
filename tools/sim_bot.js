@@ -63,6 +63,7 @@ export function install(opts = {}) {
     stuck: 0,
     bossHpMark: null,
     bossStallT: 0,
+    bossCardTag: null,
     stageStartStep: 0,
   };
 
@@ -161,6 +162,16 @@ export function install(opts = {}) {
       if (!best || score < best.score) best = { hold, score, x: r.x };
     }
     return best;
+  };
+
+  /** planJump 找不到落点区间时的兜底：直接试各档按键帧数，取第一个能落到实地的；
+   *  都落不到就按最远的档位（40 帧）硬跳，空中交给落点修正兜底。 */
+  B.bestHold = (p, L) => {
+    for (let hold = 44; hold >= 0; hold -= 2) {
+      const r = B.predictJump(p, L, hold);
+      if (r.ok) return hold;
+    }
+    return 40;
   };
 
   /* ---------------- 平台关策略 ---------------- */
@@ -264,7 +275,13 @@ export function install(opts = {}) {
         if (B.airPlan.i < B.airPlan.hold) hold('right');
         else B.held.delete('right');
         B.airPlan.i++;
-        if (B.airPlan.i > 90) B.airPlan = null;
+        // 计划失效检测：被弹床/敌弹改了轨迹后，原跳跃弧线可能直接落进坑。
+        // 一旦预测落点不是实地就作废计划，交给下面的空中落点修正重新决策。
+        if (B.airPlan.i > 2) {
+          const dirNow = B.held.has('right') ? 1 : B.held.has('left') ? -1 : 0;
+          if (!B.predict(p, L, dirNow).ok) B.airPlan = null;
+        }
+        if (B.airPlan && B.airPlan.i > 90) B.airPlan = null;
       }
     }
 
@@ -276,7 +293,7 @@ export function install(opts = {}) {
         // 用落点预测挑选跳跃力度：坑后最近的落脚点可能是水面碎冰，满速跳会飞过头
         const plan = B.planJump(p, L);
         tap('jump'); B.jumps++;
-        B.airPlan = { hold: plan ? plan.hold : 40, i: 0 };
+        B.airPlan = { hold: plan ? plan.hold : B.bestHold(p, L), i: 0 };
       }
     } else if (!B.dropping && wall && p.vy > -160 && p.jumpsLeft > 0) {
       tap('jump'); B.jumps++;
@@ -543,6 +560,15 @@ export function install(opts = {}) {
 
       // Boss 掉血停滞（卡住/无敌/相位卡死）
       if (s.boss && s.boss.state !== 'dead' && s.state === 'boss') {
+        // 符卡切换记录：用来核对每张卡都进得去、出得来（卡表/限时/血量）
+        const tag = (s.boss.key || '?') + '#' + s.boss.spellIdx;
+        if (B.bossCardTag !== tag) {
+          B.bossCardTag = tag;
+          B.events.push({
+            at: sec(), kind: 'boss-card', key: s.boss.key || '?', idx: s.boss.spellIdx,
+            name: s.boss.phaseName || '', hp: Math.round(s.boss.hp), maxHp: Math.round(s.boss.maxHp),
+          });
+        }
         const hp = s.boss.hp;
         if (B.bossHpMark === null || hp < B.bossHpMark) {
           B.bossHpMark = hp;
@@ -551,7 +577,7 @@ export function install(opts = {}) {
           B.bossStallT++;
           if (B.bossStallT > 2400 && B.bossStallLogs < 6) {
             B.bossStallLogs++;
-            B.events.push({ at: sec(), kind: 'boss-hp-stall', hp: Math.round(hp), phase: s.boss.spellIdx, bossState: s.boss.state });
+            B.events.push({ at: sec(), kind: 'boss-hp-stall', key: s.boss.key || '?', name: s.boss.phaseName || '', hp: Math.round(hp), phase: s.boss.spellIdx, bossState: s.boss.state });
             B.bossStallT = 0;
           }
         }

@@ -152,7 +152,7 @@ export const DIFFICULTIES = {
     stageCount: 6,
     unlockExtra: false,
     trimHardCards: [],
-    // 芙兰 27080 × 1.1（BOSS_HP_MUL）× 1.8 × 全局 0.9 ≈ 48,236：按当前自机输出约 10 分钟打完
+    // 芙兰 27080 × 1.1（BOSS_HP_MUL）× 1.8 × 全局 0.9 ≈ 48,257（运行时实测）：满火力约 4 分钟打完
     hpScale: 1.8,
     // 弹幕：弹量翻倍，弹速继续抬，开火间隔压到 L 的九成
     bulletCountScale: 2.05,

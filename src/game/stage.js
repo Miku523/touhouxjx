@@ -127,6 +127,9 @@ const TIME_SHIFT = {
 export const VIEW_W = 1280;
 export const VIEW_H = 720;
 
+// 前景剪影层按主题全局缓存（烘焙一次、整局复用）：见 _fgBake
+const FG_LAYERS = new Map();
+
 // 符卡卡面暗幕的「玩家亮区半径」（px）：spec §3.4 要求 darkSpot 在玩家周围留 150–180px 亮区。
 // 注意 cardfx.js 里 playerR 是亮区半径（r1 ≈ 2.5×，做柔边），不是判定半径，
 // 所以这里不能用 playerHitPoint.r（只有几像素，会把整屏糊黑）。
@@ -1900,6 +1903,8 @@ export class Stage {
   /* 前景剪影：贴边的东西（枝、苇、竹、花）作为「最近一层」。
      为了像镜头近景，整层一次性烘焙并加轻微模糊，运行时只做横向视差位移。 */
   _fgBake(theme) {
+    // 同一主题的前景层在所有关卡里都一样：全局缓存，重开/换关不再重烤
+    if (FG_LAYERS.has(theme)) return FG_LAYERS.get(theme);
     const W = VIEW_W, H = VIEW_H;
     const cw = W + 160, ch = H;
     const cv = document.createElement('canvas');
@@ -2059,8 +2064,6 @@ export class Stage {
     };
 
     ctx.save();
-    ctx.filter = 'blur(4px)';
-    ctx.globalAlpha = 0.96;
     const X = (x) => x + 80; // 左右各留 80 出血
 
     if (theme === 'shrine') {
@@ -2100,7 +2103,22 @@ export class Stage {
       trunk(X(W + 20), H + 30, 380, 84, -1);
     }
     ctx.restore();
-    return cv;
+    // 模糊必须整层做一次，不能挂在 ctx.filter 上逐笔做：
+    // filter 生效时每一笔描边/填充都会被单独光栅化一次模糊，这层有上千笔，
+    // 软件光栅下首次绘制要 9–10 秒（进关整屏卡死）。整层一次 blur 后
+    // 光栅成本从「上千次小模糊」变成「一次全屏模糊」，视觉几乎一致。
+    const out = document.createElement('canvas');
+    out.width = cw;
+    out.height = ch;
+    const octx = out.getContext('2d');
+    if (!octx) return cv;
+    octx.save();
+    octx.filter = 'blur(4px)';
+    octx.globalAlpha = 0.96;
+    octx.drawImage(cv, 0, 0);
+    octx.restore();
+    FG_LAYERS.set(theme, out);
+    return out;
   }
 
   _drawForeground(ctx, theme, cam) {
