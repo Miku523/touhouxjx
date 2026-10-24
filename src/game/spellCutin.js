@@ -9,6 +9,8 @@
  * 总时长 1.15s，期间游戏照常推进（伤害与判定不在这里结算）。
  */
 
+import { tr } from '../i18n/index.js';
+
 const BASE = new URL('../art/gen/', import.meta.url);
 
 /** 各角色可用的符卡名，按释放次数轮流切换（同名连放会腻） */
@@ -108,8 +110,8 @@ export class SpellCutin {
     const spell = list[this._n[key]++ % list.length];
     this._last = key;
 
-    this._setName(spell.name);
-    if (this.elSub) this.elSub.textContent = spell.sub;
+    this._setName(tr(spell.name));
+    if (this.elSub) this.elSub.textContent = tr(spell.sub);
     this.el.classList.toggle('marisa', key === 'marisa');
     this._paint(key);
 

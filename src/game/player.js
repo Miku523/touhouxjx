@@ -231,7 +231,10 @@ export class Player {
     if (grounded) this.jumpsLeft = 1;
 
     // ---------- 输入 ----------
-    const dir = input.axisX;
+    // 摇杆给的是 -1..1 的模拟量：幅度直接决定目标速度（轻推慢走、推满奔跑），
+    // 方向只用来转向 / 冲刺；死区边上的微小倾斜（<0.2）不该把朝向和冲刺方向带偏。
+    const move = input.moveX || 0;
+    const dir = Math.abs(move) > 0.2 ? Math.sign(move) : 0;
     if (dir !== 0) this.facing = dir;
 
     if (input.pressed('jump')) this.jumpBuffer = TUNE.buffer;
@@ -294,10 +297,11 @@ export class Player {
         accel *= TUNE.iceAccelMul;
         friction *= TUNE.iceFrictionMul;
       }
-      if (dir !== 0) {
+      if (Math.abs(move) > 0.02) {
         let a = accel;
-        if (this.vx * dir < 0) a = grounded ? TUNE.accelTurn : accel * 1.6;
-        this.vx = approach(this.vx, dir * runCap, a * dt);
+        if (this.vx * move < 0) a = grounded ? TUNE.accelTurn : accel * 1.6;
+        // 模拟量：轻推时目标速度随之降低，松手前不会有“一下窜满速”的割裂感
+        this.vx = approach(this.vx, move * runCap, a * dt);
       } else {
         this.vx = approach(this.vx, 0, friction * dt);
       }

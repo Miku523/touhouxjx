@@ -14,6 +14,7 @@
 
 import { LEVELS } from '../src/assets/levels.js';
 import { buildLevelRows } from '../src/assets/levelgen.js';
+import { POWER } from '../src/game/power.js';
 import { Stage } from '../src/game/stage.js';
 
 let fail = 0;
@@ -50,33 +51,93 @@ const mid = def?.midboss;
 ok(!!mid, 'stage5.def.midboss 存在');
 eq(mid?.key, 'youmu', 'midboss.key = youmu');
 eq(def?.boss, 'yuyuko', '关底仍是 yuyuko');
-for (const f of ['triggerFromEnd', 'arenaFromEnd', 'arenaHalf', 'breathDist', 'breathSec', 'directPower']) {
+for (const f of ['triggerFromEnd', 'arenaFromEnd', 'arenaHalf', 'breathDist', 'breathSec']) {
   ok(Number.isFinite(mid?.[f]) && mid[f] > 0, `midboss.${f} 是正数（${mid?.[f]}）`);
 }
 ok(def?.gen?.midboss === mid, 'gen.midboss 与 def.midboss 是同一份对象（只有一套像素数）');
 ok(mid.triggerFromEnd > mid.arenaFromEnd, '触发线在舞台之前');
+// 开场准备区：4 枚 P（= 1 级火力）+ 1UP，全部摆在地图上由玩家自己捡
+eq(mid?.opening?.power, 4, '开场准备区摆 4 枚 P 点');
+eq(mid?.opening?.life, 1, '开场准备区摆 1 枚 1UP');
+ok(mid.opening.power * POWER.pickup >= POWER.perLevel,
+  `4 枚 P = ${mid.opening.power * POWER.pickup} 点，够开场升一级火力（${POWER.perLevel}/级）`);
+eq(mid?.dropLife, 1, '击破妖梦掉落 1 枚 1UP');
+// 第一个道中已取消：关卡只由「准备区 + 舞台 + 第二道中 + 关底场」组成
+const arenaCenterCol = def.gen.cols - Math.round(mid.arenaFromEnd / T);
+const arenaHalfCol = Math.round(mid.arenaHalf / T);
+const prepCols = arenaCenterCol - arenaHalfCol;
+ok(prepCols >= 24, `舞台左侧留着开场准备区（${prepCols} 列）`);
+ok(arenaCenterCol + arenaHalfCol <= def.gen.cols - 54, '舞台右侧仍留出出口缓坡 / 第二道中 / 关底场');
+ok(def.gen.cols <= 320, `第一个道中已取消：关卡缩短到 ${def.gen.cols} 列`);
 
 // ---------------------------------------------------------------------------
-console.log('\n[2] levelgen：舞台 / 停怪 / P 补偿');
+console.log('\n[2] levelgen：准备区 / 舞台 / 停怪 / 检查点');
 // ---------------------------------------------------------------------------
-const info = buildLevelRows({ ...def.gen, collectStats: true }).debug.midboss;
+const built = buildLevelRows({ ...def.gen, collectStats: true });
+const info = built.debug.midboss;
+const rowsForScan = built.rows;
 ok(!!info, 'levelgen 产出了 midbossInfo');
 ok(info && info.suppressed > 0, `舞台窗口里取消了小怪（${info?.suppressed} 只）`);
-ok(info && info.power >= 2, `至少撒了 2 枚 P（${info?.power} 枚）`);
+/** 统计 [c0,c1) 列内某字符的数量 */
+const countCh = (ch, c0, c1) => {
+  let n = 0;
+  for (let c = c0; c < c1; c++) {
+    for (let r = 0; r < rowsForScan.length; r++) if (rowsForScan[r][c] === ch) n++;
+  }
+  return n;
+};
+const ground = def.gen.ground;
 if (info) {
-  const rowsForScan = buildLevelRows({ ...def.gen }).rows;
+  // ---- 开场准备区：4P + 1UP 摆在路面上，玩家自己捡 ----
+  const prep = info.opening;
+  ok(!!prep, 'levelgen 产出了开场准备区信息（opening）');
+  eq(prep?.power, mid.opening.power, `准备区实际摆了 ${mid.opening.power} 枚 P 点`);
+  eq(prep?.life, mid.opening.life, '准备区实际摆了 1 枚 1UP');
+  eq(countCh('p', 0, info.from), mid.opening.power, '准备区的 P 点数量与配置一致');
+  eq(countCh('U', 0, info.from), mid.opening.life, '准备区的 1UP 数量与配置一致');
+  eq(countCh('s', 0, info.from) + countCh('f', 0, info.from), 0, '准备区没有小怪（纯补给 + 跑图）');
+  ok(countCh('C', 0, info.from) === 0, '准备区不设检查点（出生点即复活点）');
+  // 出生点：必须落在准备区最左端，玩家要一路向右才能捡到补给
+  let spawnC = -1;
+  for (let c = 0; c < info.from; c++) {
+    for (let r = 0; r < rowsForScan.length; r++) if (rowsForScan[r][c] === 'P') spawnC = c;
+  }
+  ok(spawnC >= 0 && spawnC < 8, `出生点在准备区左端（col ${spawnC}）`);
+  // P 点 / 1UP 都在出生点右边 → 一定得自己走过去
+  let minItemC = Infinity;
+  let maxItemC = -1;
+  for (let c = 0; c < info.from; c++) {
+    for (let r = 0; r < rowsForScan.length; r++) {
+      if (rowsForScan[r][c] === 'p' || rowsForScan[r][c] === 'U') {
+        minItemC = Math.min(minItemC, c);
+        maxItemC = Math.max(maxItemC, c);
+      }
+    }
+  }
+  ok(minItemC > spawnC + 2, `第一枚补给在出生点右侧（col ${minItemC}）`);
+  ok(maxItemC < Math.round(mid.triggerFromEnd ? def.gen.cols - mid.triggerFromEnd / T : 0) + 1,
+    `最后一枚补给在妖梦触发线之前（col ${maxItemC}）`);
+  // 准备区地形：整段平地，跑过去不会被坑/台阶打断
+  let prepFlat = true;
+  for (let c = 0; c < info.from; c++) {
+    const ch = rowsForScan[ground][c];
+    if (ch !== 'G' && ch !== '#') { prepFlat = false; break; }
+  }
+  ok(prepFlat, '准备区是一整排平地（row ' + ground + '）');
+
+  // ---- 舞台窗口：不刷小怪、不再撒 P / 金币 ----
   let fairies = 0;
-  let powerItems = 0;
   for (let c = info.from; c < info.to; c++) {
     for (let r = 0; r < rowsForScan.length; r++) {
       const ch = rowsForScan[r][c];
       if (ch === 's' || ch === 'f') fairies += 1;
-      if (ch === 'p') powerItems += 1;
     }
   }
-  eq(fairies, 0, '舞台窗口（不含入口缓冲）内没有地面 / 飞行妖精');
-  ok(powerItems >= 2, `舞台窗口内有 P 补偿（${powerItems} 枚）`);
-  const ground = def.gen.ground;
+  eq(fairies, 0, '舞台窗口内没有地面 / 飞行妖精');
+  eq(info.power, 0, '舞台窗口不再撒补偿 P（火力改由准备区补给）');
+  eq(countCh('p', info.from, info.to), 0, '舞台窗口内没有 P 点');
+  eq(countCh('U', info.from, info.to), 0, '舞台窗口内没有额外 1UP');
+  eq(countCh('o', info.from - 10, info.to + 10), 0, '舞台窗口内没有金币（战斗场地保持干净）');
   let flat = true;
   for (let c = info.from; c < info.to; c++) {
     const ch = rowsForScan[ground][c];
@@ -84,8 +145,8 @@ if (info) {
   }
   ok(flat, '舞台地面是一整排平地（row ' + ground + '）');
 
-  // 出口缓坡：舞台地面是最低层，接回主路必须是「一列最多抬一格」的阶梯，
-  // 而且坡道上方的老地形必须被挖空 —— 否则打完整场后会被一堵高墙堵死（真实回归 bug）。
+  // ---- 出口缓坡：舞台地面是最低层，接回主路必须是「一列最多抬一格」的阶梯，
+  //      而且坡道上方的老地形必须被挖空 —— 否则打完整场后会被一堵高墙堵死（真实回归 bug）。
   const h = rowsForScan.length;
   const SOLID_CH = new Set(['G', '#', 'B']);
   const topOf = (c) => {
@@ -106,6 +167,25 @@ if (info) {
   ok(noOverhang, '坡道上方的旧地形已挖空（不会变成一堵墙）');
   ok(topOf(me + rampLen) <= topOf(me) - 4, `坡道抬升了 ${topOf(me) - topOf(me + rampLen)} 格（接到主路）`);
   ok(Math.abs(topOf(me + rampLen) - topOf(me + rampLen + 1)) <= 1, '坡顶与主路地面高差 ≤1 格（能走下去）');
+
+  // ---- 第二道中：短关卡自己补一个检查点 ----
+  const cpCols = [];
+  for (let c = 0; c < rowsForScan[0].length; c++) {
+    for (let r = 0; r < h; r++) if (rowsForScan[r][c] === 'C') cpCols.push({ c, r });
+  }
+  ok(cpCols.length >= 1, `第二道中补了检查点（${cpCols.length} 个）`);
+  const cp = cpCols[0];
+  if (cp) {
+    ok(cp.c > me + rampLen, `检查点在出口坡道之后（col ${cp.c}）`);
+    ok(cp.c * T < def.gen.cols * T - 940, '检查点在关底触发线之前');
+    ok(SOLID_CH.has(rowsForScan[cp.r + 1][cp.c]), '检查点脚下是实地（复活不会直接掉下去）');
+  }
+  // 第二道中：舞台之后到关底场之间仍要有小怪 / 金币（不是一条空跑道）
+  const corridorFrom = me + rampLen;
+  const corridorTo = def.gen.cols - 50;
+  ok(countCh('s', corridorFrom, corridorTo) + countCh('f', corridorFrom, corridorTo) > 0,
+    '第二道中仍有小怪');
+  ok(countCh('o', corridorFrom, corridorTo) > 0, '第二道中有金币串');
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +268,20 @@ console.log('\n[4] 整局模拟：道中 → 妖梦 → 呼吸区 → 幽幽子 
   const midTriggerPx = w - cfg.triggerFromEnd;
   const finalTriggerPx = Math.max(200, Math.min(st.goalX - 120, w - 520 - 420));
 
+  // 开场准备区：从出生点一路往右走过去，4 枚 P + 1 枚 1UP 全部自己捡
+  const livesAtStart = p.lives;
+  const powerAtStart = p.power;
+  let walkGuard = 0;
+  while (p.x + p.w / 2 < midTriggerPx - 40 && walkGuard < 2000) {
+    frameAt(p.x + p.w / 2 + 8);
+    walkGuard += 1;
+  }
+  eq(count('power'), mid.opening.power, `准备区路上捡到 ${mid.opening.power} 枚 P 点`);
+  eq(p.power - powerAtStart, mid.opening.power * POWER.pickup,
+    `捡完 P 点火力 +${mid.opening.power * POWER.pickup}（不是系统自动补的）`);
+  eq(p.lives - livesAtStart, mid.opening.life, '准备区的 1UP 让残机 +1');
+  eq(count('bossTrigger'), 0, '捡补给的过程中还没进妖梦战');
+
   // 道中：妖梦线之前跑 2 秒
   for (let i = 0; i < 120; i++) frameAt(midTriggerPx - 300);
   eq(count('bossTrigger'), 0, '妖梦线之前 2 秒内没有任何 Boss 触发');
@@ -214,7 +308,8 @@ console.log('\n[4] 整局模拟：道中 → 妖梦 → 呼吸区 → 幽幽子 
   eq(st.bossMid, true, 'bossMid = true');
   ok(Math.abs(st.boss.x - (w - cfg.arenaFromEnd)) <= 1,
     `妖梦站舞台中心（x=${Math.round(st.boss.x)}）`);
-  eq(p.power - powerBefore, cfg.directPower, `进战一次性补火力 +${cfg.directPower}`);
+  eq(p.power, powerBefore, '开战不再自动补火力（火力只能靠准备区自己捡）');
+  eq(count('extend'), mid.opening.life, '开战前后残机只来自准备区那枚 1UP');
 
   // 把 Boss 实例的弹幕/命中接口换成空实现，只走 stage 的派发路径
   const youmu = st.boss;
@@ -238,6 +333,7 @@ console.log('\n[4] 整局模拟：道中 → 妖梦 → 呼吸区 → 幽幽子 
 
   // 击破妖梦：走 boss.state='dead' → update 的真实派发
   const powerAtMidClear = p.power;
+  const youmuX = youmu.x;
   youmu.state = 'dead';
   st.update(1 / 60, idle);
   const mc = st._events.find((e) => e.n === 'midbossClear');
@@ -251,6 +347,24 @@ console.log('\n[4] 整局模拟：道中 → 妖梦 → 呼吸区 → 幽幽子 
 
   const midClearX = st._midClearX;
   ok(Math.abs(midClearX - (p.x + p.w / 2)) < 1, '呼吸区基准 = 击破瞬间的玩家位置');
+
+  // 击破掉落：一枚 1UP 从空中落到舞台地面，玩家得自己走过去捡（见 midboss.dropLife）
+  const lifeBeforeDrop = p.lives;
+  const drops = st.pickups.filter((it) => it.kind === 'oneup' && !it.taken);
+  eq(drops.length, mid.dropLife, `妖梦击破掉落 ${mid.dropLife} 枚 1UP`);
+  const drop = drops[0];
+  ok(!!drop && drop.drop === true, '1UP 从空中落下（不是击破即到账）');
+  ok(!!drop && Math.abs(drop.x - youmuX) <= 60, '1UP 落在妖梦击破的位置');
+  // 人先站远一点，等它掉完：落地前不能捡
+  frameAt(youmuX - 400);
+  for (let i = 0; i < 90; i++) idleFrame();
+  ok(!!drop && drop.drop === false, '1UP 落地后转为可拾取');
+  eq(drop?.taken, false, '没有走近就还没被捡走');
+  eq(p.lives, lifeBeforeDrop, '没捡之前残机不变（不是击破自动给）');
+  frameAt(drop.x);
+  eq(drop?.taken, true, '走到掉落位置 → 1UP 被捡起');
+  eq(p.lives, lifeBeforeDrop + mid.dropLife, `捡起 1UP 后残机 +${mid.dropLife}`);
+  eq(count('extend'), mid.opening.life + mid.dropLife, '两枚 1UP 都走统一的 extend 通道（横幅/音效一致）');
 
   // 呼吸区：原地 + 小幅前进都不该放幽幽子
   const bossTriggersAfterMid = count('bossTrigger');

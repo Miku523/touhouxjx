@@ -1,0 +1,370 @@
+/* ============================================================
+   多端平台层样式（src/ui/platform.css）
+   - 桌面端：这里没有任何「默认可见」的选择器，加载本文件不改变 1280x720 桌面外观。
+   - 移动端：所有修复都挂在 <html class="touch|ios|android|harmony|wechat|qq|webview|standalone">
+     下面，class 由 src/ui/platform.js 识别后添加。
+   - 版本：与 platform.js 的 PLATFORM_VERSION 同步，改完记得更新 index.html 的 ?v=。
+   ============================================================ */
+
+:root {
+  /* 安全区（刘海屏 / 手势条 / 圆角屏） */
+  --sar: env(safe-area-inset-right, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  /* JS 会写入精确 px 值；这里是 JS 还没跑起来时的兜底 */
+  --app-h: 100vh;
+  --app-w: 100vw;
+  --vh: 1vh;
+  /* 平台层 UI 的层级：远高于游戏内最大 z-index 120 */
+  --hks-z-install: 9000;
+  --hks-z-a2hs: 9100;
+  --hks-z-toast: 9200;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --app-h: 100dvh;
+    --app-w: 100dvw;
+  }
+}
+
+/* ------------------------------------------------------------
+   1) 触屏 / 内置 WebView 基础修复
+   ------------------------------------------------------------ */
+
+html.touch {
+  height: var(--app-h);
+  min-height: var(--app-h);
+  overscroll-behavior: none;
+  touch-action: manipulation; /* 干掉双击缩放（保留单指拖动给游戏自己处理） */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  /* 重要：style.css 里有一条 .touch（虚拟手柄底栏 #touch 的样式）会命中 <html class="touch">，
+     它把 html 变成 position:fixed + display:flex + padding + pointer-events:none，
+     导致 body 缩成 shrink-to-fit、画面偏到左边、整个页面收不到点击。
+     这里用更高优先级（html.touch > .touch）把根元素还原成普通块级文档。 */
+  position: static;
+  z-index: auto;
+  display: block;
+  padding: 0;
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+html.touch > body {
+  height: var(--app-h);
+  min-height: var(--app-h);
+  overscroll-behavior: none;
+}
+
+/* 游戏画面：不要滚动/缩放/长按菜单/选中文字 */
+html.touch #wrap,
+html.touch #game,
+html.touch canvas {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 微信 / QQ：微信会自己加下拉刷新和顶部地址栏，页面本身不滚动时禁止橡皮筋 */
+html.wechat,
+html.qq {
+  overscroll-behavior: none;
+}
+html.wechat body,
+html.qq body {
+  overscroll-behavior: none;
+}
+
+/* iOS 独立模式（从主屏幕启动）：没有浏览器 chrome，顶部安全区要自己让出来 */
+html.touch.standalone #wrap {
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
+  box-sizing: border-box;
+}
+
+/* 横屏刘海：左右安全区给 HUD 让位 */
+@media (orientation: landscape) {
+  html.touch.ios #wrap {
+    padding-left: var(--sal);
+    padding-right: var(--sar);
+    box-sizing: border-box;
+  }
+}
+
+/* ------------------------------------------------------------
+   2) 安装条（beforeinstallprompt → 底部卡片）
+   ------------------------------------------------------------ */
+
+.hks-install {
+  position: fixed;
+  left: 50%;
+  bottom: calc(12px + var(--sab));
+  z-index: var(--hks-z-install);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: min(460px, calc(100vw - 20px));
+  padding: 10px 12px;
+  border: 1px solid rgba(242, 210, 75, 0.42);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(27, 18, 38, 0.97), rgba(16, 10, 24, 0.97));
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: var(--text, #f2e9d8);
+  font: 13px/1.45 var(--serif, "Songti SC", "SimSun", serif), "PingFang SC", "Microsoft YaHei", sans-serif;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, calc(100% + 40px));
+  transition: transform 0.3s cubic-bezier(0.22, 0.9, 0.28, 1), opacity 0.22s ease;
+  will-change: transform, opacity;
+}
+
+.hks-install.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+
+.hks-install-icon {
+  flex: 0 0 auto;
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.hks-install-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hks-install-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hks-install-text b {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--gold, #f2d24b);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hks-install-text i {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--dim, rgba(242, 233, 216, 0.62));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hks-install-go {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 18px;
+  background: linear-gradient(180deg, #ff5d72, var(--reimu, #e8364f));
+  color: #fff;
+  font: 700 13px/1 var(--serif, serif);
+  letter-spacing: 0.06em;
+  box-shadow: 0 4px 14px rgba(232, 54, 79, 0.42);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hks-install-go:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.hks-install-x {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 0;
+  width: 26px;
+  height: 26px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dim, rgba(242, 233, 216, 0.62));
+  font: 400 18px/1 "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hks-install-x:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ------------------------------------------------------------
+   3) iOS「添加到主屏幕」图文提示（一次）
+   ------------------------------------------------------------ */
+
+.hks-a2hs {
+  position: fixed;
+  inset: 0;
+  z-index: var(--hks-z-a2hs);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px calc(14px + var(--sar)) calc(14px + var(--sab)) calc(14px + var(--sal));
+  box-sizing: border-box;
+  background: rgba(3, 2, 8, 0.66);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.hks-a2hs.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.hks-a2hs-card {
+  width: min(430px, 100%);
+  box-sizing: border-box;
+  padding: 16px 18px 12px;
+  border: 1px solid rgba(255, 158, 203, 0.3);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #1d1329, #120b1b);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: var(--text, #f2e9d8);
+  font: 13px/1.5 var(--serif, "Songti SC", "SimSun", serif), "PingFang SC", "Microsoft YaHei", sans-serif;
+  transform: translateY(14px);
+  transition: transform 0.26s cubic-bezier(0.22, 0.9, 0.28, 1);
+}
+
+.hks-a2hs.show .hks-a2hs-card {
+  transform: none;
+}
+
+.hks-a2hs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 158, 203, 0.16);
+}
+
+.hks-a2hs-head b {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sakura, #ff9ecb);
+  letter-spacing: 0.04em;
+}
+
+.hks-a2hs-x {
+  appearance: none;
+  border: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--dim, rgba(242, 233, 216, 0.62));
+  font: 400 18px/1 "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.hks-a2hs-steps {
+  list-style: none;
+  margin: 12px 0 4px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.hks-a2hs-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text, #f2e9d8);
+}
+
+.hks-a2hs-ico {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: rgba(110, 231, 255, 0.1);
+  border: 1px solid rgba(110, 231, 255, 0.26);
+  color: var(--cyan, #6ee7ff);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.hks-a2hs-foot {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: var(--dim, rgba(242, 233, 216, 0.5));
+  text-align: center;
+}
+
+/* ------------------------------------------------------------
+   4) Toast
+   ------------------------------------------------------------ */
+
+.hks-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(26px + var(--sab));
+  z-index: var(--hks-z-toast);
+  box-sizing: border-box;
+  max-width: min(86vw, 520px);
+  padding: 10px 18px;
+  border: 1px solid rgba(242, 210, 75, 0.34);
+  border-radius: 999px;
+  background: rgba(8, 5, 14, 0.94);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  color: var(--text, #f2e9d8);
+  font: 13px/1.5 var(--serif, "Songti SC", "SimSun", serif), "PingFang SC", "Microsoft YaHei", sans-serif;
+  text-align: center;
+  text-wrap: balance;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 10px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.hks-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* 平台层浮层统一不吃指针事件，避免挡住游戏点击（.show 时才接收） */
+.hks-install,
+.hks-toast {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hks-install,
+  .hks-a2hs,
+  .hks-a2hs-card,
+  .hks-toast {
+    transition-duration: 0.01ms;
+  }
+}

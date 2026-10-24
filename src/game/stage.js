@@ -19,7 +19,7 @@ import { Boss } from './boss.js';
 import { getDifficulty, enemyStageDensityOf } from './difficulty.js';
 import { scalePlayerDamage } from './balance.js';
 import { StgPlayer, StgStage } from './stg.js';
-import { POWER, powerLevel } from './power.js';
+import { POWER, powerLevel, cardClearPower, cardNoHitPower } from './power.js';
 import { drawSky, drawParallax, drawTiles, drawAmbient } from '../art/scenes.js';
 // 符卡表现层：卡面叠加（屏幕空间）与逐卡玩家效果，只有纯函数、不反向 import stage，
 // 所以这里静态引入不会形成循环依赖（docs/BOSS_TIMING_SPEC.md §3.4）。
@@ -30,19 +30,19 @@ import { updateCardEffect } from './cardEffects.js';
  * EXTRA 关的时间轴（秒）。
  *
  * EXTRA 不再是「一进关就开打」的快速 Boss 战，而是一条完整的道中：
- *   0:00 ─ 3:00   零火力起手的长道中 A（敌机波次一路铺到 3 分钟）
- *   3:00          雷米莉亚当中途 Boss 拦路（两张符卡，不打通进不去）
- *   3:00 ─ 6:00   击破后道中 B 继续推进（3 分钟）
- *   6:00          芙兰朵露登场收尾
- * 道中合计 6:00，叠上中途 Boss 约 2 分钟的实际战斗，
- * 手感到芙兰登场大约是 8 分钟，随后是约 10 分钟的芙兰战。
+ *   0:00 ─ 2:00   零火力起手的长道中 A（敌机波次一路铺到 2 分钟）
+ *   2:00          雷米莉亚当中途 Boss 拦路（两张符卡，不打通进不去）
+ *   2:00 ─ 3:00   击破后道中 B 继续推进（1 分钟收束段）
+ *   3:00          芙兰朵露登场收尾
+ * 道中合计 3:00，叠上中途 Boss 约 2 分钟的实际战斗，
+ * 手感到芙兰登场大约是 5 分钟，随后是约 10 分钟的芙兰战。
  * 计时只在「可以操作道中」时推进：Boss 战、对话、死亡都暂停，
  * 所以中途 Boss 打多久都不会把后面的节奏挤掉。
  */
 export const EXTRA_TIMELINE = Object.freeze({
   midbossKey: 'remilia', // 中途 Boss 的键：时间轴与「再战」共用，别两处写死
-  midbossAt: 180,   // 3:00 雷米莉亚
-  finalAt: 360,     // 6:00 芙兰登场（中途 Boss 击破后还有 3 分钟道中）
+  midbossAt: 120,   // 2:00 雷米莉亚
+  finalAt: 180,     // 3:00 芙兰登场（中途 Boss 击破后还有 1 分钟道中）
   retryPower: 48,   // 中途 / 终盘再战时的起手火力（Lv.4 起手，别让复习从零开始）
 });
 
@@ -266,6 +266,72 @@ function ofudaPaper() {
   });
 }
 
+/** 1UP 光环：粉色柔光（和金币金晕、P 点蓝晕一眼分得开） */
+function oneupGlow() {
+  return bakeSprite('oneupGlow', 72, 72, (g) => {
+    const r = g.createRadialGradient(36, 36, 3, 36, 36, 35);
+    r.addColorStop(0, 'rgba(255, 214, 240, 0.62)');
+    r.addColorStop(0.42, 'rgba(255, 120, 200, 0.24)');
+    r.addColorStop(1, 'rgba(230, 60, 160, 0)');
+    g.fillStyle = r;
+    g.beginPath();
+    g.arc(36, 36, 35, 0, Math.PI * 2);
+    g.fill();
+  });
+}
+
+/**
+ * 1UP 掉落图：粉红「残机之证」徽章（1UP 字样 + 白环 + 心跳光晕）。
+ *
+ * 掉落图和 P 点符札完全分开：P 点是蓝白纸符札（竖条），1UP 是圆徽章、粉红光、
+ * 带心跳式脉冲——玩家在弹幕里扫一眼就知道这是「命」而不是火力。
+ * 徽章内部只放「1UP」三个字母：之前在里面塞小白心，撑到 30px 显示时心会压住字，
+ * 远看只剩一团粉色，所以改成「字最大、装饰最小」。
+ */
+function oneupBadge() {
+  return bakeSprite('oneupBadge', 48, 48, (g) => {
+    const cx = 24;
+    const cy = 24;
+    // 深洋红描边打底，任何背景上都有轮廓
+    g.beginPath();
+    g.arc(cx, cy, 17.4, 0, Math.PI * 2);
+    g.fillStyle = '#4a0f2c';
+    g.fill();
+    // 徽章主体：上亮下深的粉红渐变
+    const bg = g.createLinearGradient(cx, cy - 15, cx, cy + 15);
+    bg.addColorStop(0, '#fff0f8');
+    bg.addColorStop(0.32, '#ff9dd4');
+    bg.addColorStop(0.72, '#f24aa4');
+    bg.addColorStop(1, '#b81f74');
+    g.beginPath();
+    g.arc(cx, cy, 15.2, 0, Math.PI * 2);
+    g.fillStyle = bg;
+    g.fill();
+    // 内圈白环
+    g.beginPath();
+    g.arc(cx, cy, 12.6, 0, Math.PI * 2);
+    g.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+    g.lineWidth = 1.3;
+    g.stroke();
+    // 1UP 字样（粗描边 + 实心：缩到 34px 也读得出来）
+    g.font = 'bold 12px system-ui, -apple-system, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.lineWidth = 2.8;
+    g.lineJoin = 'round';
+    g.strokeStyle = 'rgba(74, 15, 44, 0.95)';
+    g.strokeText('1UP', cx, cy + 1.2);
+    g.fillStyle = '#fffdf7';
+    g.fillText('1UP', cx, cy + 1.2);
+    // 左上高光弧
+    g.strokeStyle = 'rgba(255, 255, 255, 0.82)';
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.arc(cx - 0.8, cy - 0.8, 10.2, Math.PI * 0.9, Math.PI * 1.36);
+    g.stroke();
+  });
+}
+
 /** 检查点：石灯籠（未点亮 / 已点亮） */
 function lanternSprite(on) {
   return bakeSprite(on ? 'lanternOn' : 'lanternOff', 48, 96, (g) => {
@@ -390,6 +456,8 @@ export class Stage {
     this.pendingBossKey = null;
     this.pendingBossMid = false;
     this.midbossDone = false;
+    // 当前符卡是否被弹 / 落命过（无伤奖励判定）：切卡、开战、intro→battle 时清零
+    this._cardDamaged = false;
     // 平台关的中途 Boss（目前只有 STAGE5 的妖梦）：
     // 触发线 / 舞台 / 呼吸区全部来自关卡配置 def.midboss（与 levelgen 共用同一份对象），
     // 引擎里不写死任何 Boss key —— EXTRA 的雷米莉亚走的是下面另一套时间轴。
@@ -412,7 +480,7 @@ export class Stage {
       this.player = new StgPlayer({ char: this.char, lives: opts.lives || 3, power: opts.power || 0 });
       // 分面密度：2–6 面道中敌机齐射更稀（Extra 传 0 → 1.00）
       this.stg = new StgStage(this.level, this.diff, enemyStageDensityOf(this.extra ? 0 : this.index + 1));
-      // EXTRA 的道中要撑满 5 分钟：换成更密、更有节奏起伏的波次表
+      // EXTRA 的道中要撑满 3 分钟：换成更密、更有节奏起伏的波次表
       if (this.extra) this._buildExtraWaves();
       this.camera.x = 0;
       this.camera.y = 0;
@@ -431,7 +499,8 @@ export class Stage {
     this.castFx = 0;
     // 1UP 累计：拾取的 POWER 每满 99 点 → 恢复 1 条残机，清零后继续循环。
     // 进出关卡时由 main.js 带着走，跨关不清零（否则 99 点永远攒不满）。
-    this.extendPts = Math.max(0, Math.min(POWER.extend - 1, opts.extendPts || 0));
+    // 擦弹会以 0.02 的粒度推进这个计数，所以上限只保证「小于 99」而不是截到整数 98
+    this.extendPts = Math.max(0, Math.min(POWER.extend - 1e-6, Number(opts.extendPts) || 0));
     this.extendCount = 0;
     // 上一帧施加过的符卡玩家效果键：Boss 退场/切出时用它补一次 'none' 复位，
     // 避免移速类修饰残留到下一张卡或结算之后（见 update() 里的调用）。
@@ -494,6 +563,9 @@ export class Stage {
         this.pickups.push({ kind: 'coin', x: e.x + 16, y: e.y + 16, taken: false, t: Math.random() * 6 });
       } else if (e.type === 'power') {
         this.pickups.push({ kind: 'power', x: e.x + 16, y: e.y + 16, taken: false, t: Math.random() * 6 });
+      } else if (e.type === 'life') {
+        // 1UP：有自己的掉落图（见 _drawPickups 的 oneup 分支），和蓝色 P 符札区分开
+        this.pickups.push({ kind: 'oneup', x: e.x + 16, y: e.y + 16, taken: false, t: Math.random() * 6 });
       } else if (e.type === 'checkpoint') {
         this.checkpoints.push({ x: e.x + 16, y: e.y + 32, active: false });
       } else if (e.type === 'goal') {
@@ -602,9 +674,13 @@ export class Stage {
         p.hurt(hit.x < hp.x ? -1 : 1);
       }
       if (this.mode === 'stg') {
-        // 擦弹加分
+        // 擦弹：POWER 收益照旧，但 1UP 进度只加 0.02 点 / 颗（99 点 = 1 命）。
+        // 注意 _addPower 默认会把入账量也计入 1UP，这里传 false 避免 0.075 POWER 再叠一次。
         const g = this.bullets.grazeTest(hp.x, hp.y, hp.r, 26);
-        if (g > 0) this._addPower(g * POWER.graze);
+        if (g > 0) {
+          this._addPower(g * POWER.graze, false);
+          this._addExtend(g * POWER.grazePoints);
+        }
       }
     }
 
@@ -629,6 +705,8 @@ export class Stage {
       const before = this.boss.state;
       this.boss.update(dt, p, this.bullets, this.fx, {
         onPhase: (i, name) => {
+          // 切到下一张符卡：上一张的无伤判定到此为止（首卡由下面的 intro→battle 负责）
+          this._cardDamaged = false;
           this.camera.shake(14, 0.4);
           this.onEvent('bossPhase', { phase: i, name });
         },
@@ -636,6 +714,8 @@ export class Stage {
         // 只报结果不碰奖励；POWER/残机/1UP 记账统一在 stage 侧完成。
         onCardResult: (res) => this._onBossCardResult(res),
       });
+      // 首张符卡开始：intro 演出期间的受击不算进无伤；之后每张卡由 onPhase 清零。
+      if (before !== 'battle' && this.boss.state === 'battle') this._cardDamaged = false;
       if (this.bossMid) {
         // 中途 Boss 被击破：不算过关，清场后继续推道中
         if (this.boss.state === 'dead') this._onMidbossDefeated();
@@ -751,7 +831,8 @@ export class Stage {
     // 一旦 Boss 挪到另一侧，就会出现「对着空气一直开枪」的挫败感（自动化测试里曾出现 340 秒 0 命中）。
     const faceBoss = this.boss;
     if (faceBoss && faceBoss.state !== 'dead' && p.alive) {
-      const moving = input.down('left') || input.down('right');
+      // 摇杆玩家只推模拟量、不产生 left/right 数字动作，这里也要算「在动」
+      const moving = input.down('left') || input.down('right') || Math.abs(input.moveX || 0) > 0.15;
       this._faceIdleT = moving ? 0 : (this._faceIdleT || 0) + dt;
       if (!moving && this._faceIdleT > 0.3) {
         const dxToBoss = faceBoss.x - (p.x + p.w / 2);
@@ -794,7 +875,7 @@ export class Stage {
     if (input.pressed('shoot') || input.down('shoot')) this._tryShoot(input);
     this.stg.update(dt, p, this.bullets, this.shots, this.fx, {
       onReachBoss: () => {
-        // EXTRA 的 Boss 由时间轴调度（3:00 中途 / 6:00 终盘），不看滚动条
+        // EXTRA 的 Boss 由时间轴调度（2:00 中途 / 3:00 终盘），不看滚动条
         if (this.extra) return;
         if (!this.bossPending && !this.bossStarted) {
           this.bossPending = true;
@@ -822,7 +903,7 @@ export class Stage {
 
   /**
    * EXTRA 的关内时间轴：
-   *   道中计时 → 3:00 雷米莉亚（中途 Boss）→ 击破后继续道中 → 6:00 终盘芙兰。
+   *   道中计时 → 2:00 雷米莉亚（中途 Boss）→ 击破后继续道中 → 3:00 终盘芙兰。
    * 计时只在「能操作道中」时推进（Boss 战 / 对话 / 复活倒计时都暂停），
    * 这样中途 Boss 打得久也不会把终盘节奏往后推。
    */
@@ -848,14 +929,15 @@ export class Stage {
   }
 
   /**
-   * EXTRA 的敌方波次表：柱状推进 3 分钟，每 14 波（约 20 秒）为一个节奏段，
-   * 段落收尾叠一波密集齐射，避免长时间道中变成一条匀速的直线。
+   * EXTRA 的敌方波次表：柱状推进整条 3:00 道中（2:00 中途 Boss 前 + 1:00 收束段），
+   * 每 14 波（约 38 秒）为一个节奏段，段落收尾叠一波密集齐射，
+   * 避免长时间道中变成一条匀速的直线。波次间隔 450px（约 2.7 秒一拍）。
    */
   _buildExtraWaves() {
     const stg = this.stg;
     if (!stg) return;
     const usable = this.level.w - 1280 - 200;
-    const step = 470;
+    const step = 450;
     const waves = [];
     let n = 0;
     for (let s = 420; s < usable; s += step, n++) {
@@ -913,7 +995,9 @@ export class Stage {
     const p = this.player;
     if (!p.alive) return;
     if (p.shootCd > 0) return;
-    // 火力等级由 POWER 决定：Lv.1–4 → 弹数 1 / 2 / 3 / 5
+    // Shift 低速（显示判定点）时收束扇形：优先读本帧输入，玩家身上的 focus 在 STG 里晚一帧
+    const focus = !!(input && input.down && input.down('slow')) || !!p.focus;
+    // 火力等级由 POWER 决定：Lv.1–4 → 弹数 1 / 2 / 3 / 4
     const level = p.fireLevel || powerLevel(p.power);
     if (this.mode === 'stg') {
       p.shootCd = 0.075;
@@ -931,9 +1015,9 @@ export class Stage {
           aim = Math.max(-0.42, Math.min(0.42, Math.atan2(dy, dist)));
         }
       }
-      // 平射散布：灵梦保持很窄（几乎笔直），魔理沙明显成扇形（扩散弹）
-      const fan = this.char === 'marisa' ? 0.22 : 0.1;
-      this.shots.fire(p.worldX + 14 * p.facing, gunY, p.facing, this.char, level, aim, fan);
+      // 平射散布：两人都比上一版更散（灵梦仍明显更窄）；Shift 低速时由 fire() 统一收束
+      const fan = this.char === 'marisa' ? 0.32 : 0.15;
+      this.shots.fire(p.worldX + 14 * p.facing, gunY, p.facing, this.char, level, aim, fan, focus);
     } else {
       // 按住 ↑ 时朝上方的目标射击（有 Boss 时自动瞄准 Boss 的高度，避免贴脸也打不中）；
       // 按住 ↓ 时朝下方射击：Boss 在下层平台/地面时也能反打，
@@ -942,7 +1026,10 @@ export class Stage {
       const b = this.boss;
       const bossLive = b && b.state !== 'dead';
       const gunY = p.y + p.h * 0.34;
-      if (input && input.down('up')) {
+      // 平台关竖轴不参与走位，正好留给摇杆做「上下瞄准」：
+      // 键盘/数字方向照旧，摇杆推过上/下 45% 即视为抬枪/压低。
+      const stickY = (input && input.moveY) || 0;
+      if (input && (input.down('up') || stickY < -0.45)) {
         if (bossLive && b.y - 50 < gunY) {
           const dx = Math.max(60, Math.abs(b.x - (p.x + p.w / 2)));
           const dy = (b.y - 50) - gunY;
@@ -950,7 +1037,7 @@ export class Stage {
         } else {
           aim = -0.9;
         }
-      } else if (input && input.down('down')) {
+      } else if (input && (input.down('down') || stickY > 0.45)) {
         if (bossLive && b.y - 50 > gunY + 30) {
           const dx = Math.max(60, Math.abs(b.x - (p.x + p.w / 2)));
           const dy = (b.y - 50) - gunY;
@@ -962,7 +1049,8 @@ export class Stage {
       p.shootCd = 0.085;
       const sx = p.x + p.w / 2 + 16 * p.facing;
       const sy = p.y + p.h * 0.34;
-      this.shots.fire(sx, sy, p.facing, this.char, level, aim);
+      // spread 传 undefined：平台关按仰角自动取 SHOT_PROFILE 的 fanAim / fanFlat
+      this.shots.fire(sx, sy, p.facing, this.char, level, aim, undefined, focus);
     }
   }
 
@@ -1020,11 +1108,30 @@ export class Stage {
     for (const it of this.pickups) {
       if (it.taken) continue;
       it.t += dt;
+      // 击破中途 Boss 掉落的补给：先从空中落到舞台地面，落地后才开始浮沉/吸取
+      if (it.drop) {
+        it.vy = (it.vy || 0) + 1500 * dt;
+        const floorY = it.floorY ?? it.y;
+        it.y += it.vy * dt;
+        if (it.y >= floorY) {
+          it.y = floorY;
+          it.drop = false;
+          it.vy = 0;
+          this.fx.sparkle(it.x, it.y, it.kind === 'oneup' ? '#ffb3e0' : '#6ee7ff');
+        }
+        continue;
+      }
       if (Math.abs(it.x - px) < 42 && Math.abs(it.y - py) < 42) {
         it.taken = true;
         if (it.kind === 'coin') {
           this.fx.sparkle(it.x, it.y, '#ffd23f');
           this.onEvent('coin', { value: 1 });
+        } else if (it.kind === 'oneup') {
+          // 1UP 道具：回一条残机（走和满槽奖励同一条 _addExtend 通道，横幅/音效统一）
+          this.fx.sparkle(it.x, it.y, '#ff9ad5');
+          this.fx.shockwave(it.x, it.y, '#ffd6ef', 12, 320, 0.45);
+          this._addExtend(POWER.extend);
+          this.onEvent('oneup', { lives: p.lives });
         } else {
           // 吃 P 点：涨 POWER，火力等级可能随之提升
           this.fx.sparkle(it.x, it.y, '#6ee7ff');
@@ -1049,25 +1156,28 @@ export class Stage {
   }
 
   /**
-   * 涨 POWER：只结算「真正加上去的部分」，并就这部分推进 1UP 累计。
+   * 涨 POWER：只结算「真正加上去的部分」。
+   * 默认把入账量计入 1UP 累计；擦弹传 countExtend=false，因为它的 1UP 奖励由
+   * grazePoints 单独结算（否则 0.075 POWER 会把 0.02 点/颗抬成 0.095）。
    * 条满时多出来的量不浪费——仍然计入 extend 计数（原作里满火力后吃 P 也是分数）。
    */
-  _addPower(n) {
+  _addPower(n, countExtend = true) {
     const p = this.player;
     if (!p || !(n > 0)) return;
     p.power = Math.min(p.maxPower, (p.power || 0) + n);
     // 按「拾取量」而不是「槽内增量」计数：满槽时吃 P 也不浪费 extend 进度
-    this._addExtend(n);
+    if (countExtend) this._addExtend(n);
   }
 
   /**
-   * 1UP 累计：每 99 点 POWER → +1 残机（循环）。
-   * 计数只增不减，不会因为放符卡掉火力把进度抹掉。
+   * 1UP 累计：每 99 点 → +1 残机（循环）。
+   * 来源：拾取 POWER、擦弹 0.02 点/颗、符卡结算奖励；计数只增不减，不会因为放符卡掉火力抹掉。
+   * 擦弹是 0.02 的粒度，累加时保留 4 位小数，避免浮点漂移让 99 点差一点点。
    */
   _addExtend(amount) {
     const p = this.player;
     if (!p || !(amount > 0)) return;
-    this.extendPts = (this.extendPts || 0) + amount;
+    this.extendPts = Math.round(((this.extendPts || 0) + amount) * 1e4) / 1e4;
     const need = POWER.extend;
     while (this.extendPts >= need) {
       this.extendPts -= need;
@@ -1085,33 +1195,38 @@ export class Stage {
   /**
    * 限时符卡结算（docs/BOSS_TIMING_SPEC.md §2 规则 4/5、§3.3）。
    * boss.js 只报「这张卡结束 + 是否按时」，奖励与 1UP 记账全部在 stage 侧完成：
-   *  - ok（按时打完）：火力未满 → +POWER.perLevel（走 _addPower，顺带推进 1UP 进度）；
-   *                  火力已满 → 残机 +1（走 _addExtend 的既有 1UP 通道，表现/事件全复用）。
-   *  - !ok（超时没打完）：+10 点 extend 进度，即既有「99 点 → 1 命」的奖励系统。
+   *  - ok（按时打完 / 存活到点）：基础 1/4P（POWER.cardClear × 满槽）。
+   *      火力未满 → 走 _addPower；火力已满 → 基础奖励转残机（_addExtend(POWER.extend)）。
+   *  - 本卡无伤（没被弹、没落命）：额外 1/2P（POWER.cardNoHit × 满槽），与基础一起结算。
+   *  - !ok（超时没打完）：+10 点 extend 进度，即既有「99 点 → 1 命」的奖励系统；不给 1/4P。
    * 最后一张卡也会正常结算，之后 boss 自己进入 defeat（stage 不改它的状态机）。
    */
   _onBossCardResult(res) {
     if (!res) return;
     const p = this.player;
     if (!p) return;
+    const noHit = !!res.ok && !this._cardDamaged;
+    const base = res.ok ? cardClearPower() : 0;
+    const bonus = noHit ? cardNoHitPower() : 0;
     let reward;
     if (res.ok) {
       if ((p.power || 0) >= (p.maxPower || POWER.max)) {
-        // 满槽转残机：用 _addExtend(POWER.extend) 而不是手写 lives/maxLives，
-        // 这样冲击波/音效/extend 事件（main.js 的 1UP 横幅）与拾取满 99 点走同一条路径；
-        // extendPts 恒为 0..98 的余数，+99 恰好只 +1 命，已有进度不丢。
-        this._addExtend(POWER.extend);
+        // 满槽：基础奖励沿用「转 1 残机」通道；无伤 1/2P 仍按 1UP 点数追加，一起走同一个循环。
+        // 这样冲击波/音效/extend 事件（main.js 的 1UP 横幅）与拾取满 99 点走同一条路径。
+        this._addExtend(POWER.extend + bonus);
         reward = 'life';
       } else {
-        this._addPower(POWER.perLevel);
+        // 基础 1/4P + 无伤 1/2P 一次入账；超出槽的部分由 _addPower 自动转进 1UP 进度。
+        this._addPower(base + bonus);
         reward = 'power';
       }
     } else {
       this._addExtend(10);
       reward = 'points';
     }
-    // reward 交给 main.js 决定横幅文案：'power'（+火力）/ 'life'（1UP）/ 'points'（+10 点 extend）
-    this.onEvent('cardResult', { ...res, reward });
+    // reward 交给 main.js 决定横幅：'power'（+火力）/ 'life'（1UP）/ 'points'（+10 点）
+    // noHit/base/bonus 供横幅与验证脚本区分「普通击破」「无伤」「满槽」三种情况。
+    this.onEvent('cardResult', { ...res, reward, noHit, base, bonus });
   }
 
   _onPlayerEvent(ev) {
@@ -1135,6 +1250,8 @@ export class Stage {
         this.fx.burst(ev.cx, ev.cy, '#8ef07a', 8, 220);
         break;
       case 'hurt':
+        // 本卡无伤判定：Boss 战期间被弹即作废（只标记当前卡，切卡时清零）
+        if (this.boss && this.boss.state === 'battle') this._cardDamaged = true;
         this.camera.shake(16, 0.35);
         this.fx.burst(ev.x, ev.y, '#ff5ea8', 12, 300);
         document.getElementById('ui')?.classList.add('hurt');
@@ -1142,6 +1259,8 @@ export class Stage {
         this.onEvent('hurt', ev);
         break;
       case 'die':
+        // 落命同样作废无伤（平台关掉坑不经过 hurt，所以 die 也要标记）
+        if (this.boss && this.boss.state === 'battle') this._cardDamaged = true;
         this.camera.shake(20, 0.5);
         this.state = 'dead';
         this.deathT = 0.9;
@@ -1193,6 +1312,7 @@ export class Stage {
     this.bossMid = isMid;
     this.pendingBossKey = null;
     this.pendingBossMid = false;
+    this._cardDamaged = false;
     // 平台关登场站位：中途 Boss 站关卡配置里的舞台中心（复活重试直接 beginBoss 也走这里），
     // 关底维持 w-520 的老手感；STG（含 EXTRA）不看这个值。
     const fromEnd = opts.fromEnd
@@ -1221,10 +1341,8 @@ export class Stage {
     this._seenDive = 'idle';
     this.camera.shake(18, 0.6);
     this.fx.flash(bx, by - 80, this.boss.def.accent, 40);
-    // 中途战开场补火力：它的舞台段按配置取消了小怪（见 levels.js 的 midboss.directPower），
-    // 这里把原本该段拿到的小怪火力一次性补进来，进战火力与改动前持平。
-    // 只在 isMid 生效（关底不会重复补）；复活重试是新建 Stage，也不会叠加。
-    if (isMid && this.midbossCfg?.directPower) this._addPower(this.midbossCfg.directPower);
+    // 中途战开战不再直接补火力：舞台段取消的小怪火力，改由关卡配置里的
+    // midboss.opening 在舞台左侧铺成 P 点，玩家自己捡（见 levels.js / levelgen._prepareOpening）。
     this.onEvent('bossStart', {
       key,
       name: this.boss.def.name,
@@ -1250,11 +1368,37 @@ export class Stage {
     // 残机不补，但给一点点喘息的护身时间，别一睁眼就撞进新刷的妖精堆里
     const p = this.player;
     if (p) p.invuln = Math.max(p.invuln || 0, 1.2);
+    // 击破掉落：舞台上空落下一枚 1UP（数量见 levels.js 的 midboss.dropLife）。
+    // 玩家得自己走过去捡——不是击破即到账。
+    const dropLife = Math.max(0, Math.min(2, Math.round(this.midbossCfg?.dropLife || 0)));
+    if (b && dropLife > 0) {
+      for (let i = 0; i < dropLife; i++) this._dropPickup('oneup', b.x + (i - (dropLife - 1) / 2) * 46, b.y - 70);
+    }
     // 呼吸区基准：以击破瞬间的玩家位置为原点，再往前走 breathDist 像素才放关底；
     // 计时器归零后由 _updatePlatform 在「能自由跑图」时累加。
     this._midClearT = 0;
     this._midClearX = p ? p.x + p.w / 2 : 0;
     this.onEvent('midbossClear', { key: b ? b.key : 'remilia' });
+  }
+
+  /**
+   * 击破中途 Boss 掉落补给：生成一枚「会落地」的拾取物。
+   *
+   * 掉落物先从空中往舞台地面掉（见 _updatePickups 的 drop 分支），落地后才开始浮沉
+   * 和吸取判定，免得一生成就被头顶的玩家直接吃掉、看不出「打出来一样东西」这件事。
+   */
+  _dropPickup(kind, x, y) {
+    const groundY = this.level.gen ? this.level.gen.ground * 32 : this.level.h - 96;
+    this.pickups.push({
+      kind,
+      x,
+      y,
+      floorY: groundY - 20, // 贴地浮一点，和地图上「地面上一格」的道具齐平
+      vy: 0,
+      drop: true,
+      taken: false,
+      t: 0,
+    });
   }
 
   _onBossDefeated() {
@@ -1748,11 +1892,16 @@ export class Stage {
     if (this.mode !== 'stg') drawTiles(ctx, this.level, cam, this.t);
 
     // 地面雾：把厚涂背景和程序化地形接在一起，避免出现一条硬边
+    // 这三层是贴着「画面下沿」的屏幕空间覆盖层（渐变坐标见 _overlayGrads），
+    // 但这里已经处在 camera.apply 之后的相机坐标系里，所以 y 要补 cam.y。
+    // 漏掉 cam.y 时，34 行的 5/6 面（cam.y 最大 368）会把它们顶到画面中部，
+    // 在渐变末端留下一道横贯全屏的明暗硬边。
     if (this.mode === 'platform') {
       const H = VIEW_H;
+      const dy = cam.y | 0;
       const gr = this._overlayGrads(ctx, theme);
       ctx.fillStyle = gr.gnd;
-      ctx.fillRect(cam.x, H - 190, VIEW_W, 190);
+      ctx.fillRect(cam.x, dy + H - 190, VIEW_W, 190);
 
       // 环境光染色：让程序化地形接到厚涂背景的光色里
       if (gr.amb) {
@@ -1760,7 +1909,7 @@ export class Stage {
         ctx.globalCompositeOperation = 'overlay';
         ctx.globalAlpha = 0.26;
         ctx.fillStyle = gr.amb;
-        ctx.fillRect(cam.x, H - 210, VIEW_W, 210);
+        ctx.fillRect(cam.x, dy + H - 210, VIEW_W, 210);
         ctx.restore();
       }
       // 去饱和 + 统一色相：程序化草地的荧光绿和厚涂背景不是一个世界
@@ -1769,7 +1918,7 @@ export class Stage {
         ctx.globalCompositeOperation = 'saturation';
         ctx.globalAlpha = 1;
         ctx.fillStyle = gr.sat;
-        ctx.fillRect(cam.x, H - 150, VIEW_W, 150);
+        ctx.fillRect(cam.x, dy + H - 150, VIEW_W, 150);
         ctx.restore();
       }
     }
@@ -2156,6 +2305,18 @@ export class Stage {
         ctx.rotate(it.t * 0.85);
         ctx.scale(pulse, pulse);
         ctx.drawImage(orbBody(), -17, -17, 34, 34);
+      } else if (it.kind === 'oneup') {
+        // 1UP：粉红徽章（专属掉落图）+ 心跳式脉冲，不旋转（保证 1UP 字样可读）。
+        // 抬 9px 悬空：贴地摆会被前景草叶切掉下半边，「1UP」少一截就认不出来了。
+        const beat = 1 + Math.sin(it.t * 5.2) * 0.07;
+        ctx.translate(0, -9);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.66 + Math.sin(it.t * 3.1) * 0.16;
+        ctx.drawImage(oneupGlow(), -37, -37, 74, 74);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.scale(beat, beat);
+        ctx.drawImage(oneupBadge(), -17, -17, 34, 34);
       } else {
         // P 点：蓝白符札
         ctx.globalCompositeOperation = 'lighter';
@@ -2288,6 +2449,9 @@ export class Stage {
       maxLives: Math.max(p.maxLives || 0, p.lives),
       extendPts: this.extendPts || 0,
       extendNeed: POWER.extend,
+      grazePoints: POWER.grazePoints,
+      cardClear: POWER.cardClear,
+      cardNoHit: POWER.cardNoHit,
       power: p.power || 0,
       maxPower: p.maxPower || POWER.max,
       fireLevel: p.fireLevel || powerLevel(p.power || 0),

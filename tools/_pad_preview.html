@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>HKS · TouchPad Preview</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%2305030a' stroke='%23f2d24b'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%236ee7ff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../src/ui/mobile.css">
+<style>
+  :root {
+    --ink:#05030a; --text:#f2e9d8; --dim:#a89e8e; --reimu:#e8364f;
+    --gold:#f2d24b; --sakura:#ff9ecb; --cyan:#6ee7ff; --serif:"Songti SC","SimSun",serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #030208; color: var(--text); font-family: var(--serif); }
+  body { touch-action: none; -webkit-user-select: none; user-select: none; }
+  .pv-bg {
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(120% 80% at 50% 0%, rgba(232,54,79,.16), transparent 55%),
+      radial-gradient(90% 70% at 20% 100%, rgba(110,231,255,.10), transparent 60%),
+      #030208;
+  }
+  .pv-bg::after {
+    content: ""; position: absolute; inset: 0; opacity: .5;
+    background-image: radial-gradient(1px 1px at 12% 18%, #fff 50%, transparent 51%),
+      radial-gradient(1px 1px at 72% 26%, #ffd9ef 50%, transparent 51%),
+      radial-gradient(1px 1px at 42% 62%, #bff4ff 50%, transparent 51%),
+      radial-gradient(1px 1px at 86% 74%, #fff 50%, transparent 51%),
+      radial-gradient(1px 1px at 26% 84%, #ffe9b0 50%, transparent 51%);
+    background-size: 240px 240px, 300px 300px, 260px 260px, 340px 340px, 220px 220px;
+  }
+  #wrap {
+    position: absolute; left: 50%; top: 50%; width: min(100vw, calc(100vh * 16 / 9)); height: min(100vh, calc(100vw * 9 / 16));
+    transform: translate(-50%, -50%); overflow: hidden;
+    background: linear-gradient(180deg, #0b0714 0%, #140a1c 55%, #07040c 100%);
+    box-shadow: 0 0 0 1px rgba(255,158,203,.14), 0 30px 90px rgba(0,0,0,.7);
+  }
+  #wrap::before {
+    content: "HKS · TOUCH PREVIEW"; position: absolute; left: 50%; top: 42%; transform: translate(-50%,-50%);
+    font-size: clamp(10px, 1.6vmin, 16px); letter-spacing: .5em; color: rgba(255,158,203,.20); white-space: nowrap;
+  }
+  #ui { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  #hud {
+    position: absolute; left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right));
+    top: max(6px, env(safe-area-inset-top));
+    height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 0 8px; border-radius: 10px;
+    background: linear-gradient(180deg, rgba(5,3,10,.72), rgba(5,3,10,.18));
+    border: 1px solid rgba(255,158,203,.16);
+    font-size: 13px; color: var(--text);
+  }
+  .hud-left { display: flex; align-items: center; gap: 5px; color: var(--reimu); letter-spacing: 1px; }
+  .hud-left b { font-size: 15px; color: var(--sakura); text-shadow: 0 0 10px rgba(255,158,203,.7); }
+  .hud-mid { display: flex; align-items: center; gap: 12px; color: var(--dim); }
+  .hud-mid #stageName { color: var(--gold); letter-spacing: .16em; font-size: 11px; }
+  .hud-mid #timer { color: var(--cyan); font-variant-numeric: tabular-nums; }
+  .hud-right { pointer-events: auto; }
+  #settingsBtn {
+    width: 32px; height: 32px; border-radius: 9px; border: 1px solid rgba(242,233,216,.28);
+    background: rgba(10,6,18,.7); color: var(--text); font-size: 16px; line-height: 1;
+    display: grid; place-items: center; pointer-events: auto;
+  }
+  #powerBar { position: absolute; left: 50%; top: calc(max(6px, env(safe-area-inset-top)) + 46px); width: 34%; height: 4px; transform: translateX(-50%); border-radius: 2px; background: rgba(255,255,255,.12); }
+  #powerBar::after { content: ""; position: absolute; inset: 0 38% 0 0; border-radius: 2px; background: linear-gradient(90deg, var(--cyan), var(--sakura)); box-shadow: 0 0 8px rgba(110,231,255,.6); }
+  #bossBar { display: none; }
+  .pv-tools {
+    position: fixed; left: max(8px, env(safe-area-inset-left)); top: max(8px, env(safe-area-inset-top)); z-index: 70;
+    display: flex; flex-direction: column; gap: 5px; padding: 8px; border-radius: 12px;
+    background: rgba(6,4,12,.82); border: 1px solid rgba(255,158,203,.22);
+    backdrop-filter: blur(8px); font-family: ui-monospace, monospace; font-size: 11px;
+  }
+  .pv-tools[hidden] { display: none; }
+  .pv-row { display: flex; gap: 4px; flex-wrap: wrap; max-width: 252px; }
+  .pv-btn {
+    padding: 5px 8px; border-radius: 7px; border: 1px solid rgba(242,233,216,.22);
+    background: rgba(255,255,255,.05); color: var(--text); font: inherit; cursor: pointer;
+  }
+  .pv-btn.is-on { border-color: var(--sakura); color: var(--sakura); background: rgba(255,158,203,.12); }
+  .pv-log { margin-top: 2px; color: var(--dim); max-width: 252px; line-height: 1.5; }
+  .pv-log b { color: var(--cyan); font-weight: 600; }
+  .pv-hint { color: rgba(242,233,216,.45); }
+  #pvFab {
+    position: fixed; left: max(8px, env(safe-area-inset-left)); top: max(8px, env(safe-area-inset-top)); z-index: 71;
+    width: 34px; height: 34px; border-radius: 9px; border: 1px solid rgba(255,158,203,.3);
+    background: rgba(6,4,12,.78); color: var(--sakura); font-size: 15px; cursor: pointer;
+  }
+  #pvFab[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="pv-bg"></div>
+<div id="wrap">
+  <div id="ui">
+    <div id="hud">
+      <div class="hud-left" id="lives"><b>♥</b><b>♥</b><b>♥</b></div>
+      <div class="hud-mid"><span id="stageName">STAGE 1 · 夜樱</span><span id="timer">00:42</span></div>
+      <div class="hud-right"><button id="settingsBtn" type="button" aria-label="设置">⚙</button></div>
+    </div>
+    <div id="powerBar"></div>
+    <div id="bossBar"></div>
+  </div>
+</div>
+<button id="pvFab" type="button" aria-label="预览工具">☰</button>
+<div class="pv-tools" id="pvTools" hidden>
+  <div class="pv-row" id="pvScheme"></div>
+  <div class="pv-row" id="pvState"></div>
+  <div class="pv-row">
+    <button class="pv-btn" data-pv="sheet" type="button">设置面板</button>
+    <button class="pv-btn" data-pv="edit" type="button">布局编辑</button>
+    <button class="pv-btn" data-pv="hide" type="button">隐藏工具</button>
+  </div>
+  <div class="pv-log" id="pvLog"><span class="pv-hint">mock input · 未连接游戏</span></div>
+</div>
+<script type="module">
+import { TouchPad } from '../src/ui/virtualPad.js';
+
+const qs = new URLSearchParams(location.search);
+const logEl = document.getElementById('pvLog');
+const held = new Set();
+let stick = { x: 0, y: 0 };
+const lines = [];
+
+function renderLog() {
+  if (!logEl) return;
+  const bits = [];
+  bits.push('<b>stick</b> ' + stick.x.toFixed(2) + ', ' + stick.y.toFixed(2));
+  if (held.size) bits.push('<b>held</b> ' + [...held].join(' '));
+  else bits.push('<span class="pv-hint">无按键</span>');
+  bits.push('<span class="pv-hint">' + (window.pad ? window.pad.scheme : '-') + '</span>');
+  logEl.innerHTML = bits.join('<br>') + (lines.length ? '<br>' + lines.slice(-3).join('<br>') : '');
+}
+
+const mockInput = {
+  touchDevice: true,
+  setStick(x, y) { stick = { x: Number(x) || 0, y: Number(y) || 0 }; renderLog(); },
+  padPress(action) {
+    held.add(action);
+    lines.push('press ' + action);
+    if (action === 'confirm' && window.pad && window.pad._state === 'dialogue') {
+      setTimeout(() => { try { window.pad.setGameState('play'); } catch (e) {} }, 260);
+    }
+    renderLog();
+  },
+  padRelease(action) {
+    if (!held.has(action)) return;
+    held.delete(action);
+    lines.push('release ' + action);
+    renderLog();
+  },
+};
+Object.defineProperties(mockInput, {
+  held: { get() { return [...held]; } },
+  stick: { get() { return { x: stick.x, y: stick.y }; } }
+});
+window.__mockInput = mockInput;
+
+const pad = new TouchPad({ input: mockInput, host: document.body });
+window.pad = pad;
+
+const schemes = [['stick', '摇杆'], ['gesture', '手势'], ['keys', '按键']];
+const states = [['play', '游戏中'], ['dialogue', '对话'], ['menu', '菜单']];
+function renderTools() {
+  const sc = document.getElementById('pvScheme');
+  sc.innerHTML = '';
+  for (const [id, name] of schemes) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pv-btn' + (pad.scheme === id ? ' is-on' : '');
+    b.textContent = name;
+    b.onclick = () => { pad.setScheme(id); renderTools(); };
+    sc.appendChild(b);
+  }
+  const st = document.getElementById('pvState');
+  st.innerHTML = '';
+  const now = qs.get('state') || 'play';
+  for (const [id, name] of states) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pv-btn';
+    b.textContent = name;
+    b.onclick = () => { pad.setGameState(id); renderLog(); };
+    st.appendChild(b);
+  }
+}
+renderTools();
+
+const tools = document.getElementById('pvTools');
+const fab = document.getElementById('pvFab');
+if (qs.get('tools') === '0') { fab.hidden = true; tools.hidden = true; }
+fab.onclick = () => { tools.hidden = false; fab.hidden = true; };
+tools.querySelector('[data-pv="hide"]').onclick = () => { tools.hidden = true; fab.hidden = false; };
+tools.querySelector('[data-pv="sheet"]').onclick = () => { pad.closeOverlay(); pad._openSheet?.(); };
+tools.querySelector('[data-pv="edit"]').onclick = () => { pad.openLayoutEditor(); };
+document.getElementById('settingsBtn').onclick = () => { pad.openLayoutEditor(); };
+
+const wantScheme = qs.get('scheme') || 'stick';
+if (wantScheme !== pad.scheme) { pad.setScheme(wantScheme); renderTools(); }
+const wantState = qs.get('state') || 'play';
+pad.setGameState(wantState);
+renderLog();
+window.addEventListener('hks-pad-settings', renderLog);
+</script>
+</body>
+</html>

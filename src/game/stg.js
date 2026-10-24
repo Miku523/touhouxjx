@@ -131,26 +131,26 @@ export class StgPlayer {
       this.vy *= 0.9;
     }
 
-    const ax = input.axisX;
-    const ay = input.down('down') ? 1 : 0;
-    const up = input.down('up') ? 1 : 0;
-    // 屏幕坐标 y 向下为正：按住「下」应该往下走，所以是 ay - up。
-    // （原来写成 up - ay，导致弹幕关上下完全反了：按 ↑ 一路沉底，按 ↓ 顶到天花板。）
-    const ayAll = ay - up;
+    // 摇杆给的是 -1..1 模拟量（键盘仍是 ±1）：幅度决定速度，方向只用于朝向/冲刺。
+    // 方向键仍然走数字输入，所以键盘手感和原来完全一致。
+    const ax = input.moveX || 0;
+    const ayAll = input.moveY || 0;
+    const fdx = Math.abs(ax) > 0.2 ? Math.sign(ax) : 0;
+    const fdy = Math.abs(ayAll) > 0.2 ? Math.sign(ayAll) : 0;
 
     // 按住 Shift 低速移动：移速降到 50%，并显示判定点
     this.focus = !!input.down('slow');
     const spd = this.focus ? SPEED * 0.5 : SPEED;
 
-    if (ax !== 0) this.facing = ax;
+    if (fdx !== 0) this.facing = fdx;
 
     // 冲刺
     if (input.pressed('dash') && this.dashCd <= 0 && !this.dashing && !this.casting) {
       this.dashing = true;
       this.dashT = DASH_TIME;
       this.dashCd = 0.6;
-      this.dashDirX = ax !== 0 ? ax : this.facing;
-      this.dashDirY = ayAll;
+      this.dashDirX = fdx !== 0 ? fdx : this.facing;
+      this.dashDirY = fdy;
       const len = Math.hypot(this.dashDirX, this.dashDirY) || 1;
       this.dashDirX /= len;
       this.dashDirY /= len;
@@ -386,6 +386,15 @@ class StgEnemy {
     const shotSpeed = (base) => Math.min(cap, base * speedMul);
     // 射速：所有齐射冷却统一再快 12%（配合难度表的 stgScoutShots / stgGunnerShots 提高齐射数）
     const rate = (base) => base * fireMul * 0.88;
+    // 快慢混编：同一轮弹幕按发序轮换速度倍率，不再整屏一个速度。
+    // 倍率来自难度表 stgSpeedBands（EX 快/中/慢三层，E 同速），叠在 shotSpeed 之上、
+    // 再各自被 cap 夹住，所以快档也不会把弹速护栏顶穿。
+    const bands = mods && Array.isArray(mods.bands) && mods.bands.length ? mods.bands : null;
+    const mix = bands ? { speedVar: bands, speedCap: cap } : null;
+    const banded = (sp, i) => {
+      const m = bands ? bands[i % bands.length] : 1;
+      return Math.min(cap, sp * m);
+    };
 
     // 魔法妖精：持续螺旋（不占齐射冷却；弹幕池有软上限）
     if (this.kind === 'spinner') {
@@ -396,7 +405,8 @@ class StgEnemy {
       if (bullets.count() >= budget) return;
       const arms = mods && mods.scout >= 4 ? 3 : mods && mods.scout > 2 ? 2 : 1;
       for (let k = 0; k < arms; k++) {
-        bullets.spiral(this.x, this.y, this.spinA + (k / arms) * Math.PI, shotSpeed(155), {
+        // 每条螺旋臂吃一档速度：EX 三臂 = 快 / 中 / 慢三条不同转速的螺线叠在一起
+        bullets.spiral(this.x, this.y, this.spinA + (k / arms) * Math.PI, banded(shotSpeed(155), k), {
           color: this.k.color, r: 5, life: 5, type: 0,
         });
       }
@@ -410,7 +420,8 @@ class StgEnemy {
     const nScout = mods ? mods.scout : 1;
     switch (this.kind) {
       case 'sniper': {
-        // 交叉双线（新弹幕样式）：左右两个发射点各射一束瞄准米弹，两股流线在玩家附近交叉
+        // 交叉双线（新弹幕样式）：左右两个发射点各射一束瞄准米弹，两股流线在玩家附近交叉；
+        // 每束里快慢弹交替，两条交叉线的「到达时间」不再整齐划一。
         this.fireT = rate(this.k.rate);
         const streams = Math.max(1, nScout);
         for (const side of [-1, 1]) {
@@ -418,7 +429,7 @@ class StgEnemy {
           const by = this.y + side * 6;
           const aa = Math.atan2(py - by, px - bx);
           bullets.fan(bx, by, streams, 0.05, aa, shotSpeed(320), {
-            color: this.k.color, r: 5, life: 5, type: 1,
+            color: this.k.color, r: 5, life: 5, type: 1, ...(mix || {}),
           });
         }
         break;
@@ -428,10 +439,11 @@ class StgEnemy {
         this.fireT = rate(this.k.rate);
         const count = 6 + Math.min(2, Math.max(0, n - 3));
         bullets.ring(this.x, this.y, count, shotSpeed(145), {
-          angle: this.ringA, color: this.k.color, r: 6, life: 5, type: 0,
+          angle: this.ringA, color: this.k.color, r: 6, life: 5, type: 0, ...(mix || {}),
         });
         if ((this.shotAlt = (this.shotAlt || 0) + 1) % 2 === 0) {
-          bullets.ring(this.x, this.y, Math.max(4, count - 2), shotSpeed(92), {
+          // 反向慢环整体再压一档，和主环拉开明显的「慢一截」
+          bullets.ring(this.x, this.y, Math.max(4, count - 2), shotSpeed(92) * (bands ? bands[bands.length - 1] : 1), {
             angle: -this.ringA * 1.4, color: this.k.aura === 'green' ? '#bfffc0' : this.k.color,
             r: 5, life: 5.5, type: 0,
           });
@@ -440,13 +452,16 @@ class StgEnemy {
         break;
       }
       case 'bomber': {
-        // 抛物延迟雨：下坠加速，落地前有时间闪避
+        // 抛物延迟雨：下坠加速，落地前有时间闪避；
+        // 奇偶两档初速/加速度 → 同一串雨里有的快落、有的慢慢飘下来
         this.fireT = rate(this.k.rate);
         const count = Math.max(2, Math.round(n * 0.7));
         for (let k = 0; k < count; k++) {
           const bx = this.x + (k - (count - 1) / 2) * 22;
+          const heavy = k % 2 === 1;
           bullets.spawn({
-            x: bx, y: this.y + 12, vx: -18, vy: 26, accel: 240,
+            x: bx, y: this.y + 12, vx: -18, vy: heavy ? 58 : 20,
+            accel: heavy ? 300 : 130,
             color: this.k.color, r: 6, life: 6, type: 1,
           });
         }
@@ -455,7 +470,7 @@ class StgEnemy {
       case 'gunner': {
         this.fireT = rate(this.k.rate);
         bullets.fan(this.x, this.y, n, 0.5, Math.PI * 0.86, shotSpeed(190), {
-          color: this.k.color, r: 6, life: 5,
+          color: this.k.color, r: 6, life: 5, ...(mix || {}),
         });
         break;
       }
@@ -465,7 +480,7 @@ class StgEnemy {
         const a = Math.atan2(py - this.y, px - this.x);
         if (nScout > 1) {
           bullets.fan(this.x, this.y, nScout, 0.2, a, shotSpeed(230), {
-            color: this.k.color, r: 6, life: 5,
+            color: this.k.color, r: 6, life: 5, ...(mix || {}),
           });
         } else {
           bullets.spawn({
@@ -721,6 +736,12 @@ export class StgStage {
     this.enemySpeedCap = Number(diff?.bulletSpeedCap) || 520;
     const budget = Number(diff?.bulletBudget) || 950;
     this.enemyBulletBudget = Math.min(1250, Math.max(300, budget * 0.88));
+    // 弹速分档：同一轮弹幕里快慢混编（见 StgEnemy.update 的 mix / banded）。
+    // 难度表 stgSpeedBands 决定快慢差：E 同速好读，越往上拉得越开，EX 快 / 中 / 慢三层。
+    const bands = Array.isArray(diff?.stgSpeedBands) && diff.stgSpeedBands.length
+      ? diff.stgSpeedBands.slice()
+      : null;
+    this.stgSpeedBands = bands;
     this.enemyMods = {
       speed: this.enemyBulletScale,
       fire: this.enemyFireScale,
@@ -728,6 +749,7 @@ export class StgStage {
       scout: Math.max(1, Math.round((Number(diff?.stgScoutShots) || 1) * dens)),
       gunner: Math.max(1, Math.round((Number(diff?.stgGunnerShots) || 3) * dens)),
       budget: this.enemyBulletBudget,
+      bands,
     };
 
     // 按关卡主色给各敌机分配配色：主色给最常见的 scout / sniper，点缀色分给其余
@@ -809,7 +831,11 @@ export class StgStage {
   /**
    * EXTRA 的波次表在 stage.js 里生成（那边只认识 scout/gunner/diver），
    * 这里在第一次 update 时做确定性扩编：把一部分波次换成新兵种 + 新编队，
-   * 并穿插几组夹击 / V 字。不改变原有 at 顺序与总量级。
+   * 并穿插几组夹击 / 弧线 / 横墙。不改变原有 at 顺序与总量级。
+   *
+   * 3:00 版道中比原先 6:00 版更短，为了「道中密度不掉、弹幕样式更丰富」，
+   * 这里把换兵种比例 28%→40%、插波比例 28%→30%、整体加密 1.32→1.72（单波上限 8 架）：
+   * 敌机/秒约 +25%，同时 sniper/spinner/bomber/turret 四种弹幕样式出现得更频繁。
    */
   _enrichExtraWaves() {
     if (this._extraEnriched) return;
@@ -824,19 +850,19 @@ export class StgStage {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
     const kinds = ['sniper', 'spinner', 'bomber', 'turret'];
-    const forms = ['v', 'column', 'pincer', 'cross'];
+    const forms = ['v', 'column', 'pincer', 'cross', 'arc', 'wall'];
     const usable = this.level.w - 1280 - 200;
     for (let i = 0; i < this.waves.length; i++) {
       const w = this.waves[i];
       const r = rng();
-      if (r < 0.28) {
+      if (r < 0.40) {
         const kind = kinds[Math.floor(rng() * kinds.length)];
         w.kind = kind;
         w.form = forms[Math.floor(rng() * forms.length)];
         if (kind === 'turret') { w.count = 1; w.gapY = 30; w.form = 'line'; }
         else if (kind === 'sniper') w.count = Math.max(1, Math.min(2, w.count - 1));
-        else if (kind === 'bomber') w.count = Math.max(2, Math.min(3, w.count));
-      } else if (r < 0.56) {
+        else if (kind === 'bomber') w.count = Math.max(2, Math.min(4, w.count));
+      } else if (r < 0.70) {
         const at = w.at + 90;
         if (at > usable) continue;
         const kind = kinds[Math.floor(rng() * kinds.length)];
@@ -850,9 +876,10 @@ export class StgStage {
         i++;
       }
     }
-    // 整体加密：EX 目标每屏敌机数 ≈ +50%。均匀放大每波数量、不改变兵种构成，
-    // 这样平均血量倍率不被拉高（EX 的杂兵已经比道中重一档）。
-    for (const w of this.waves) w.count = Math.max(1, Math.round(w.count * 1.32));
+    // 整体加密：EX 目标敌机/秒比 6:00 版再密一档。均匀放大每波数量、不改变兵种构成，
+    // 这样平均血量倍率不被拉高（EX 的杂兵已经比道中重一档）。单波 8 架封顶，
+    // 免得 wall / column 编队竖排到画面外。
+    for (const w of this.waves) w.count = Math.max(1, Math.min(8, Math.round(w.count * 1.72)));
     this.waves.sort((x, y) => x.at - y.at);
   }
 
@@ -957,6 +984,15 @@ function waveOffsets(form, i, n) {
       const j = i % half;
       const dir = i < half ? 1 : -1;
       return { dx: j * 34, dy: dir * (60 + j * 62) };
+    }
+    case 'arc': {
+      // 弧线：两翼沿抛物线向后收，整队像一张向右张开的弓
+      const u = n <= 1 ? 0 : (i / (n - 1)) * 2 - 1;
+      return { dx: u * u * 150 + Math.abs(u) * 30, dy: u * (110 + n * 8) };
+    }
+    case 'wall': {
+      // 横墙：同一列上下排开，整队像一堵墙一起平推
+      return { dx: 0, dy: (i - mid) * 88 };
     }
     default:
       return { dx: i * 70, dy: (i % 3) * 110 };

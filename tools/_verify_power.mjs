@@ -97,7 +97,7 @@ const platform = JSON.parse(await ev(`(() => {
   st.shots.clear(); st.bullets.clear();
   g.hud.update(st.hudState, 1 / 60); // 让 HUD 先稳定在 Lv.4，才能观察到施法后的下降浮字
 
-  // 火力 Lv.4 → 5 发
+  // 火力 Lv.4 → 4 发
   st._tryShoot({ down: () => false, axisX: 1 });
   const shotsLv4 = st.shots.pool.filter(b => b.active).length;
 
@@ -140,7 +140,7 @@ const platform = JSON.parse(await ev(`(() => {
   });
 })()`));
 
-check('平台 Lv.4 射击 5 发', platform.shotsLv4 === 5, String(platform.shotsLv4));
+check('平台 Lv.4 射击 4 发', platform.shotsLv4 === 4, String(platform.shotsLv4));
 check('吃 P 20→32 且 Lv.1→2', platform.eat.power === 32 && platform.eat.level === 2 && platform.eat.beforeEat === 1, JSON.stringify(platform.eat));
 check('吃 P 时 HUD 显示 Lv.2 与升级浮字', platform.eat.hudLevel === '2' && platform.eat.pop === '火力 Lv.2 ↑', JSON.stringify(platform.eat));
 check('符卡扣 50：128→78', platform.powerAfter === 78, String(platform.powerAfter));
@@ -190,7 +190,7 @@ const stg = JSON.parse(await ev(`(() => {
 })()`));
 
 check('STG 模式生效', stg.mode === 'stg', String(stg.mode));
-check('STG Lv.4 射击 5 发', stg.shotsLv4 === 5, String(stg.shotsLv4));
+check('STG Lv.4 射击 4 发', stg.shotsLv4 === 4, String(stg.shotsLv4));
 check('STG 符卡扣 50：128→78', stg.powerAfter === 78, String(stg.powerAfter));
 check('STG 符卡后火力 4→3', stg.levelAfter === 3, String(stg.levelAfter));
 check('STG 符卡清空弹幕（修复前不清）', stg.bulletsBefore === 12 && stg.bulletsAfter === 0, `${stg.bulletsBefore}→${stg.bulletsAfter}`);

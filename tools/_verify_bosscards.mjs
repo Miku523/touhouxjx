@@ -85,6 +85,63 @@ const TIMING_LO = TARGET_RATIO - 0.15;
 const nearTarget = (r) => r != null && r >= TIMING_LO && r <= TIMING_HI;
 const HPSCALE_MODE = String(argv.hpScaleMode || 'auto'); // auto|applied|none：血量是否按难度 hpScale 缩放
 
+/* ------------------------------------------- 奖励回归规格（独立 oracle，不从 src 抄） */
+// 2026-10-24 新机制：符卡结算基础 1/4P（16）+ 无伤 1/2P（32）；满槽时基础转 1 命（99 点 extend 通道）；
+// 超时 +10 点。擦弹每颗 0.075 POWER（POWER 收益，不再计入 extend）+ 0.02 点 1UP 进度，
+// 所以 1UP 进度实际增量是 0.02/颗（POWER 与 1UP 两账分开）。
+const POWER_SPEC = {
+  max: 64, perLevel: 16, extend: 99,
+  graze: 0.075, grazePoints: 0.02,
+  cardClear: 0.25, cardNoHit: 0.5,
+  cardClearPower: 16, cardNoHitPower: 32,
+};
+const GRAZE_EXTEND_PER_BULLET = POWER_SPEC.grazePoints; // 0.02：POWER 0.075 不再计入 1UP
+const POWER_CFG_KEYS = ['perLevel', 'max', 'extend', 'graze', 'grazePoints', 'cardClear', 'cardNoHit', 'cardClearPower', 'cardNoHitPower'];
+
+// T 跑奖励变体：每项展开成一次独立 run（同一面），覆盖 noHit × 满槽 × 超时 的全部组合。
+// manip.power 支持数值或 'max'（结算瞬间置满槽）；damaged 显式控制 stage._cardDamaged（决定无伤判定）。
+// expected[i] = { branch, dPower, addExtend }：结算后应命中的分支与账面增量（addExtend 是「入账量」，跨 99 由命数吸收）。
+const REWARD_VARIANTS = [
+  {
+    id: 'a', label: '未满槽受伤(+16) / 满槽无伤(99+32=131)',
+    mutateCard: null,
+    manip: [
+      { index: 0, power: 16, extend: 90, damaged: true, restorePower: null },
+      { index: 1, power: 'max', extend: 80, damaged: false, restorePower: null },
+    ],
+    expected: [
+      { branch: 'power_hit', dPower: 16, addExtend: 16 },
+      { branch: 'life_nohit', dPower: 0, addExtend: 131 },
+    ],
+  },
+  {
+    id: 'b', label: '未满槽无伤(+48) / 满槽受伤(99)',
+    mutateCard: null,
+    manip: [
+      { index: 0, power: 24, extend: 10, damaged: false, restorePower: null },
+      { index: 1, power: 'max', extend: 94, damaged: true, restorePower: null },
+    ],
+    expected: [
+      { branch: 'power_nohit', dPower: 40, addExtend: 48 },
+      { branch: 'life_hit', dPower: 0, addExtend: 99 },
+    ],
+  },
+  {
+    id: 'c', label: '强制超时 points(+10) / 自然结算',
+    // 卡 0 血量 ×3.6（实测 T 口径 ~16.3s → ~58s > limit 50s），超时路径必触发；卡 1 自然结算走通用公式。
+    // 注：×3.0 实测 46.5s 仍低于 50s（T 跑满火力 dps 更高），故取 3.6。
+    mutateCard: 0, mutateMul: 3.6,
+    manip: [
+      { index: 0, power: 'max', extend: 90, damaged: true, restorePower: null },
+    ],
+    expected: [
+      { branch: 'points', dPower: 0, addExtend: 10 },
+      { branch: 'natural' },
+    ],
+  },
+];
+const VARIANT_FILTER = String(argv.variants || '').split(',').map((s) => s.trim()).filter(Boolean);
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const r2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
 const pad = (n) => String(n).padStart(2, '0');
@@ -93,48 +150,49 @@ const pad = (n) => String(n).padStart(2, '0');
 const HP_SCALE = { E: 0.85, N: 1, H: 1.15, L: 1.3 };
 const STAGE_BOSS = { 1: 'rumia', 2: 'wriggle', 3: 'cirno', 4: 'aya', 5: 'yuyuko', 6: 'kaguya' };
 const SPEC_CARDS = {
+  // 2026-10-24 重定标（v2）：与 docs/BOSS_TIMING_TABLE.md v4 §1 一致。
+  // limit / mode / fx 是「独立 oracle」，故意从文档抄一遍，不从 bossTuning.js import。
   1: [
-    { name: '宵暗「月之暗面」', mode: 'damage', limit: 50, fx: '深色氛围', note: '黑暗氛围' },
+    { name: '宵暗「月之暗面」', mode: 'damage', limit: 50, fx: 'moon', note: '黑暗氛围' },
     { name: '暗符「黑暗吞噬」', mode: 'damage', limit: 60, fx: 'night', note: '黑暗吞噬氛围' },
   ],
   2: [
-    { name: '灯符「萤火虫现象」', mode: 'damage', limit: 60 },
-    { name: '蠢符「小虫风暴」', mode: 'damage', limit: 105 },
-    { name: '隐虫「萤火虫之夜」', mode: 'damage', limit: 90, fx: 'darkSpot', darkSpot: true },
+    { name: '灯符「萤火虫现象」', mode: 'damage', limit: 60, fx: 'fireflies' },
+    { name: '蠢符「小虫风暴」', mode: 'damage', limit: 60, fx: 'fireflies' },
+    { name: '隐虫「萤火虫之夜」', mode: 'damage', limit: 70, fx: 'darkSpot', darkSpot: true },
   ],
   3: [
-    { name: '冰符「冰柱落下」', mode: 'damage', limit: 30 },
-    { name: '雹符「冰雹风暴」', mode: 'damage', limit: 120 },
-    { name: '冻符「完美冻结」', mode: 'damage', limit: 90 },
-    { name: '雪符「钻石风暴」', mode: 'damage', limit: 99 },
+    { name: '冰符「冰柱落下」', mode: 'damage', limit: 30, fx: 'hail' },
+    { name: '雹符「冰雹风暴」', mode: 'damage', limit: 60, fx: 'hail' },
+    { name: '冻符「完美冻结」', mode: 'damage', limit: 80, fx: 'freeze' },
+    { name: '雪符「钻石风暴」', mode: 'damage', limit: 99, fx: 'freeze' },
   ],
   4: [
-    { name: '风符「风神一扇」', mode: 'damage', limit: 66 },
-    { name: '疾风「风神少女」', mode: 'survival', limit: 30 },
-    { name: '岐符「天之八衢」', mode: 'damage', limit: 90 },
-    { name: '风神「天狗颪」', mode: 'damage', limit: 90 },
-    { name: '「幻想风靡」', mode: 'survival', limit: 180 },
+    { name: '风符「风神一扇」', mode: 'damage', limit: 36, fx: 'wind' },
+    { name: '疾风「风神少女」', mode: 'damage', limit: 40, fx: 'wind' },
+    { name: '岐符「天之八衢」', mode: 'damage', limit: 60, fx: 'wind' },
+    { name: '风神「天狗颪」', mode: 'damage', limit: 80, fx: 'wind' },
+    { name: '「幻想风靡」', mode: 'survival', limit: 60, fx: 'wind' },
   ],
   5: [
-    { name: '幽雅「死出诱蛾灯」', mode: 'damage', limit: 50 },
-    { name: '蝶符「花之舞」', mode: 'damage', limit: 60 },
-    { name: '蝶符「死蝶之华尔兹」', mode: 'damage', limit: 150 },
-    { name: '亡乡「亡我乡 -宿罪-」', mode: 'survival', limit: 44 },
-    { name: '冥符「常夜樱」', mode: 'damage', limit: 120 },
-    { name: '反魂蝶「八分咲」', mode: 'damage', limit: 180 },
+    { name: '幽雅「死出诱蛾灯」', mode: 'damage', limit: 30, fx: 'night' },
+    { name: '蝶符「花之舞」', mode: 'damage', limit: 45, fx: 'petals' },
+    { name: '蝶符「死蝶之华尔兹」', mode: 'damage', limit: 90, fx: 'petals' },
+    { name: '亡乡「亡我乡 -宿罪-」', mode: 'survival', limit: 60, fx: 'night' },
+    { name: '冥符「常夜樱」', mode: 'damage', limit: 90, fx: 'petals' },
+    { name: '反魂蝶「八分咲」', mode: 'damage', limit: 100, fx: 'petals' },
   ],
   6: [
-    { name: '难题「龙颈之玉 -五色的弹丸-」', mode: 'survival', limit: 60 },
-    { name: '神宝「耀眼的龙玉」', mode: 'damage', limit: 99 },
-    { name: '难题「佛御石之钵 -不碎的意志-」', mode: 'damage', limit: 120 },
-    { name: '神宝「佛体的金刚石」', mode: 'damage', limit: 180 },
-    { name: '难题「火鼠的皮衣 -不焦躁的内心-」', mode: 'damage', limit: 360 },
-    { name: '神宝「火蜥蜴之盾」', mode: 'damage', limit: 240 },
-    { name: '难题「燕的子安贝 -永命线-」', mode: 'damage', limit: 300 },
-    { name: '神宝「蓬莱的玉枝 -梦色之乡-」', mode: 'survival', limit: 66 },
+    { name: '难题「龙颈之玉 -五色的弹丸-」', mode: 'damage', limit: 40, fx: 'moon' },
+    { name: '神宝「耀眼的龙玉」', mode: 'damage', limit: 60, fx: 'night' },
+    { name: '难题「佛御石之钵 -不碎的意志-」', mode: 'damage', limit: 80, fx: 'darkVeil' },
+    { name: '神宝「佛体的金刚石」', mode: 'damage', limit: 60, fx: 'freeze' },
+    { name: '难题「火鼠的皮衣 -不焦躁的内心-」', mode: 'damage', limit: 90, fx: 'voidFlame' },
+    { name: '神宝「火蜥蜴之盾」', mode: 'damage', limit: 30, fx: 'voidFlame' },
+    { name: '难题「燕的子安贝 -永命线-」', mode: 'survival', limit: 50, fx: 'wind' },
+    { name: '神宝「蓬莱的玉枝 -梦色之乡-」', mode: 'damage', limit: 66, fx: 'fairyDust' },
   ],
-};
-const normName = (s) => String(s || '').replace(/[\s\u3000「」『』·・\-—－]/g, '');
+};const normName = (s) => String(s || '').replace(/[\s\u3000「」『』·・\-—－]/g, '');
 
 /* ------------------------------------------------------------------ 计划解析 */
 function parseStageList(s) {
@@ -159,16 +217,25 @@ function parsePlan(plan) {
     const stages = parseStageList(m[2]);
     for (const stage of stages) {
       if (tag === 'T') {
+        // 奖励回归：每个变体一次独立 run（同面），全部分支都必须在 at least one run 里实际命中。
+        for (const v of REWARD_VARIANTS) {
+          if (VARIANT_FILTER.length && !VARIANT_FILTER.includes(v.id)) continue;
+          runs.push({
+            tag: 'T', diff: 'N', stage, test: true, full: FULL_RUN.includes(stage),
+            startPower: 128,
+            deathTest: false,
+            mutateCard: v.mutateCard,
+            mutateMul: v.mutateMul || Number(argv.mutateMul || 1.6),
+            // 结算瞬间人为构造奖励分支条件（+POWER / 满槽换命 / 无伤标记），结算后恢复满火力以免影响后续卡时长
+            manip: v.manip,
+            variantId: v.id, variantLabel: v.label, variantExpected: v.expected,
+          });
+        }
+      } else if (tag === 'G') {
+        // 擦弹集成：真实 stg 关卡里放一颗只进擦弹环、不命中的弹，单帧推进核对 POWER/1UP 增量。
         runs.push({
-          tag: 'T', diff: 'N', stage, test: true, full: FULL_RUN.includes(stage),
-          startPower: 128,
-          deathTest: false,
-          mutateCard: Number(argv.mutateCard || 1), mutateMul: Number(argv.mutateMul || 1.6),
-          // 结算瞬间人为构造奖励分支条件（+POWER / 跨 99 换命），结算后恢复满火力以免影响后续卡时长
-          manip: [
-            { index: 0, power: 0, extend: 90, restorePower: null },
-            { index: 1, extend: 94 },
-          ],
+          tag: 'G', diff: 'N', stage, test: false, full: false,
+          startPower: 0, deathTest: false, mutateCard: null, grazeTest: true,
         });
       } else if (tag === 'D') {
         runs.push({
@@ -186,7 +253,7 @@ function parsePlan(plan) {
   return runs;
 }
 const RUNS = parsePlan(PLAN);
-const RUN_FILE = (r) => join(OUT_DIR, `bosscards_s${r.stage}_${r.diff}${r.tag === 'T' ? '_rewardtest' : r.tag === 'D' ? '_deathtest' : ''}.json`);
+const RUN_FILE = (r) => join(OUT_DIR, `bosscards_s${r.stage}_${r.diff}${r.tag === 'T' ? '_reward_' + (r.variantId || 'x') : r.tag === 'D' ? '_deathtest' : r.tag === 'G' ? '_grazetest' : ''}.json`);
 
 /* ------------------------------------------------------------------ 进程卫生 */
 const REGISTRY = join(tmpdir(), 'hks-verify-browsers.json');
@@ -209,7 +276,7 @@ function probeClient(cfg) {
     cards: [], results: [], fallbacks: [], events: [], banners: [],
     captures: [], captured: [], cfgMissing: [],
     progress: { card: null, elapsed: 0, mode: null, lock: 0, bossState: null, stageState: null },
-    deathTest: null, mutation: null, overrun: null,
+    deathTest: null, mutation: null, overrun: null, graze: null,
     stageClearT: null, bossDefeatT: null,
     errors: [], warnings: [], catches: [],
     playerEnd: null, stageEnd: null, hudLive: null,
@@ -312,17 +379,23 @@ function probeClient(cfg) {
       const orig = s._onBossCardResult.bind(s);
       s._onBossCardResult = function (res) {
         const p = this.player;
+        const damagedNatural = !!this._cardDamaged;
         // T 跑：结算瞬间人为构造奖励分支条件（仅测试跑）
         let manip = null;
         if (cfg.test && Array.isArray(cfg.manip) && res) {
           manip = cfg.manip.filter(function (m) { return m && m.index === res.index; })[0] || null;
           if (manip && p) {
             try {
-              if (Number.isFinite(manip.power)) p.power = manip.power;
+              // power 支持数值或 'max'（='满槽'），因为满槽判定是 reward='life' 的分支条件。
+              if (manip.power === 'max') p.power = p.maxPower;
+              else if (Number.isFinite(manip.power)) p.power = manip.power;
               if (Number.isFinite(manip.extend)) this.extendPts = manip.extend;
+              // 无伤判定由 _cardDamaged 决定：必须显式控制，不能依赖自然受击（god 模式每帧抬 invuln=3，自然不会受伤）。
+              if ('damaged' in manip) this._cardDamaged = !!manip.damaged;
             } catch (e) { dbg(e); }
           }
         }
+        const damagedAtSettle = !!this._cardDamaged;
         const before = p ? { power: p.power, maxPower: p.maxPower, lives: p.lives, extendPts: this.extendPts || 0 } : null;
         let ret = null, err = null;
         try { ret = orig(res); } catch (e) { err = String(e); dbg(e); }
@@ -332,7 +405,8 @@ function probeClient(cfg) {
         }
         vc.results.push({
           t: +vc.t.toFixed(2), src: 'stage', res: clone(res), before, after, err, banner: bannerText(),
-          manip: manip ? { power: manip.power, extend: manip.extend, restorePower: manip.restorePower } : null,
+          damagedNatural, damagedAtSettle,
+          manip: manip ? { power: manip.power, extend: manip.extend, damaged: manip.damaged, restorePower: manip.restorePower } : null,
         });
         return ret;
       };
@@ -365,7 +439,7 @@ function probeClient(cfg) {
     if (matched) {
       matched.__used = true;
       c.result = matched.res;
-      c.rewardMeta = { before: matched.before, after: matched.after, banner: matched.banner, err: matched.err, t: matched.t, src: matched.src };
+      c.rewardMeta = { before: matched.before, after: matched.after, banner: matched.banner, err: matched.err, t: matched.t, src: matched.src, damagedAtSettle: matched.damagedAtSettle, damagedNatural: matched.damagedNatural, manip: matched.manip || null };
     }
     if (!c.result) {
       const fb = vc.fallbacks.find((r) => r.res && r.res.index === c.idx && !r.__used);
@@ -586,6 +660,84 @@ function probeClient(cfg) {
     try { sample(s2); } catch (e) { dbg(e); }
   };
 
+  // 擦弹集成探针（tag G）：真实 stg 关卡里放一颗只进擦弹环、不命中的静止弹，逐帧核对增量。
+  // 口径：每次 grazeTest 返回 g>0 → _addPower(g*0.075, false)（不推进 extend）+ _addExtend(g*0.02)，
+  // 所以 POWER += g*0.075、1UP 进度 += g*0.02；同一颗弹 grazed 后不应再计数。
+  vc.grazeProbe = function () {
+    const out = { ok: false, mode: null, errors: [], frames: [], cleared: 0, bullet: null, bullet2: null, warmup: null, playerBefore: null };
+    const s = g.stage;
+    if (!s || s.mode !== 'stg' || !s.player || !s.bullets) {
+      out.errors.push('stage/player/bullets missing or mode!==stg: ' + (s && s.mode));
+      return out;
+    }
+    out.mode = s.mode;
+    const p = s.player, b = s.bullets;
+    const origSpawn = b.spawn;
+    const prevInvuln = p.invuln;
+    try {
+      out.playerBefore = { power: p.power, maxPower: p.maxPower, extendPts: s.extendPts, lives: p.lives, hearts: p.hearts, alive: p.alive, invuln: p.invuln, worldX: p.worldX, worldY: p.worldY };
+      out.cleared = b.activeCount || 0;
+      b.clear();
+      b.grazeCount = 0; b.activeCount = 0; b.cursor = 0;
+      // 屏蔽同帧敌方弹幕，确保增量只来自我们自己放的弹。
+      b.spawn = function () { return null; };
+      p.invuln = 0;
+      // warm-up 一帧：让 StgPlayer.syncWorld 生成有效 worldX（startStage 后首帧前可能尚未同步）。
+      g.update(1 / 60);
+      p.invuln = 0;
+      out.warmup = { worldX: p.worldX, worldY: p.worldY, scroll: s.stg ? s.stg.scroll : null, state: s.state, bulletsActive: b.activeCount };
+      const hp0 = p.hitPoint;
+      out.hitPoint = { x: hp0.x, y: hp0.y, r: hp0.r };
+      out.scrollSpeed = s.stg ? s.stg.speed : null;
+      const refs = [];
+      const mk = function (x, y) { return { x: x, y: y, vx: 0, vy: 0, r: 6, color: '#ffffff', type: 0, life: 5, scaleIn: 0 }; };
+      const frame = function (label, spec) {
+        const pre = { power: p.power, extend: s.extendPts, lives: p.lives, hearts: p.hearts, grazeCount: b.grazeCount, active: b.activeCount };
+        let spawned = null;
+        if (spec) { spawned = origSpawn.call(b, spec); refs.push(spawned); }
+        g.update(1 / 60);
+        const hpNow = p.hitPoint;
+        const f = {
+          label: label,
+          g: b.grazeCount - pre.grazeCount,
+          grazeCount: b.grazeCount,
+          powerBefore: pre.power, powerAfter: p.power, dPower: Math.round((p.power - pre.power) * 1e4) / 1e4,
+          extendBefore: pre.extend, extendAfter: s.extendPts, dExtend: Math.round((s.extendPts - pre.extend) * 1e6) / 1e6,
+          livesBefore: pre.lives, livesAfter: p.lives,
+          heartsBefore: pre.hearts, heartsAfter: p.hearts,
+          alive: !!p.alive, invulnAfter: p.invuln,
+          activeBefore: pre.active, activeAfter: b.activeCount,
+          playerX: Math.round(hpNow.x * 100) / 100, playerY: Math.round(hpNow.y * 100) / 100,
+          innerR: Math.round((6 * 0.72 + hpNow.r) * 100) / 100,
+          grazeR: 26 + 6,
+          dists: refs.map(function (r) { return Math.round(Math.hypot(r.x - hpNow.x, r.y - hpNow.y) * 100) / 100; }),
+          active: refs.map(function (r) { return !!r.active; }),
+          state: s.state,
+        };
+        out.frames.push(f);
+        return f;
+      };
+      // 帧1：距判定点 20px（内半径≈8.52，擦弹外环=32）→ 擦弹一次；stg 自动滚动 165px/s，单帧只改 2.75px，仍在外环内。
+      out.bullet = { x: hp0.x + 20, y: hp0.y, r: 6 };
+      frame('bullet1_graze', mk(hp0.x + 20, hp0.y));
+      // 帧2：同一颗弹已 grazed → 不应重复计数。
+      frame('same_bullet_no_double', null);
+      // 帧3：第二颗（垂直 20px；滚动只改横坐标，垂直偏移不受影响）→ 再擦一次。
+      const hp1 = p.hitPoint;
+      out.bullet2 = { x: hp1.x, y: hp1.y + 20, r: 6 };
+      frame('bullet2_graze', mk(hp1.x, hp1.y + 20));
+      out.ok = true;
+    } catch (e) {
+      out.errors.push(String((e && e.stack) || e));
+      dbg(e);
+    } finally {
+      try { b.spawn = origSpawn; } catch (_) {}
+      try { p.invuln = prevInvuln; } catch (_) {}
+      vc.graze = out;
+    }
+    return out;
+  };
+
   // 每帧读 HUD（hud.update 在 stage.update 之后、同一 g.update 内，本钩子在其后 → 读到本帧值）
   vc.finalize = function () { try { if (cur) closeCard(); } catch (e) { dbg(e); } };
   vc.readHud = function () {
@@ -608,6 +760,7 @@ function probeClient(cfg) {
       playerEnd: vc.playerEnd, stageEnd: vc.stageEnd, hudLive: vc.hudLive,
       progress: vc.progress, captures: vc.captures,
       powerCfg: vc.powerCfg || (typeof window !== 'undefined' ? window.__vcPowerCfg : null) || null,
+      graze: vc.graze,
     };
   };
   return true;
@@ -733,7 +886,12 @@ async function runOne(run, runIndex) {
     const botOk = await evaluate(`import('/tools/sim_bot.js?t=${Date.now()}').then(function(m){ return !!m.install({ god: ${GOD}, maxRetries: 10 }); })`);
     if (!botOk) throw new Error('bot install failed');
     // 读取页面真实 POWER 配置（perLevel/extend 可能被 POWER 任务调整）
-    const powerCfg = await evaluate(`import('/src/game/power.js').then(function(m){ return { perLevel: m.POWER.perLevel, max: m.POWER.max, extend: m.POWER.extend }; })`);
+    const powerCfg = await evaluate(`import('/src/game/power.js').then(function(m){ return {
+      perLevel: m.POWER.perLevel, max: m.POWER.max, extend: m.POWER.extend,
+      graze: m.POWER.graze, grazePoints: m.POWER.grazePoints,
+      cardClear: m.POWER.cardClear, cardNoHit: m.POWER.cardNoHit,
+      cardClearPower: m.cardClearPower(), cardNoHitPower: m.cardNoHitPower(),
+    }; })`);
     await evaluate(`window.__vcPowerCfg = ${JSON.stringify(powerCfg)}`);
 
     // 探针（开始 stage 之前装）
@@ -745,6 +903,9 @@ async function runOne(run, runIndex) {
       manip: run.manip || null,
       restorePowerOnRespawn: !!run.restorePowerOnRespawn,
       overrunAbort: OVERRUN_ABORT,
+      grazeTest: !!run.grazeTest,
+      variantId: run.variantId || null,
+      variantExpected: run.variantExpected || null,
     };
     const probeSrc = '(' + probeClient.toString() + ')(' + JSON.stringify(cfg) + ')';
     const probeOk = await evaluate(probeSrc);
@@ -763,9 +924,18 @@ async function runOne(run, runIndex) {
     }
 
     // --- 开局：force-boss 模式传送到关底直接开终盘 Boss；--fullRun 面则正常打整关 ---
-    await evaluate(`window.__game.carryPower = ${run.startPower}; window.__game.levelIndex = ${run.stage - 1}; window.__game.startStage(${run.stage - 1})`);
+    if (run.grazeTest) {
+      // 擦弹集成：skipIntro 保持 state==='play'，零火力/零 1UP 起步，避免奖励变体与 carry 值干扰。
+      await evaluate(`window.__game.carryPower = 0; window.__game.carryExtend = 0; window.__game.levelIndex = ${run.stage - 1}; window.__game.startStage(${run.stage - 1}, { skipIntro: true })`);
+    } else {
+      await evaluate(`window.__game.carryPower = ${run.startPower}; window.__game.levelIndex = ${run.stage - 1}; window.__game.startStage(${run.stage - 1})`);
+    }
     let bossInfo = null;
-    if (!run.full) {
+    let grazeProbe = null;
+    if (run.grazeTest) {
+      grazeProbe = await evaluate('window.__vc.grazeProbe()');
+      if (!grazeProbe) throw new Error('grazeProbe returned null');
+    } else if (!run.full) {
       bossInfo = await evaluate(`(() => {
         const g = window.__game, s = g.stage;
         if (!s) return { err: 'no stage' };
@@ -803,7 +973,8 @@ async function runOne(run, runIndex) {
     let lastPx = null, lastMoveSim = 0, lastMoveSteps = 0;
     const wall = Date.now();
     let chunkNo = 0;
-    while (steps < maxSteps) {
+    // 擦弹跑不推进游戏主循环：grazeProbe 自己在页面内按帧推进（避免 bot 移动/弹幕干扰）。
+    while (!run.grazeTest && steps < maxSteps) {
       if (Date.now() - wall > WALL_MS) { bail = 'wall timeout'; break; }
       const n = Math.min(CHUNK, maxSteps - steps);
       const res = await evaluate(`(() => {
@@ -857,7 +1028,12 @@ async function runOne(run, runIndex) {
     const finalSnap = await evaluate('window.__game.input.__simBot.snapshot()');
 
     const out = {
-      run: { tag: run.tag, stage: run.stage, diff: run.diff, test: !!run.test, full: !!run.full, char: CHAR, god: GOD, seed: SEED },
+      run: {
+        tag: run.tag, stage: run.stage, diff: run.diff, test: !!run.test, full: !!run.full,
+        char: CHAR, god: GOD, seed: SEED,
+        grazeTest: !!run.grazeTest, variantId: run.variantId || null, variantLabel: run.variantLabel || null,
+        variantExpected: run.variantExpected || null,
+      },
       wallMs: Date.now() - t0,
       steps, simSec: finalSnap.simSec, chunks: chunkNo,
       bail,
@@ -881,6 +1057,7 @@ async function runOne(run, runIndex) {
       consoleErrors,
       consoleWarnings,
       powerCfg: state.powerCfg || null,
+      graze: state.graze || grazeProbe || null,
       playerEnd: state.playerEnd,
       stageEnd: state.stageEnd,
       hudLive,
@@ -903,7 +1080,62 @@ async function runOne(run, runIndex) {
 }
 
 /* ---------------------------------------------------------------- 判定 */
+/* ------------------------------------------------- 擦弹集成跑（tag G） */
+function analyzeGrazeRun(out) {
+  const issues = [];
+  const warns = [];
+  const checks = { spec: null, frames: [], pass: true, stage: out.run.stage };
+  const pcfg = out.powerCfg || {};
+  const cfgBad = [];
+  for (const k of POWER_CFG_KEYS) if (pcfg[k] !== POWER_SPEC[k]) cfgBad.push(k + '=' + pcfg[k] + '（应为 ' + POWER_SPEC[k] + '）');
+  if (cfgBad.length) issues.push('power.js 常量与规格不一致：' + cfgBad.join('，'));
+  checks.spec = { powerCfg: pcfg, mismatches: cfgBad };
+  const gr = out.graze || null;
+  if (!gr) issues.push('擦弹探针未返回数据（window.__vc.grazeProbe 缺失/失败）');
+  else {
+    if (gr.mode !== 'stg') issues.push('擦弹跑关卡 mode=' + gr.mode + '（应为 stg；stage4/extra 才是 stg）');
+    if (!gr.ok) issues.push('擦弹探针失败：' + ((gr.errors || []).join(' || ') || 'ok=false'));
+    const frames = gr.frames || [];
+    if (frames.length !== 3) issues.push('擦弹探针应采 3 帧，实际 ' + frames.length);
+    const wantG = [1, 0, 1];
+    for (let i = 0; i < frames.length; i++) {
+      const f = frames[i];
+      const label = '擦弹帧' + (i + 1) + '(' + (f.label || '?') + ')';
+      const fc = { label: f.label, g: f.g, grazeCount: f.grazeCount, dPower: f.dPower, dExtend: f.dExtend,
+        livesBefore: f.livesBefore, livesAfter: f.livesAfter, dists: f.dists, innerR: f.innerR, grazeR: f.grazeR,
+        active: f.active, grazeCountAfter: f.grazeCount, pass: true };
+      const frameFail = (m) => { issues.push(label + '：' + m); fc.pass = false; };
+      const want = i < wantG.length ? wantG[i] : null;
+      if (want != null) {
+        if (f.g !== want) frameFail('grazeTest 计数 g=' + f.g + '（应为 ' + want + '）');
+        if (Math.abs(f.dPower - want * POWER_SPEC.graze) > 1e-4) frameFail('POWER 增量 ' + f.dPower + '（应为 ' + (want * POWER_SPEC.graze).toFixed(4) + ' = g*graze）');
+        if (Math.abs(f.dExtend - want * GRAZE_EXTEND_PER_BULLET) > 1e-4) frameFail('1UP 进度增量 ' + f.dExtend + '（应为 ' + (want * GRAZE_EXTEND_PER_BULLET).toFixed(4) + ' = g*grazePoints）');
+        if (Math.abs(f.dExtend - want * POWER_SPEC.grazePoints) > 1e-4) frameFail('1UP 增量混入了 POWER 收益（dExtend=' + f.dExtend + '，应为 g*grazePoints=' + (want * POWER_SPEC.grazePoints).toFixed(4) + '）');
+        if (i === 1) {
+          if (f.g !== 0) frameFail('同一颗弹被重复计数');
+          if (Math.abs(f.dPower) > 1e-6 || Math.abs(f.dExtend) > 1e-6) frameFail('同一颗弹被重复入账（dPower=' + f.dPower + ', dExtend=' + f.dExtend + '）');
+        }
+      }
+      if (f.livesBefore !== f.livesAfter) frameFail('残机不应变化（' + f.livesBefore + '→' + f.livesAfter + '；0.02 远小于 99）');
+      if (f.alive === false) frameFail('玩家死亡（弹进了命中判定，不是纯擦弹）');
+      if (Array.isArray(f.dists) && f.dists.length) {
+        for (const d of f.dists) {
+          if (!(d > f.innerR)) frameFail('弹距判定点 ' + d + ' ≤ 命中半径 ' + f.innerR + '（应只擦不中）');
+          if (!(d < f.grazeR)) frameFail('弹距判定点 ' + d + ' ≥ 擦弹外环 ' + f.grazeR + '（不该计数）');
+        }
+      }
+      checks.frames.push(fc);
+    }
+  }
+  if (out.consoleErrors && out.consoleErrors.length) issues.push('控制台 error ' + out.consoleErrors.length + ' 条：' + out.consoleErrors.slice(0, 2).join(' || '));
+  if (out.probeErrors && out.probeErrors.length) issues.push('页面探针捕获异常 ' + out.probeErrors.length + ' 条：' + out.probeErrors.slice(0, 2).join(' || '));
+  const verdict = issues.length ? 'FAIL' : 'PASS';
+  checks.pass = verdict === 'PASS';
+  return { verdict, issues, warns, cards: [], grazeCheck: checks };
+}
+
 function analyzeRun(out) {
+  if (out.run && out.run.grazeTest) return analyzeGrazeRun(out);
   const issues = [];
   const warns = [];
   const stage = out.run.stage;
@@ -943,6 +1175,11 @@ function analyzeRun(out) {
   const cardEvents = new Map();
   for (const e of events) if (e.type === 'cardResult' && e.d) cardEvents.set(e.d.index, e);
   const addIssue = (sev, msg) => { if (sev === 'FAIL') issues.push(msg); else warns.push(msg); };
+  // power.js 常量核对：运行时口径必须与独立 oracle 一致，否则后面所有公式断言都不可信。
+  const cfgBad = [];
+  const pcfgRun = out.powerCfg || {};
+  for (const k of POWER_CFG_KEYS) if (pcfgRun[k] !== POWER_SPEC[k]) cfgBad.push(k + '=' + pcfgRun[k] + '（应为 ' + POWER_SPEC[k] + '）');
+  if (cfgBad.length) issues.push('power.js 常量与规格不一致：' + cfgBad.join('，'));
 
   if (out.missingHooks && out.missingHooks.length) addIssue('FAIL', `缺少接口钩子：${out.missingHooks.join(', ')}`);
   if (out.stageClearT == null && !out.run.test) addIssue('FAIL', `Boss 未在本次跑中打完（bail=${out.bail || 'none'}，cards=${observed.length}/${expected.length}）`);
@@ -1032,42 +1269,91 @@ function analyzeRun(out) {
       if (c.overtimeText && !/超时/.test(c.overtimeText)) fail(`超时 HUD 文本异常："${c.overtimeText}"`);
     }
 
-    // 奖励
+    // 奖励（独立 oracle：按 POWER_SPEC 复算，不复用 src 实现；同时覆盖 noHit=false/true 两条分支）
     const before = c.rewardMeta && c.rewardMeta.before;
     const after = c.rewardMeta && c.rewardMeta.after;
-    const pcfg = out.powerCfg || {};
-    const perLevel = Number.isFinite(pcfg.perLevel) ? pcfg.perLevel : 4;
-    const extendEvery = Number.isFinite(pcfg.extend) ? pcfg.extend : 99;
-    if (before && after) {
-      const maxPower = Number.isFinite(before.maxPower) ? before.maxPower : (Number.isFinite(pcfg.max) ? pcfg.max : 16);
-      const dPower = after.power - before.power;
+    const maxPower = POWER_SPEC.max;
+    const extendEvery = POWER_SPEC.extend;
+    const damagedAtSettle = c.rewardMeta ? c.rewardMeta.damagedAtSettle : null;
+    const banner = (ev && ev.banner) || (c.rewardMeta && c.rewardMeta.banner) || null;
+    let branch = null;
+    let rewardWant = null;
+    let noHitWant = null;
+    let baseWant = null;
+    let bonusWant = null;
+    let dPowerWant = null;
+    let addExtendWant = null;
+    let dLivesWant = null;
+    let wantAfterExt = null;
+    if (resOk != null) {
+      noHitWant = !!resOk && !damagedAtSettle;
+      baseWant = resOk ? POWER_SPEC.cardClearPower : 0;
+      bonusWant = noHitWant ? POWER_SPEC.cardNoHitPower : 0;
+      const full = before ? before.power >= maxPower : false;
+      if (resOk) {
+        if (full) { branch = noHitWant ? 'life_nohit' : 'life_hit'; rewardWant = 'life'; addExtendWant = extendEvery + bonusWant; dPowerWant = 0; }
+        else { branch = noHitWant ? 'power_nohit' : 'power_hit'; rewardWant = 'power'; addExtendWant = baseWant + bonusWant; dPowerWant = Math.min(maxPower - before.power, addExtendWant); }
+      } else {
+        branch = 'points'; rewardWant = 'points'; addExtendWant = 10; dPowerWant = 0;
+      }
+      if (before) {
+        dLivesWant = Math.floor((before.extendPts + addExtendWant) / extendEvery);
+        wantAfterExt = Math.round((before.extendPts + addExtendWant - extendEvery * dLivesWant) * 1e4) / 1e4;
+      }
+    }
+    if (before && after && branch) {
+      const dPower = Math.round((after.power - before.power) * 1e4) / 1e4;
       const dLives = after.lives - before.lives;
-      const dExt = after.extendPts - before.extendPts;
-      const crossed = (before.extendPts + (resOk && before.power >= maxPower ? extendEvery : resOk ? perLevel : 10)) >= extendEvery;
-      if (resOk === true && before.power < maxPower) {
-        if (reward !== 'power') fail(`成功且未满槽，reward=${reward}（应为 power）`);
-        if (dPower !== Math.min(maxPower - before.power, perLevel)) fail(`POWER 增量 ${dPower}（应为 ${Math.min(maxPower - before.power, perLevel)}，perLevel=${perLevel}）`);
-        const wantExt = (before.extendPts + perLevel) % extendEvery;
-        if (!crossed && after.extendPts !== wantExt) fail(`extendPts ${before.extendPts}→${after.extendPts}，不应偏离 +${perLevel}`);
-      } else if (resOk === true && before.power >= maxPower) {
-        if (reward !== 'life') fail(`成功且满槽，reward=${reward}（应为 life）`);
-        if (dLives !== 1) fail(`满槽成功应残机 +1，实际 ${dLives}`);
+      const d = (ev && ev.d) || null;
+      if (!d) fail('未捕获 cardResult 事件（无法核对 reward/noHit/base/bonus）');
+      else {
+        if (d.reward !== rewardWant) fail('reward=' + d.reward + '（应为 ' + rewardWant + '，branch=' + branch + '；ok=' + resOk + ', before.power=' + before.power + ', damagedAtSettle=' + damagedAtSettle + '）');
+        if (!!d.noHit !== noHitWant) fail('noHit=' + d.noHit + '（应为 ' + noHitWant + '；damagedAtSettle=' + damagedAtSettle + '）');
+        if (d.base !== baseWant) fail('base=' + d.base + '（应为 ' + baseWant + '）');
+        if (d.bonus !== bonusWant) fail('bonus=' + d.bonus + '（应为 ' + bonusWant + '）');
       }
-      if (resOk === false) {
-        if (reward !== 'points') fail(`超时失败，reward=${reward}（应为 points）`);
-        if (!crossed && dExt !== 10) fail(`失败 extendPts 增量 ${dExt}（应为 10）`);
-        if (crossed && dLives !== 1) fail(`失败 +10 点应恰好换 1 命（跨 99），实际 lives ${dLives}`);
+      if (Math.abs(dPower - dPowerWant) > 1e-4) fail('POWER 增量 ' + dPower + '（应为 ' + dPowerWant + '；before.power=' + before.power + ', max=' + maxPower + ', ok=' + resOk + ', noHit=' + noHitWant + '）');
+      if (Math.abs(after.extendPts - wantAfterExt) > 1e-4) fail('extendPts ' + before.extendPts + '→' + after.extendPts + '（应到 ' + wantAfterExt + '：入账 +' + addExtendWant + '，跨 ' + extendEvery + ' 吸收 ' + dLivesWant + ' 命）');
+      if (dLives !== dLivesWant) fail('残机变化 ' + dLives + '（应为 ' + dLivesWant + '=floor((' + before.extendPts + '+' + addExtendWant + ')/' + extendEvery + ')）');
+      // 横幅文本（hud.banner 拼接无空格，用双正则）
+      if (!banner) fail('缺少横幅（branch=' + branch + '）');
+      else {
+        const bt = String(banner).trim();
+        const has = (re) => re.test(bt);
+        if (branch === 'power_hit') {
+          if (!has(/符卡击破/)) fail('横幅 "' + bt + '" 应含「符卡击破」');
+          if (!has(/火力 \+1\/4P/)) fail('横幅 "' + bt + '" 应含「火力 +1/4P」');
+        } else if (branch === 'power_nohit') {
+          if (!has(/无伤通过/)) fail('横幅 "' + bt + '" 应含「无伤通过」');
+          if (!has(/火力 \+3\/4P/)) fail('横幅 "' + bt + '" 应含「火力 +3/4P」');
+        } else if (branch === 'life_nohit') {
+          if (!has(/无伤通过/)) fail('横幅 "' + bt + '" 应含「无伤通过」');
+          if (!has(/1UP \+ 1\/2P/)) fail('横幅 "' + bt + '" 应含「1UP + 1/2P」');
+        } else if (branch === 'life_hit') {
+          if (has(/无伤/)) fail('横幅 "' + bt + '" 不应出现「无伤」（life 非无伤）');
+          if (!has(/1UP|残机/)) fail('横幅 "' + bt + '" 应含「1UP」或「残机」（保留 extend 横幅）');
+        } else if (branch === 'points') {
+          if (!has(/超时/)) fail('横幅 "' + bt + '" 应含「超时」');
+          if (!has(/奖励 \+10 点/)) fail('横幅 "' + bt + '" 应含「奖励 +10 点」');
+        }
       }
+      // 变体预期分支（variant c 的卡 2 是 natural，只走通用公式）
+      const variantExpected = (out.run.variantExpected || [])[i] || null;
+      if (variantExpected && variantExpected.branch !== 'natural') {
+        if (branch !== variantExpected.branch) fail('分支 ' + branch + ' ≠ 变体 ' + out.run.variantId + ' 预期 ' + variantExpected.branch);
+        if (Number.isFinite(variantExpected.dPower) && Math.abs(dPower - variantExpected.dPower) > 1e-4) fail('POWER 增量 ' + dPower + ' ≠ 变体预期 ' + variantExpected.dPower);
+        if (Number.isFinite(variantExpected.addExtend)) {
+          const gotAdd = Math.round((after.extendPts - before.extendPts + extendEvery * dLives) * 1e4) / 1e4;
+          if (Math.abs(gotAdd - variantExpected.addExtend) > 1e-4) fail('extend 入账 ' + gotAdd + ' ≠ 变体预期 ' + variantExpected.addExtend);
+        }
+      }
+      // 无伤控制独立核对：manip 显式置 damaged 时，结算快照必须与之一致（否则断言无意义）
+      const manipDamaged = c.rewardMeta && c.rewardMeta.manip && ('damaged' in c.rewardMeta.manip) ? c.rewardMeta.manip.damaged : null;
+      if (manipDamaged != null && damagedAtSettle !== !!manipDamaged) fail('damagedAtSettle=' + damagedAtSettle + ' 与 manip.damaged=' + manipDamaged + ' 不一致（无伤控制失效）');
     } else if (c.rewardMeta && c.rewardMeta.err) {
       fail('stage._onBossCardResult 抛异常：' + c.rewardMeta.err);
     } else if (resOk != null) {
-      warns.push(`s${stage}-${diff} 卡${i + 1}：无 before/after 奖励快照（无法核对 POWER/残机）`);
-    }
-    // 横幅
-    const banner = (ev && ev.banner) || (c.rewardMeta && c.rewardMeta.banner) || null;
-    if (banner) {
-      const want = resOk === false ? /超时/ : reward === 'life' ? /1UP|残机/ : /POWER|火力/;
-      if (!want.test(banner)) warns.push(`s${stage}-${diff} 卡${i + 1}：横幅 "${String(banner).trim()}" 与 reward=${reward} 不符`);
+      warns.push('s' + stage + '-' + diff + ' 卡' + (i + 1) + '：无 before/after 奖励快照（无法核对 POWER/残机）');
     }
     if (c.startT == null) { /* noop */ }
 
@@ -1075,7 +1361,14 @@ function analyzeRun(out) {
       stage, diff, index: i + 1, idx: i, boss: (out.boss && out.boss.key) || null, name: c.name || exp.name, mode, limit, expectedLimit: exp.limit,
       startT: c.startedT != null ? c.startedT : null, endT: c.endedT != null ? c.endedT : null,
       elapsed: r2(elapsed), ratio: r2(ratio), normRatio: r2(normRatio),
-      ok: resOk, reward: reward || null,
+      ok: resOk, reward: reward || null, branch, noHit: (ev && ev.d) ? !!ev.d.noHit : null,
+      base: (ev && ev.d) ? ev.d.base : null, bonus: (ev && ev.d) ? ev.d.bonus : null,
+      damagedAtSettle, manipulatedDamaged: (c.rewardMeta && c.rewardMeta.manip && ('damaged' in c.rewardMeta.manip)) ? !!c.rewardMeta.manip.damaged : null,
+      variantId: out.run.variantId || null, variantLabel: out.run.variantLabel || null,
+      expectedBranch: ((out.run.variantExpected || [])[i] || {}).branch || null,
+      dPower: (before && after) ? Math.round((after.power - before.power) * 1e4) / 1e4 : null,
+      dExtend: (before && after) ? Math.round((after.extendPts - before.extendPts) * 1e4) / 1e4 : null,
+      dLives: (before && after) ? after.lives - before.lives : null,
       hpAtEnd: Number.isFinite(c.bossHpMin) ? r2(c.bossHpMin) : null,
       bossState: c.bossStateAtEnd || null,
       immune: c.immune != null ? c.immune : null,
@@ -1153,10 +1446,12 @@ function analyzeRun(out) {
 /* ---------------------------------------------------------------- 汇总 */
 function buildSummary(results) {
   const allCards = [];
+  const rewardBranches = {};
+  const grazeRuns = [];
   const summary = {
     generatedAt: new Date().toISOString(),
     plan: PLAN,
-    config: { char: CHAR, god: GOD, seed: SEED, chunk: CHUNK, oracle: 'docs/BOSS_TIMING_SPEC.md §1' },
+    config: { char: CHAR, god: GOD, seed: SEED, chunk: CHUNK, oracle: 'docs/BOSS_TIMING_TABLE.md v4 §1' },
     runs: [],
     cards: allCards,
     issues: [],
@@ -1177,8 +1472,32 @@ function buildSummary(results) {
       shots: r.shots || [],
     });
     for (const c of a.cards || []) allCards.push(c);
+    for (const c of a.cards || []) if (c.branch) rewardBranches[c.branch] = (rewardBranches[c.branch] || 0) + 1;
+    if (r.run && r.run.grazeTest) grazeRuns.push({ tag: r.run.tag, stage: r.run.stage, probe: r.graze || null, check: a.grazeCheck || null });
     for (const m of a.issues || []) summary.issues.push(`[${r.run.tag} s${r.run.stage}] ${m}`);
     for (const m of a.warns || []) summary.warns.push(`[${r.run.tag} s${r.run.stage}] ${m}`);
+  }
+  // 奖励分支覆盖矩阵 + 擦弹跑结论（缺失分支 = 断言没证明到，直接 FAIL）
+  const cfgSeen = (results.find((r) => r.powerCfg) || {}).powerCfg || null;
+  summary.powerCfg = cfgSeen;
+  summary.powerCfgMismatch = cfgSeen ? POWER_CFG_KEYS.filter((k) => cfgSeen[k] !== POWER_SPEC[k]).map((k) => k + '=' + cfgSeen[k] + '（应为 ' + POWER_SPEC[k] + '）') : ['未采集到 powerCfg'];
+  if (summary.powerCfgMismatch.length) summary.issues.push('power.js 常量与 oracle 不一致：' + summary.powerCfgMismatch.join('，'));
+  summary.reward = {
+    required: ['power_hit', 'power_nohit', 'life_hit', 'life_nohit', 'points'],
+    branches: rewardBranches,
+    missing: [],
+  };
+  if (results.some((r) => r.run && r.run.tag === 'T')) {
+    summary.reward.missing = summary.reward.required.filter((b) => !rewardBranches[b]);
+    for (const b of summary.reward.missing) summary.issues.push('奖励分支未覆盖：' + b + '（T 跑没有实际命中该分支，断言无法证明）');
+  }
+  summary.graze = {
+    runs: grazeRuns,
+    verdict: grazeRuns.length ? (grazeRuns.every((g) => g.check && g.check.pass) ? 'PASS' : 'FAIL') : 'N/A',
+  };
+  if (results.some((r) => r.run && r.run.grazeTest)) {
+    if (!grazeRuns.length) summary.issues.push('擦弹跑（G）没有产出 grazeCheck');
+    else if (summary.graze.verdict === 'FAIL') summary.issues.push('擦弹集成断言 FAIL（详见 bosscards_reward_report.md）');
   }
   // 汇总统计（只算 Normal 正式跑）
   const nCards = allCards.filter((c) => c.diff === 'N' && !c.mutation && !c.test);
@@ -1208,7 +1527,7 @@ function writeMarkdown(summary) {
   const lines = [];
   lines.push('# Boss 符卡验收原始表（自动生成 · tools/_verify_bosscards.mjs）');
   lines.push('');
-  lines.push(`生成时间：${summary.generatedAt}　计划：\`${summary.plan}\`　oracle：docs/BOSS_TIMING_SPEC.md §1`);
+  lines.push(`生成时间：${summary.generatedAt}　计划：\`${summary.plan}\`　oracle：docs/BOSS_TIMING_TABLE.md v4 §1`);
   lines.push('');
   lines.push('## 跑次总览');
   lines.push('');
@@ -1229,6 +1548,31 @@ function writeMarkdown(summary) {
     lines.push(`| ${c.stage} | ${c.diff} | ${c.index} | ${c.name} | ${c.mode} | ${c.limit ?? '—'} | ${c.elapsed ?? '—'} | ${dev} | ${c.ok} | ${c.reward || '—'} | ${pass} | ${String(hud).replace(/\|/g, '\\|')} | |`);
   }
   lines.push('');
+  lines.push('## 奖励分支覆盖（T 跑）');
+  lines.push('');
+  if (summary.reward && Object.keys(summary.reward.branches).length) {
+    const req = summary.reward.required || [];
+    lines.push('| 分支 | 命中次数 | 覆盖 |');
+    lines.push('|---|---|---|');
+    for (const b of req) lines.push(`| ${b} | ${summary.reward.branches[b] || 0} | ${summary.reward.branches[b] ? 'PASS' : 'MISSING'} |`);
+  } else {
+    lines.push('- 本次计划未包含 T 跑');
+  }
+  lines.push('');
+  lines.push('## 擦弹集成（G 跑）');
+  lines.push('');
+  if (summary.graze && summary.graze.runs && summary.graze.runs.length) {
+    lines.push(`判定：${summary.graze.verdict}`);
+    lines.push('');
+    lines.push('| 帧 | g | grazeCount | dPower | dExtend | 残机 | 判定 |');
+    lines.push('|---|---|---|---|---|---|---|');
+    for (const g of summary.graze.runs) for (const f of (g.check && g.check.frames) || []) {
+      lines.push(`| ${f.label} | ${f.g} | ${f.grazeCount} | ${f.dPower} | ${f.dExtend} | ${f.livesBefore}→${f.livesAfter} | ${f.pass ? 'PASS' : 'FAIL'} |`);
+    }
+  } else {
+    lines.push('- 本次计划未包含 G 跑');
+  }
+  lines.push('');
   lines.push('## 需修清单（自动判定）');
   lines.push('');
   if (summary.issues.length) for (const m of summary.issues) lines.push(`- ${m}`);
@@ -1240,6 +1584,80 @@ function writeMarkdown(summary) {
   else lines.push('- （无）');
   lines.push('');
   return lines.join('\n');
+}
+
+/* ------------------------------------------- 奖励/擦弹专项报告 */
+function writeRewardReport(summary) {
+  const L = [];
+  L.push('# 符卡奖励 / 擦弹机制回归报告（自动生成 · tools/_verify_bosscards.mjs）');
+  L.push('');
+  L.push('生成时间：' + summary.generatedAt);
+  L.push('');
+  L.push('计划：' + summary.plan + '　角色：' + summary.config.char + '　god=' + summary.config.god + '　seed=' + summary.config.seed);
+  L.push('');
+  L.push('## 结论');
+  L.push('');
+  L.push('- 总判定：**' + summary.stats.verdict + '**（issues ' + summary.issues.length + ' 条，warns ' + summary.warns.length + ' 条）');
+  L.push('- 奖励分支覆盖：' + (summary.reward.required || []).map((b) => b + '=' + (summary.reward.branches[b] || 0)).join('，'));
+  if (summary.reward.missing && summary.reward.missing.length) L.push('- **缺失分支：' + summary.reward.missing.join('，') + '**');
+  L.push('- 擦弹集成（G 跑）：' + (summary.graze ? summary.graze.verdict : 'N/A'));
+  L.push('');
+  L.push('## 运行时 power.js 常量 vs 独立 oracle');
+  L.push('');
+  L.push('| 字段 | 运行时 | oracle |');
+  L.push('|---|---|---|');
+  for (const k of POWER_CFG_KEYS) L.push('| ' + k + ' | ' + (summary.powerCfg ? summary.powerCfg[k] : '—') + ' | ' + POWER_SPEC[k] + ' |');
+  if (summary.powerCfgMismatch && summary.powerCfgMismatch.length) L.push('', '偏差：' + summary.powerCfgMismatch.join('，'));
+  L.push('');
+  L.push('## T 跑逐卡奖励（before → after）');
+  L.push('');
+  L.push('| 变体 | 面 | 卡 | 分支 | 预期分支 | before P/EP | after P/EP | dP | dExtend | 入账 | dLives | ok | noHit | base | bonus | reward | 横幅 | 判定 |');
+  L.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+  for (const c of summary.cards) {
+    if (!c.branch) continue;
+    const runVerdict = (summary.runs.find((r) => r.tag === 'T' && r.stage === c.stage) || {}).verdict || '—';
+    L.push('| ' + (c.variantId || '—') + ' | ' + c.stage + ' | ' + c.index + ' | ' + c.branch + ' | ' + (c.expectedBranch || '—') +
+      ' | ' + c.beforePower + '/' + c.beforeExtend + ' | ' + c.afterPower + '/' + c.afterExtend +
+      ' | ' + c.dPower + ' | ' + c.dExtend + ' | ' + (c.dExtend == null ? '—' : Math.round((c.dExtend + 99 * (c.dLives || 0)) * 100) / 100) + ' | ' + c.dLives + ' | ' + c.ok + ' | ' + c.noHit + ' | ' + c.base + ' | ' + c.bonus +
+      ' | ' + (c.reward || '—') + ' | ' + String(c.banner || '').replace(/\|/g, '\\|') + ' | ' + runVerdict + ' |');
+  }
+  L.push('');
+  L.push('> 说明：dExtend 是 extendPts 账面变化；入账量 = dExtend + 99×dLives（跨 99 的部分被命数吸收）。');
+  L.push('> 无伤分支由探针在结算前显式设置 stage._cardDamaged（god 模式下自然受击不会发生），damagedAtSettle 与 manip.damaged 必须一致。');
+  L.push('');
+  L.push('## 擦弹集成逐帧（真实 stg 关卡）');
+  L.push('');
+  if (summary.graze && summary.graze.runs && summary.graze.runs.length) {
+    const g0 = summary.graze.runs[0];
+    const pr = g0.probe || {};
+    L.push('- 关卡 stage' + g0.stage + '（mode=' + pr.mode + '），判定点 ' + JSON.stringify(pr.hitPoint) + '，滚动速度 ' + pr.scrollSpeed + 'px/s；清场前敌方弹数 ' + pr.cleared + '。');
+    L.push('- 帧1 弹在判定点 +20px 处（内半径≈' + ((pr.frames || [])[0] || {}).innerR + '，擦弹外环=32）→ 只擦不中；帧2 不新放弹（同一颗不应重复计数）；帧3 换垂直方向再放一颗。');
+    L.push('');
+    L.push('| 帧 | g | grazeCount | dPower | dExtend(1UP) | 残机 | 弹距判定点 | 判定 |');
+    L.push('|---|---|---|---|---|---|---|---|');
+    for (const chk of summary.graze.runs) for (const f of (chk.check && chk.check.frames) || []) {
+      L.push('| ' + f.label + ' | ' + f.g + ' | ' + f.grazeCount + ' | ' + f.dPower + ' | ' + f.dExtend + ' | ' + f.livesBefore + '→' + f.livesAfter + ' | ' + (f.dists || []).join('/') + ' | ' + (f.pass ? 'PASS' : 'FAIL') + ' |');
+    }
+    L.push('');
+    L.push('**口径**：擦弹的 POWER 收益 (+0.075/颗) 不计入 1UP；1UP 进度只加 **0.02/颗**，符合「擦弹总 1UP = 0.02」的确认口径。');
+  } else {
+    L.push('- 本次计划未包含 G 跑（stage4 才是 stg 关卡）。');
+  }
+  L.push('');
+  L.push('## 未覆盖 / 边界');
+  L.push('');
+  L.push('- 本轮只跑 stage1（platform 面）+ T 三变体与 G:4（stage4 stg 面），未覆盖其它面/难度（E/H/T 全量 43 卡）。');
+  L.push('- noHit 分支用探针注入 stage._cardDamaged 构造（god 模式下自然受击不会发生）；真实受击置 true 的路径（stage.js hurt/die）未在 T 跑里自然触发，仅由源码静态确认。');
+  L.push('- 满槽分支由 manip 把 power 设为 maxPower 构造；未验证「自然把火力打满后结算」的时序差异（结算前最后一击才进满槽的边界）。');
+  L.push('- 超时分支用放大血条 ×3 强制触发（variant c），与真实「打不动导致超时」在 ok=false 语义上一致，但 DPS/时长不是自然值。');
+  L.push('');
+  L.push('## 失败原文 / 提示');
+  L.push('');
+  if (summary.issues.length) for (const m of summary.issues) L.push('- FAIL ' + m);
+  if (summary.warns.length) for (const m of summary.warns.slice(0, 40)) L.push('- WARN ' + m);
+  if (!summary.issues.length && !summary.warns.length) L.push('- （无）');
+  L.push('');
+  return L.join('\n');
 }
 
 /* ---------------------------------------------------------------- main */
@@ -1278,10 +1696,11 @@ function writeMarkdown(summary) {
   const summary = buildSummary(results);
   writeFileSync(join(OUT_DIR, 'bosscards_summary.json'), JSON.stringify(summary, null, 2));
   writeFileSync(join(OUT_DIR, 'bosscards_table.md'), writeMarkdown(summary));
+  writeFileSync(join(OUT_DIR, 'bosscards_reward_report.md'), writeRewardReport(summary));
   console.log('');
   console.log(`[verify] summary: ${summary.stats.verdict}  cards=${summary.stats.cardsTotal}  timed=${summary.stats.normalTimedOk}/${summary.stats.normalTimed}  issues=${summary.issues.length}`);
   if (summary.stats.measuredDps) console.log(`[verify] measuredDps(N): ${JSON.stringify(summary.stats.measuredDps)}`);
   for (const m of summary.issues.slice(0, 20)) console.log('  FAIL ' + m);
   for (const m of summary.warns.slice(0, 12)) console.log('  WARN ' + m);
-  console.log(`[verify] wrote ${join(OUT_DIR, 'bosscards_summary.json')} + bosscards_table.md`);
+  console.log('[verify] wrote ' + join(OUT_DIR, 'bosscards_summary.json') + ' + bosscards_table.md + bosscards_reward_report.md');
 })();

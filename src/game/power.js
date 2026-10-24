@@ -6,7 +6,7 @@
  *  - 放符卡（Bomb）→ 清空全屏弹幕 + 对 Boss / 敌人造成大伤害 + 短暂无敌
  *  - 符卡从 POWER 里扣费 → 火力等级随之下降（"烧火力"）
  *  - 被弹 / 落命也会损失一部分 POWER，火力跟着掉
- *  - 累计拾取 99 点 POWER → 恢复 1 条残机（1UP），计数清零后循环
+ *  - 累计 99 点（拾取 POWER / 擦弹 0.02 点 / 符卡奖励）→ 恢复 1 条残机（1UP），计数清零后循环
  *
  * POWER 是连续值（0–64），每 16 点一个火力等级：
  *   Lv.1  0–15    Lv.2  16–31    Lv.3  32–47    Lv.4  48–64
@@ -24,10 +24,23 @@ export const POWER = Object.freeze({
   pickup: 4,         // 吃一枚 P 点回复（掉落率砍半换来的「值钱 P」：4 点 = 满槽的 1/16）
   kill: 1,           // 击破杂兵
   killStg: 1,        // STG 关击破
-  graze: 0.075,      // STG 擦弹（每颗）
-  extend: 99,        // 累计拾取 99 点 POWER → 恢复 1 命（循环）
+  graze: 0.075,      // STG 擦弹（每颗）：POWER（不再重复计入 1UP）
+  grazePoints: 0.02, // STG 擦弹（每颗）：1UP 累计点数（99 点 = 1 残机；擦弹总 1UP = 此值）
+  cardClear: 0.25,   // 符卡结算奖励：满槽的 1/4（1/4P）
+  cardNoHit: 0.5,    // 符卡无伤额外奖励：满槽的 1/2（1/2P）
+  extend: 99,        // 累计 99 点（POWER / 擦弹 / 符卡奖励）→ 恢复 1 命（循环）
   respawnKeep: { platform: 0.5, stg: 0.6 },
 });
+
+/** 符卡击破 / 存活到点的基础奖励：1/4P（按满槽比例换算，当前 16） */
+export function cardClearPower() {
+  return Math.round(POWER.max * POWER.cardClear);
+}
+
+/** 符卡无伤额外奖励：1/2P（按满槽比例换算，当前 32） */
+export function cardNoHitPower() {
+  return Math.round(POWER.max * POWER.cardNoHit);
+}
 
 /** POWER → 火力等级（1–4） */
 export function powerLevel(power = 0) {

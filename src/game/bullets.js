@@ -1,6 +1,12 @@
 /**
  * 弹幕系统：对象池 + 离屏精灵缓存 + 判定。
  *
+ * 两族弹型共用同一套绘制管线：
+ *   - 冰晶家族（0~4）在本文件里作画；
+ *   - 角色专属弹型（5~23，暗月/萤火/冰晶块/枫叶/樱/玉/刀…）在 ./bulletArt/ 里作画，
+ *     由 SKIN_META 注册，本文件只负责按 type 取 ext / build / autoSpin / 辉光色。
+ *     两族共享精灵缓存、判定（b.r）、拖尾与辉光，判定数值一个字没动。
+ *
  * 冰晶家族（《东方冰之勇者记》式的冷色玻璃质感）：
  *   B_CIRCLE 六棱切面宝石   B_RICE 细长冰棱   B_BIG 六瓣冰花结晶
  *   B_STAR 六角雪花结晶     B_LASER 冰晶光束
@@ -29,6 +35,8 @@
  * 坐标：全部是世界坐标（ctx 已由相机平移）。
  */
 
+import { SKIN_META, skinGlow } from './bulletArt/index.js';
+
 /* 弹幕类型 */
 export const B_CIRCLE = 0;  // 六棱切面宝石
 export const B_RICE = 1;    // 细长冰棱（可旋转）
@@ -43,7 +51,7 @@ const MAX_BULLETS = 1400;
 const SS = 2;              // 精灵超采样倍率（渲染器 backing 最高 2.5x，2x 足够）
 const VIS = 1.16;          // 绘制放大系数：剪影半径 ≈ 判定半径 × 1.30（判定数值一字不动）
 const GLOW_MAX = 560;      // 活跃弹幕低于此数才叠加额外辉光层（保住峰值帧率）
-const CACHE_LIMIT = 520;   // 精灵缓存条目上限（约 7~10MB；超限逐条淘汰最旧）
+const CACHE_LIMIT = 760;   // 精灵缓存条目上限（专属弹型多了 19 种，放宽到约 12~16MB；超限逐条淘汰最旧）
 
 /* 冰晶家族的几何比例（相对 size = 判定半径）：
  * 每个形状的外接半径 + 半个描边 ≈ 1.12size，绘制时再 ×1.16 = **1.30r**，
@@ -548,6 +556,8 @@ function buildBeam(g, size, P) {
 
 /** 本体精灵外接半径倍数（要装下弹体 + 描边 + 一层薄光晕） */
 function bodyExt(type) {
+  const skin = SKIN_META[type];
+  if (skin) return skin.ext;   // 专属弹型自带剪影半径
   if (type === B_RICE) return 1.40;
   if (type === B_LASER) return 1.78;
   if (type === B_STAR) return 1.42;
@@ -562,6 +572,9 @@ function buildBody(type, color, size) {
   g.scale(SS, SS);
   const cx = dim / (2 * SS);
   const P = palette(color);
+  const skin = SKIN_META[type] || null;
+  // 专属弹型按自己的材质取辉光色（暖色弹不能裹一层冷蓝光）
+  const glowRGB = skin ? skinGlow(type, color) : P.glow;
 
   /* 柔光晕：最外层，alpha 很低，只交代「冰在发光」。
    * 小尺寸再压一档——16px 的弹幕外面裹一圈光晕就会变成「发光珍珠」。 */
@@ -572,10 +585,10 @@ function buildBody(type, color, size) {
   const hk = size <= 7 ? 0.62 : 1;
   g.scale(hsx, hsy);
   const hg = g.createRadialGradient(0, 0, size * 0.6, 0, 0, hr);
-  hg.addColorStop(0, cs(P.glow, 0.16 * hk));
-  hg.addColorStop(0.45, cs(P.glow, 0.09 * hk));
-  hg.addColorStop(0.78, cs(P.glow, 0.03 * hk));
-  hg.addColorStop(1, cs(P.glow, 0));
+  hg.addColorStop(0, cs(glowRGB, 0.16 * hk));
+  hg.addColorStop(0.45, cs(glowRGB, 0.09 * hk));
+  hg.addColorStop(0.78, cs(glowRGB, 0.03 * hk));
+  hg.addColorStop(1, cs(glowRGB, 0));
   g.fillStyle = hg;
   g.beginPath();
   g.arc(0, 0, hr, 0, Math.PI * 2);
@@ -585,7 +598,8 @@ function buildBody(type, color, size) {
   /* 弹体 */
   g.save();
   g.translate(cx, cx);
-  if (type === B_CIRCLE) buildGem(g, size, P);
+  if (skin) skin.build(g, size, color);               // 角色专属弹型：自己作画（见 bulletArt/）
+  else if (type === B_CIRCLE) buildGem(g, size, P);
   else if (type === B_RICE) buildShard(g, size, P);
   else if (type === B_BIG) buildBloom(g, size, P);
   else if (type === B_STAR) buildFlake(g, size, P);
@@ -597,25 +611,26 @@ function buildBody(type, color, size) {
 
 /* ---------------- 加法辉光精灵 ---------------- */
 
-function buildGlow(color, size) {
+function buildGlow(type, color, size) {
   const ext = size * GLOW_EXT;
   const dim = Math.ceil(ext * 2 * SS);
   const c = makeCanvas(dim, dim);
   const g = c.getContext('2d');
   g.scale(SS, SS);
   const cx = dim / (2 * SS);
-  const P = palette(color);
+  const skin = SKIN_META[type] || null;
+  const glowRGB = skin ? skinGlow(type, color) : palette(color).glow;
 
   g.save();
   g.translate(cx, cx);
   // 纯径向：这张精灵在 draw 里不旋转，保持旋转不变形；
   // 拉伸版光晕交给本体精灵（本体是跟着弹体一起转的）。
   const grad = g.createRadialGradient(0, 0, size * 0.5, 0, 0, ext);
-  grad.addColorStop(0, cs(P.glow, 0.24));
-  grad.addColorStop(0.28, cs(P.glow, 0.13));
-  grad.addColorStop(0.6, cs(P.glow, 0.05));
-  grad.addColorStop(0.84, cs(P.glow, 0.013));
-  grad.addColorStop(1, cs(P.glow, 0));
+  grad.addColorStop(0, cs(glowRGB, 0.24));
+  grad.addColorStop(0.28, cs(glowRGB, 0.13));
+  grad.addColorStop(0.6, cs(glowRGB, 0.05));
+  grad.addColorStop(0.84, cs(glowRGB, 0.013));
+  grad.addColorStop(1, cs(glowRGB, 0));
   g.fillStyle = grad;
   g.beginPath();
   g.arc(0, 0, ext, 0, Math.PI * 2);
@@ -637,7 +652,7 @@ function getSprites(type, color, size) {
   }
 
   const body = buildBody(type, color, size);
-  const glow = buildGlow(color, size);
+  const glow = buildGlow(type, color, size);
   const s = {
     body, glow,
     w: body.width / SS,
@@ -645,6 +660,18 @@ function getSprites(type, color, size) {
   };
   spriteCache.set(key, s);
   return s;
+}
+
+/* ---------------- 预览 / 自检接口 ---------------- */
+
+/** 按正式管线烘焙一张本体精灵（含柔光晕），给弹型预览页与截图验收用 */
+export function bakeBulletSprite(type, color, size) {
+  return buildBody(type, color, size);
+}
+
+/** 按正式管线烘焙一张加法辉光精灵（预览用） */
+export function bakeBulletGlow(type, color, size) {
+  return buildGlow(type, color, size);
 }
 
 /* ---------------- 空闲预热 ---------------- */
@@ -716,7 +743,10 @@ function makeBullet() {
     turn: 0,
     scaleIn: 0.12,
     _spr: null,
-    _sprKey: '',
+    // 精灵缓存的身份字段：直接比字段，不在每帧每遍拼 `type|color|size` 字符串
+    _sprType: -1,
+    _sprColor: '',
+    _sprSize: -1,
   };
 }
 
@@ -765,6 +795,9 @@ export class BulletPool {
    * @param {number} [o.grazable]
    */
   spawn(o) {
+    // 符卡专属弹型映射：只在自定义签名弹幕执行期间由 boss.js 设置（同步、每发即清），
+    // 命中后把原 0-3 号弹换成该卡的专属图案弹；激光默认不动（见 bulletArt/cardSkins.js）。
+    if (this.skinMap) o.type = this.skinMap(o.type || 0);
     const b = this._take();
     if (!b.active) this.activeCount++;
     b.active = true;
@@ -789,30 +822,41 @@ export class BulletPool {
     b.spawnT = 0;
     b.scaleIn = o.scaleIn !== undefined ? o.scaleIn : 0.12;
     b._spr = null;
-    b._sprKey = b.type + '|' + b.color + '|' + Math.round(b.r);
     return b;
   }
 
-  /** 圆形范围发射：一圈 n 发 */
+  /**
+   * 圆形范围发射：一圈 n 发
+   * o.speedVar：速度倍率数组，按发序循环取用（同一圈里快慢混编，E 档传 [1,1] 即同速）；
+   * o.speedCap：单发弹速硬上限，快档子弹不会把护栏顶穿。
+   */
   ring(x, y, n, speed, o = {}) {
     const base = o.angle || 0;
+    const vs = o.speedVar || null;
+    const cap = o.speedCap || 0;
     for (let i = 0; i < n; i++) {
       const a = base + (i / n) * Math.PI * 2;
+      let sp = speed * (vs ? vs[i % vs.length] : 1);
+      if (cap && sp > cap) sp = cap;
       this.spawn({
         ...o,
         x, y,
-        vx: Math.cos(a) * speed,
-        vy: Math.sin(a) * speed,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
       });
     }
   }
 
-  /** 扇形发射 */
+  /** 扇形发射（o.speedVar / o.speedCap 同 ring：同一扇里快慢混编） */
   fan(x, y, n, spread, angle, speed, o = {}) {
+    const vs = o.speedVar || null;
+    const cap = o.speedCap || 0;
     for (let i = 0; i < n; i++) {
       const t = n === 1 ? 0 : (i / (n - 1)) - 0.5;
       const a = angle + t * spread;
-      this.spawn({ ...o, x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed });
+      let sp = speed * (vs ? vs[i % vs.length] : 1);
+      if (cap && sp > cap) sp = cap;
+      this.spawn({ ...o, x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp });
     }
   }
 
@@ -988,7 +1032,10 @@ export class BulletPool {
           const ux = b.vx / sp;
           const uy = b.vy / sp;
           const wb = S.w * VIS * pop;
-          const rotated = b.type === B_RICE || b.type === B_STAR || b.type === B_LASER;
+          const skin = SKIN_META[b.type] || null;
+          const rotated = skin
+            ? !!skin.autoSpin                                   // 专属弹型：只有带朝向的才跟着转
+            : (b.type === B_RICE || b.type === B_STAR || b.type === B_LASER);
           for (let t = 1; t <= 2; t++) {
             const off = b.r * VIS * 0.62 * t;   // 0.62r / 1.24r ≈ 拖尾长 1.2r
             const tw = wb * (t === 1 ? 0.86 : 0.72);
@@ -1031,9 +1078,19 @@ export class BulletPool {
       const w = S.w * VIS * this._pop(b);
       const hw = w * 0.5;
 
-      if (b.type === B_RICE || b.type === B_STAR || b.type === B_LASER || b.type === B_BIG) {
-        // 大玉即使 spin 为 0 也让它缓慢自转，内层纹理才会有能量流动感
-        const rot = b.type === B_BIG ? b.rot + b.spawnT * 0.85 : b.rot;
+      /* 旋转策略：
+       *   冰晶家族  B_RICE/B_STAR/B_LASER 跟 rot，B_BIG 额外加缓慢自转；
+       *   专属弹型  由 SKIN_META.autoSpin 决定（刀/枫叶/樱瓣要转，冰块/金刚石不转）。 */
+      const skin = SKIN_META[b.type] || null;
+      let rot = null;
+      if (skin) {
+        if (skin.autoSpin) rot = b.rot;
+      } else if (b.type === B_BIG) {
+        rot = b.rot + b.spawnT * 0.85;   // 大玉即使 spin 为 0 也缓慢自转
+      } else if (b.type === B_RICE || b.type === B_STAR || b.type === B_LASER) {
+        rot = b.rot;
+      }
+      if (rot !== null) {
         ctx.save();
         ctx.translate(b.x, b.y);
         ctx.rotate(rot);
@@ -1057,12 +1114,13 @@ export class BulletPool {
 
   _getSpr(b) {
     const sizeKey = Math.max(2, Math.round(b.r));
-    const key = b.type + '|' + b.color + '|' + sizeKey;
     let S = b._spr;
-    if (!S || b._sprKey !== key) {
+    if (!S || b._sprSize !== sizeKey || b._sprColor !== b.color || b._sprType !== b.type) {
       S = getSprites(b.type, b.color, sizeKey);
       b._spr = S;
-      b._sprKey = key;
+      b._sprType = b.type;
+      b._sprColor = b.color;
+      b._sprSize = sizeKey;
     }
     return S;
   }

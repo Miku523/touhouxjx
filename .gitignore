@@ -74,6 +74,7 @@ tools/_shots/
 
 # playtest / 调试产物
 _pt/
+_i18n_work/
 _hit/
 tools/build/musicroom_*.png
 
@@ -91,3 +92,8 @@ tools/build/_k*_feat/
 tools/build/_old_layer.js
 
 /.dsh-ops/
+
+# 移动端 QA 截图/录屏（本地留存，不入库）
+_shots_*/
+# 剧情重制过程截图（本地留存，不入库）
+docs/RE_STORY/artifacts/

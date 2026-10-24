@@ -39,6 +39,7 @@ const ENTITY_CHARS = {
   P: 'player',
   o: 'coin',
   p: 'power',
+  U: 'life',      // 1UP 道具（拾取即回一条残机）
   s: 'fairy',
   f: 'flyer',
   C: 'checkpoint',

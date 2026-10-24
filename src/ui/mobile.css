@@ -1,0 +1,756 @@
+/* ============================================================
+ * 手机端虚拟手柄 TouchPad —— 样式
+ * - 只由 src/ui/virtualPad.js 使用；body.hks-pad-on 存在时才涉及。
+ * - 深色 + 霓虹，贴合 src/style.css 的 :root 变量。
+ * - 尺寸/位置由 JS 计算（含 env(safe-area-inset-*)），CSS 只负责视觉。
+ * ============================================================ */
+
+body.hks-pad-on #ui { z-index: 45; }
+body.hks-pad-on #touch { display: none !important; }
+
+#hksTouchPad {
+  --hks-ink: var(--ink, #05030a);
+  --hks-text: var(--text, #f2e9d8);
+  --hks-dim: var(--dim, #a89e8e);
+  --hks-rose: var(--reimu, #e8364f);
+  --hks-gold: var(--gold, #f2d24b);
+  --hks-sakura: var(--sakura, #ff9ecb);
+  --hks-cyan: var(--cyan, #6ee7ff);
+  --hks-opacity: .85;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  touch-action: none;
+  font-family: var(--serif, "Songti SC", "SimSun", "Noto Serif CJK SC", serif);
+  color: var(--hks-text);
+  -webkit-font-smoothing: antialiased;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#hksTouchPad.is-dialogue { z-index: 46; }
+#hksTouchPad.is-overlay { z-index: 60; }
+#hksTouchPad [hidden] { display: none !important; }
+#hksTouchPad * {
+  box-sizing: border-box;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#hksTouchPad button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* ------------------------------ 图层 ------------------------------ */
+
+#hksTouchPad .hks-pad-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#hksTouchPad .hks-pad-layer-stick,
+#hksTouchPad .hks-pad-layer-actions,
+#hksTouchPad .hks-pad-layer-top {
+  opacity: var(--hks-opacity, .85);
+  transition: opacity .18s ease;
+}
+#hksTouchPad .hks-pad-layer-stick { z-index: 2; }
+#hksTouchPad .hks-pad-layer-actions { z-index: 3; }
+#hksTouchPad .hks-pad-layer-top { z-index: 4; }
+#hksTouchPad .hks-pad-layer-dialogue { z-index: 5; }
+#hksTouchPad .hks-pad-shade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: auto;
+  background: rgba(5, 3, 10, .28);
+}
+
+/* ------------------------------ 槽位 ------------------------------ */
+
+#hksTouchPad .hks-pad-slot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: transform .16s ease-out;
+  will-change: transform;
+}
+#hksTouchPad .hks-pad-slot.is-off { display: none !important; }
+#hksTouchPad .hks-pad-slot.is-dragging {
+  transition: none;
+  z-index: 10;
+  cursor: grabbing;
+}
+#hksTouchPad .hks-pad-slot > * { pointer-events: auto; }
+
+#hksTouchPad[data-mode="play"] [data-slot="stick"],
+#hksTouchPad[data-mode="play"] .hks-pad-stick,
+#hksTouchPad .hks-pad-stick-knob { pointer-events: none; }
+#hksTouchPad[data-mode="edit"] [data-slot="stick"],
+#hksTouchPad[data-mode="edit"] .hks-pad-stick { pointer-events: auto; }
+
+/* ------------------------------ 通用按钮 ------------------------------ */
+
+#hksTouchPad .hks-pad-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(242, 233, 216, .22);
+  background:
+    radial-gradient(circle at 32% 26%, rgba(255, 255, 255, .14), rgba(255, 255, 255, .015) 46%, transparent 70%),
+    radial-gradient(circle at 50% 120%, rgba(0, 0, 0, .5), transparent 62%),
+    rgba(8, 5, 16, .58);
+  color: var(--hks-text);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, .04),
+    inset 0 -4px 10px rgba(0, 0, 0, .45),
+    0 4px 14px rgba(0, 0, 0, .35);
+  transform: scale(1);
+  transition: transform .07s ease-out, box-shadow .12s ease, border-color .12s ease, background-color .12s ease;
+  touch-action: none;
+}
+#hksTouchPad .hks-pad-btn.is-pressed {
+  transform: scale(.88);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, .1),
+    0 0 18px rgba(255, 255, 255, .16),
+    0 0 34px rgba(232, 54, 79, .18);
+}
+#hksTouchPad .hks-pad-btn-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46%;
+  height: 46%;
+  line-height: 0;
+}
+#hksTouchPad .hks-pad-btn-ico .hks-pad-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, .12));
+}
+#hksTouchPad .hks-pad-btn--mini .hks-pad-btn-ico { width: 52%; height: 52%; }
+#hksTouchPad .hks-pad-btn-label {
+  font-size: clamp(7px, calc(var(--hks-btn-size, 44px) * .19), 11px);
+  line-height: 1;
+  letter-spacing: .08em;
+  opacity: .78;
+  transform: translateY(1px);
+  white-space: nowrap;
+}
+
+/* 主题色 */
+#hksTouchPad .hks-pad-btn--rose { border-color: rgba(232, 54, 79, .62); color: #ffdbe0; }
+#hksTouchPad .hks-pad-btn--rose .hks-pad-btn-ico { color: var(--hks-rose); }
+#hksTouchPad .hks-pad-btn--rose.is-pressed { box-shadow: 0 0 22px rgba(232, 54, 79, .55), inset 0 0 18px rgba(232, 54, 79, .3); }
+
+#hksTouchPad .hks-pad-btn--cyan { border-color: rgba(110, 231, 255, .5); color: #d9f9ff; }
+#hksTouchPad .hks-pad-btn--cyan .hks-pad-btn-ico { color: var(--hks-cyan); }
+#hksTouchPad .hks-pad-btn--cyan.is-pressed { box-shadow: 0 0 22px rgba(110, 231, 255, .45), inset 0 0 18px rgba(110, 231, 255, .25); }
+
+#hksTouchPad .hks-pad-btn--sakura { border-color: rgba(255, 158, 203, .55); color: #ffe3f1; }
+#hksTouchPad .hks-pad-btn--sakura .hks-pad-btn-ico { color: var(--hks-sakura); }
+#hksTouchPad .hks-pad-btn--sakura.is-pressed { box-shadow: 0 0 22px rgba(255, 158, 203, .48), inset 0 0 18px rgba(255, 158, 203, .24); }
+
+#hksTouchPad .hks-pad-btn--gold { border-color: rgba(242, 210, 75, .55); color: #fff3c4; }
+#hksTouchPad .hks-pad-btn--gold .hks-pad-btn-ico { color: var(--hks-gold); }
+#hksTouchPad .hks-pad-btn--gold.is-pressed { box-shadow: 0 0 22px rgba(242, 210, 75, .5), inset 0 0 18px rgba(242, 210, 75, .25); }
+
+#hksTouchPad .hks-pad-btn--plain {
+  border-color: rgba(242, 233, 216, .24);
+  background: rgba(5, 3, 10, .52);
+  color: rgba(242, 233, 216, .82);
+}
+#hksTouchPad .hks-pad-btn--plain .hks-pad-btn-ico { color: rgba(242, 233, 216, .82); }
+#hksTouchPad .hks-pad-btn--mini {
+  border-radius: 30%;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+#hksTouchPad .hks-pad-btn--mini .hks-pad-btn-label { display: none; }
+#hksTouchPad .hks-pad-btn--plain.is-pressed { box-shadow: 0 0 18px rgba(242, 233, 216, .22), inset 0 0 14px rgba(242, 233, 216, .1); }
+
+/* keys 方案左右方向键 */
+#hksTouchPad .hks-pad-slot[data-slot="left"] .hks-pad-btn,
+#hksTouchPad .hks-pad-slot[data-slot="right"] .hks-pad-btn {
+  border-radius: 34%;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(0, 0, 0, .35)),
+    rgba(8, 5, 16, .6);
+}
+#hksTouchPad .hks-pad-slot[data-slot="left"] .hks-pad-btn-label,
+#hksTouchPad .hks-pad-slot[data-slot="right"] .hks-pad-btn-label { opacity: .55; }
+
+/* ------------------------------ 摇杆 ------------------------------ */
+
+#hksTouchPad .hks-pad-stick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 42%;
+  height: 62%;
+  pointer-events: auto;
+  touch-action: none;
+  background: radial-gradient(circle at 22% 82%, rgba(110, 231, 255, .055), transparent 62%);
+}
+#hksTouchPad .hks-pad-stick {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid rgba(110, 231, 255, .3);
+  background:
+    radial-gradient(circle at 50% 46%, rgba(110, 231, 255, .08), transparent 55%),
+    radial-gradient(circle at 50% 120%, rgba(0, 0, 0, .55), transparent 68%),
+    rgba(6, 4, 12, .42);
+  box-shadow:
+    inset 0 0 18px rgba(0, 0, 0, .45),
+    0 0 26px rgba(110, 231, 255, .08);
+  opacity: .8;
+  transition: opacity .16s ease, border-color .16s ease, box-shadow .16s ease;
+  touch-action: none;
+}
+#hksTouchPad .hks-pad-stick-ring {
+  position: absolute;
+  inset: 15%;
+  border-radius: 50%;
+  border: 1px dashed rgba(110, 231, 255, .22);
+  pointer-events: none;
+}
+#hksTouchPad .hks-pad-stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44%;
+  height: 44%;
+  margin: -22% 0 0 -22%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--hks-cyan);
+  border: 1.5px solid rgba(110, 231, 255, .55);
+  background:
+    radial-gradient(circle at 36% 30%, rgba(255, 255, 255, .2), transparent 52%),
+    radial-gradient(circle at 50% 100%, rgba(6, 4, 12, .85), rgba(10, 16, 26, .55));
+  box-shadow: 0 0 16px rgba(110, 231, 255, .28), inset 0 -3px 8px rgba(0, 0, 0, .55);
+  transition: transform .055s linear;
+  pointer-events: none;
+  will-change: transform;
+}
+#hksTouchPad .hks-pad-stick-knob .hks-pad-svg { width: 52%; height: 52%; opacity: .8; }
+#hksTouchPad .hks-pad-slot[data-slot="stick"].is-active .hks-pad-stick {
+  opacity: 1;
+  border-color: rgba(110, 231, 255, .62);
+  box-shadow:
+    inset 0 0 22px rgba(0, 0, 0, .4),
+    0 0 30px rgba(110, 231, 255, .22);
+}
+
+/* ------------------------------ 手势区 ------------------------------ */
+
+#hksTouchPad .hks-pad-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  pointer-events: auto;
+  touch-action: none;
+}
+#hksTouchPad .hks-pad-zone--left {
+  left: 0;
+  background: linear-gradient(90deg, rgba(110, 231, 255, .045), transparent 46%);
+}
+#hksTouchPad .hks-pad-zone--right {
+  right: 0;
+  background: linear-gradient(270deg, rgba(232, 54, 79, .04), transparent 46%);
+}
+#hksTouchPad .hks-pad-zone--left::after {
+  content: "";
+  position: absolute;
+  top: 16%;
+  bottom: 16%;
+  right: 0;
+  border-right: 1px dashed rgba(242, 233, 216, .09);
+}
+#hksTouchPad .hks-pad-zone-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  font-size: clamp(9px, 1.4vmin, 12px);
+  letter-spacing: .05em;
+  color: rgba(242, 233, 216, .34);
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 1px 4px #000;
+}
+#hksTouchPad .hks-pad-zone--left .hks-pad-zone-tip { left: 26%; }
+#hksTouchPad .hks-pad-zone--right .hks-pad-zone-tip { left: 74%; }
+
+/* ------------------------------ 对话继续 ------------------------------ */
+
+#hksTouchPad .hks-pad-layer-dialogue {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: max(15vh, 96px);
+}
+#hksTouchPad .hks-pad-continue {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: min(64vw, 340px);
+  padding: 16px 40px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(242, 210, 75, .62);
+  background: rgba(5, 3, 10, .52);
+  color: #fff3c4;
+  font-size: clamp(18px, 4.4vmin, 30px);
+  letter-spacing: .32em;
+  text-indent: .32em;
+  text-shadow: 0 0 18px rgba(242, 210, 75, .45);
+  box-shadow: 0 0 34px rgba(242, 210, 75, .16), inset 0 0 26px rgba(242, 210, 75, .08);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  touch-action: none;
+  animation: hksPadContinuePulse 2.4s ease-in-out infinite;
+  transition: transform .08s ease, box-shadow .12s ease;
+}
+#hksTouchPad .hks-pad-continue.is-pressed {
+  transform: scale(.96);
+  box-shadow: 0 0 46px rgba(242, 210, 75, .32), inset 0 0 30px rgba(242, 210, 75, .16);
+}
+#hksTouchPad .hks-pad-continue-arrow {
+  font-size: .62em;
+  transform: translateY(-1px);
+  animation: hksPadArrow 1.6s ease-in-out infinite;
+}
+@keyframes hksPadContinuePulse {
+  0%, 100% { box-shadow: 0 0 28px rgba(242, 210, 75, .12), inset 0 0 22px rgba(242, 210, 75, .06); }
+  50% { box-shadow: 0 0 46px rgba(242, 210, 75, .26), inset 0 0 30px rgba(242, 210, 75, .14); }
+}
+@keyframes hksPadArrow {
+  0%, 100% { transform: translateY(-1px); opacity: .7; }
+  50% { transform: translateY(4px); opacity: 1; }
+}
+
+/* ------------------------------ 提示卡 ------------------------------ */
+
+#hksTouchPad .hks-pad-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 12;
+  padding: 18px;
+}
+#hksTouchPad .hks-pad-hint-card {
+  pointer-events: auto;
+  width: min(86vw, 340px);
+  padding: 16px 18px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(110, 231, 255, .32);
+  background: linear-gradient(180deg, rgba(16, 10, 26, .96), rgba(7, 5, 13, .98));
+  box-shadow: 0 22px 60px rgba(0, 0, 0, .6), 0 0 24px rgba(110, 231, 255, .1);
+  animation: hksPadPop .22s ease-out;
+}
+#hksTouchPad .hks-pad-hint-title {
+  font-size: 15px;
+  letter-spacing: .14em;
+  color: var(--hks-cyan);
+  margin-bottom: 8px;
+}
+#hksTouchPad .hks-pad-hint-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--hks-dim);
+}
+#hksTouchPad .hks-pad-hint-list b { color: var(--hks-text); font-weight: 600; }
+#hksTouchPad .hks-pad-hint .hks-pad-chip { width: 100%; justify-content: center; }
+
+/* ------------------------------ 编辑条 ------------------------------ */
+
+#hksTouchPad .hks-pad-editbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 20;
+  pointer-events: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) calc(10px + env(safe-area-inset-right, 0px)) 9px calc(10px + env(safe-area-inset-left, 0px));
+  background: linear-gradient(180deg, rgba(5, 3, 10, .96), rgba(5, 3, 10, .76));
+  border-bottom: 1px solid rgba(110, 231, 255, .18);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .4);
+}
+#hksTouchPad .hks-pad-editbar-tip {
+  font-size: clamp(10px, 1.5vmin, 12px);
+  color: var(--hks-dim);
+  letter-spacing: .05em;
+  margin-right: auto;
+  white-space: nowrap;
+}
+#hksTouchPad .hks-pad-editbar-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#hksTouchPad .hks-pad-seg {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 3px;
+  border-radius: 11px;
+  border: 1px solid rgba(242, 233, 216, .14);
+  background: rgba(0, 0, 0, .35);
+}
+#hksTouchPad .hks-pad-segbtn {
+  border: 0;
+  background: transparent;
+  color: var(--hks-dim);
+  padding: 6px 11px;
+  border-radius: 8px;
+  font-size: clamp(11px, 1.6vmin, 13px);
+  letter-spacing: .06em;
+  transition: background .14s ease, color .14s ease, box-shadow .14s ease;
+}
+#hksTouchPad .hks-pad-segbtn.is-on {
+  color: #ffeef1;
+  background: linear-gradient(180deg, rgba(232, 54, 79, .45), rgba(232, 54, 79, .24));
+  box-shadow: inset 0 0 0 1px rgba(255, 158, 203, .35), 0 0 14px rgba(232, 54, 79, .25);
+}
+#hksTouchPad .hks-pad-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(242, 233, 216, .18);
+  background: rgba(14, 9, 22, .78);
+  color: var(--hks-text);
+  font-size: clamp(11px, 1.6vmin, 13px);
+  letter-spacing: .06em;
+  touch-action: none;
+  transition: background .14s ease, border-color .14s ease, box-shadow .14s ease, transform .07s ease;
+}
+#hksTouchPad .hks-pad-chip.is-primary {
+  border-color: rgba(242, 210, 75, .55);
+  color: var(--hks-gold);
+  background: rgba(242, 210, 75, .1);
+  box-shadow: 0 0 16px rgba(242, 210, 75, .12);
+}
+#hksTouchPad .hks-pad-chip.is-pressed { transform: scale(.95); }
+#hksTouchPad .hks-pad-chip--icon {
+  width: 38px;
+  height: 36px;
+  padding: 0;
+}
+#hksTouchPad .hks-pad-chip .hks-pad-svg { width: 18px; height: 18px; }
+
+/* ------------------------------ 设置面板 ------------------------------ */
+
+#hksTouchPad .hks-pad-sheet-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  touch-action: pan-y;
+}
+#hksTouchPad .hks-pad-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .5);
+  backdrop-filter: blur(2.5px);
+  -webkit-backdrop-filter: blur(2.5px);
+}
+#hksTouchPad .hks-pad-sheet {
+  position: relative;
+  width: min(92vw, 372px);
+  max-height: min(86vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-radius: 16px;
+  border: 1px solid rgba(110, 231, 255, .28);
+  background: linear-gradient(180deg, rgba(17, 11, 27, .98), rgba(7, 5, 13, .99));
+  box-shadow: 0 26px 80px rgba(0, 0, 0, .65), 0 0 26px rgba(110, 231, 255, .08);
+  color: var(--hks-text);
+  animation: hksPadPop .2s ease-out;
+}
+#hksTouchPad .hks-pad-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(242, 233, 216, .1);
+  letter-spacing: .12em;
+  font-size: 15px;
+}
+#hksTouchPad .hks-pad-sheet-head b { font-weight: 600; color: var(--hks-cyan); }
+#hksTouchPad .hks-pad-sheet-close {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid rgba(242, 233, 216, .18);
+  background: rgba(255, 255, 255, .05);
+  color: var(--hks-dim);
+  font-size: 13px;
+  line-height: 1;
+}
+#hksTouchPad .hks-pad-sheet-body { padding-top: 4px; }
+#hksTouchPad .hks-pad-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(242, 233, 216, .07);
+  font-size: 12px;
+}
+#hksTouchPad .hks-pad-row:last-of-type { border-bottom: 0; }
+#hksTouchPad .hks-pad-row-label {
+  flex: none;
+  width: 92px;
+  color: var(--hks-dim);
+  letter-spacing: .05em;
+}
+#hksTouchPad .hks-pad-row--btns {
+  gap: 10px;
+  padding-top: 12px;
+  justify-content: stretch;
+}
+#hksTouchPad .hks-pad-row--btns .hks-pad-chip { flex: 1; }
+#hksTouchPad .hks-pad-seg--sm { margin-left: auto; }
+#hksTouchPad .hks-pad-seg--sm .hks-pad-segbtn { padding: 6px 9px; }
+#hksTouchPad .hks-pad-val {
+  flex: none;
+  width: 44px;
+  text-align: right;
+  color: var(--hks-cyan);
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+#hksTouchPad .hks-pad-note {
+  margin: 10px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: rgba(242, 233, 216, .42);
+  letter-spacing: .03em;
+}
+
+/* range */
+#hksTouchPad .hks-pad-sheet input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  min-width: 70px;
+  height: 24px;
+  margin: 0;
+  background: transparent;
+  touch-action: none;
+}
+#hksTouchPad .hks-pad-sheet input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(232, 54, 79, .55), rgba(110, 231, 255, .28));
+}
+#hksTouchPad .hks-pad-sheet input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  border: 2px solid #ffd7dd;
+  background: var(--hks-rose);
+  box-shadow: 0 0 10px rgba(232, 54, 79, .65);
+}
+#hksTouchPad .hks-pad-sheet input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(232, 54, 79, .55), rgba(110, 231, 255, .28));
+}
+#hksTouchPad .hks-pad-sheet input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #ffd7dd;
+  background: var(--hks-rose);
+  box-shadow: 0 0 10px rgba(232, 54, 79, .65);
+}
+
+/* switch */
+#hksTouchPad .hks-pad-switch {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(242, 233, 216, .2);
+  background: rgba(255, 255, 255, .1);
+  transition: background .16s ease, border-color .16s ease;
+  touch-action: none;
+}
+#hksTouchPad .hks-pad-switch i {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #cfc6b7;
+  transition: transform .16s ease, background .16s ease;
+}
+#hksTouchPad .hks-pad-switch[aria-checked="true"] {
+  background: rgba(232, 54, 79, .4);
+  border-color: rgba(232, 54, 79, .72);
+}
+#hksTouchPad .hks-pad-switch[aria-checked="true"] i {
+  transform: translateX(20px);
+  background: #fff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, .5);
+}
+
+/* ------------------------------ 提示 toast ------------------------------ */
+
+#hksTouchPad .hks-pad-toast {
+  position: absolute;
+  left: 50%;
+  bottom: calc(15vh + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  transform: translate(-50%, 8px);
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(110, 231, 255, .3);
+  background: rgba(9, 6, 16, .92);
+  color: var(--hks-text);
+  font-size: 12px;
+  letter-spacing: .06em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+}
+#hksTouchPad .hks-pad-toast.is-on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ------------------------------ 编辑态 ------------------------------ */
+
+#hksTouchPad[data-mode="edit"] .hks-pad-layer-actions,
+#hksTouchPad[data-mode="edit"] .hks-pad-layer-stick,
+#hksTouchPad[data-mode="edit"] .hks-pad-layer-top {
+  opacity: 1;
+}
+#hksTouchPad[data-mode="edit"] .hks-pad-slot:not(.is-off) {
+  cursor: grab;
+}
+#hksTouchPad[data-mode="edit"] .hks-pad-slot:not(.is-off) > .hks-pad-btn,
+#hksTouchPad[data-mode="edit"] .hks-pad-slot:not(.is-off) > .hks-pad-stick {
+  outline: 1px dashed rgba(242, 210, 75, .65);
+  outline-offset: 3px;
+}
+#hksTouchPad[data-mode="edit"] .hks-pad-slot.is-dragging > .hks-pad-btn,
+#hksTouchPad[data-mode="edit"] .hks-pad-slot.is-dragging > .hks-pad-stick {
+  outline-color: var(--hks-gold);
+  box-shadow: 0 0 26px rgba(242, 210, 75, .4);
+}
+#hksTouchPad[data-mode="edit"] .hks-pad-layer-gesture .hks-pad-zone { pointer-events: none; }
+#hksTouchPad[data-mode="edit"] .hks-pad-layer-gesture .hks-pad-zone-tip { display: none; }
+
+/* ------------------------------ 动画 ------------------------------ */
+
+@keyframes hksPadPop {
+  from { opacity: 0; transform: translateY(6px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ------------------------------ 矮屏 / 横屏紧凑 ------------------------------ */
+
+@media (max-height: 600px) {
+  #hksTouchPad .hks-pad-sheet { width: min(92vw, 420px); max-height: 94vh; }
+  #hksTouchPad .hks-pad-row { min-height: 34px; padding: 3px 0; }
+}
+
+@media (max-height: 430px) {
+  #hksTouchPad .hks-pad-editbar {
+    gap: 6px 8px;
+    padding-top: calc(5px + env(safe-area-inset-top, 0px));
+    padding-bottom: 6px;
+  }
+  #hksTouchPad .hks-pad-editbar-tip { display: none; }
+  #hksTouchPad .hks-pad-chip { padding: 6px 11px; }
+  #hksTouchPad .hks-pad-sheet-layer { padding: 10px; }
+  #hksTouchPad .hks-pad-sheet { max-height: 94vh; padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px)); }
+  #hksTouchPad .hks-pad-row { min-height: 36px; padding: 4px 0; }
+  #hksTouchPad .hks-pad-hint-card { padding: 12px 14px; }
+  #hksTouchPad .hks-pad-hint-list { gap: 4px; font-size: 11px; }
+}
+
+@media (orientation: portrait) and (max-width: 430px) {
+  #hksTouchPad .hks-pad-editbar { gap: 7px; }
+  #hksTouchPad .hks-pad-editbar-tip {
+    width: 100%;
+    margin-right: 0;
+    font-size: 10px;
+  }
+  #hksTouchPad .hks-pad-editbar .hks-pad-seg { order: 2; }
+  #hksTouchPad .hks-pad-editbar-btns { margin-left: auto; }
+}
+
+/* 触屏端已有独立暂停/设置浮钮，隐藏画布内重复的「设置」，避免竖屏被挤成竖排 */
+html.touch .hud-settings { display: none; }
+
+/* 避免 iOS 双击缩放 / 长按选择 */
+#hksTouchPad .hks-pad-btn,
+#hksTouchPad .hks-pad-chip,
+#hksTouchPad .hks-pad-segbtn,
+#hksTouchPad .hks-pad-switch,
+#hksTouchPad .hks-pad-continue {
+  -webkit-user-select: none;
+  user-select: none;
+}

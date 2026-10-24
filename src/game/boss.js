@@ -22,14 +22,94 @@ import { BOSS_INFO } from '../art/roster.js';
 import { drawGenBoss, ensureBossArt, bossArtHeight, bossArtReady } from '../art/genboss.js';
 import { getDifficulty, bossPhasesFor, scaleBossHp, stageDensityOf } from './difficulty.js';
 import { scalePlayerDamage } from './balance.js';
-// 逐卡限时 / 生存模式 / 卡面数据（28 张符卡的目标时长与创作数据）
-import { cardTuningFor } from './bossTuning.js';
+// 逐卡限时 / 生存模式 / 卡面数据（43 张符卡的目标时长与创作数据）
+import { cardTuningFor, tierMultipliers, CARD_HP_ANCHOR } from './bossTuning.js';
 // 创造模式弹幕设计（每卡专属 pattern 表 + 自定义弹型注册表）
 import { patternsFor } from './bossPatternDesigns.js';
 import { CUSTOM_PATTERNS } from './bossBullets.js';
+import { skinMapper, cardSkin } from './bulletArt/cardSkins.js';
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+/* ============================================================
+   EXTRA 关逐卡色相偏移（雷米莉亚 / 芙兰朵露）
+   —— 内置弹幕的颜色写在 BOSS_DEFS 的 phases 里，这里只在取色时转一次 HSL：
+      弹道、弹数、速度一律不动，12 张卡在「血族猩红」母题下各有基调。
+      [色相偏移(度), 亮度偏移(HSL 百分数), 饱和度偏移]
+   ============================================================ */
+const EX_TINT = {
+  remilia: [
+    [0, 0, 0],        // 咒诅「弗拉德·特佩斯」：纯猩红
+    [8, 5, 0],        // 天罚「大卫之星」：略偏洋红、更亮
+  ],
+  flandre: [
+    [0, 0, 0],        // 蔓越莓陷阱
+    [12, -2, 0.06],   // 雷瓦汀：偏向火焰橙
+    [-16, 2, 0.04],   // 四重存在：偏紫
+    [6, -9, 0.02],    // 然后就一个人都不剩了：暗血
+    [20, 3, 0],       // 星弧破碎：珊瑚
+    [-28, 6, 0.02],   // 折反射：洋红
+    [2, 8, 0.04],     // 495 年的波纹：浅玫瑰
+    [-6, -10, 0.05],  // 吸血鬼之宴：深血
+    [30, -2, 0.06],   // 破坏之瞳：偏金橙
+    [-34, 8, 0.02],   // 明けない夜の約束：血红偏紫的夜
+  ],
+};
+
+function hexToRgbArr(hex) {
+  let h = String(hex).replace('#', '');
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function rgbArrToHex(c) {
+  const f = (v) => clamp(Math.round(v), 0, 255).toString(16).padStart(2, '0');
+  return '#' + f(c[0]) + f(c[1]) + f(c[2]);
+}
+
+function rgbToHslArr(c) {
+  const r = c[0] / 255, g = c[1] / 255, b = c[2] / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2, d = max - min;
+  let h = 0, s = 0;
+  if (d > 1e-6) {
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+  return [h, s, l];
+}
+
+function hslToRgbArr(h, s, l) {
+  if (s <= 0.001) { const v = l * 255; return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const f = (t) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255];
+}
+
+/** 内置弹幕取色：EXTRA 关按卡号做 HSL 偏移，其余 Boss 原样返回 */
+function tintCardColor(boss, color) {
+  const table = EX_TINT[boss && boss.key];
+  if (!table || typeof color !== 'string' || color[0] !== '#') return color;
+  const t = table[boss.spellIdx] || table[0];
+  if (!t || (!t[0] && !t[1] && !t[2])) return color;
+  const [h0, s0, l0] = rgbToHslArr(hexToRgbArr(color));
+  const h = (h0 + t[0] / 360 + 1) % 1;
+  const s = clamp(s0 + t[2], 0.05, 1);
+  const l = clamp(l0 + t[1] / 100, 0.06, 0.98);
+  return rgbArrToHex(hslToRgbArr(h, s, l));
+}
 
 /* ============================================================
    随机数：mulberry32
@@ -102,7 +182,7 @@ function firePattern(p, boss, api, fireT) {
   const pat = boss._pat;
   const wild = boss.wild;
   // 卡面主色（创造模式逐卡配色）：没写逐卡色才回落到角色主色
-  const color = p.color || boss.cardAccent || boss.accent;
+  const color = tintCardColor(boss, p.color || boss.cardAccent || boss.accent);
   const r = p.r || 6;
   const life = p.life || 7;
   const type = p.type !== undefined ? p.type : 0;
@@ -130,6 +210,11 @@ function firePattern(p, boss, api, fireT) {
 
   // 创造模式自定义弹型：注册在 bossBullets.js 的 CUSTOM_PATTERNS 里，
   // 命中即整招交给自定义实现；统一 helpers 保证弹数预算 / 环缝 / 弹速上限这些护栏仍然生效。
+  // 符卡专属弹型：整招（自定义 + 内置 + EXTRA 关底）统一接管 bullets.spawn 的弹型。
+  // 只在「这一拍开火」内生效，出作用域就清空：弹池是全场共用的，留着会污染道中妖精弹。
+  // meteor / mine 的延迟爆裂在 Boss.update 的 _processLater 里另行套同一张映射（见 update）。
+  b.skinMap = skinMapper(boss.key, boss.spellIdx);
+  try {
   const customFn = p.typeName ? CUSTOM_PATTERNS[p.typeName] : null;
   if (typeof customFn === 'function') {
     try {
@@ -283,6 +368,32 @@ function firePattern(p, boss, api, fireT) {
         vy: Math.sin(a) * sp,
         color, r, type, life,
       });
+    }
+  }
+
+  if (p.typeName === 'cross') {
+    // 多向扇：dirs 个方向各自打一束小扇形，是本作招牌「十字/星芒」起手。
+    // 数据契约见文件头：cross {n, dirs, spread, speed, color, rate, r, aimed}
+    const dirs = clamp(Math.round(p.dirs || 4), 1, 12);
+    const n = count(p.n || 1, 1, 8);
+    const spread = (p.spread || 0.35) * pat.spreadScale * boss.rnd(0.9, 1.1);
+    // aim() 对准玩家时整组扇面跟着玩家转；否则绕 pat.angle 均匀铺开，可缓慢自转
+    const base = p.aimed
+      ? aim() - Math.PI / 2
+      : pat.angle + fireT * (p.spin || 0) * pat.dir + (p.offset || 0);
+    for (let d = 0; d < dirs; d++) {
+      const center = base + (d / dirs) * TAU;
+      for (let i = 0; i < n; i++) {
+        const tt = n === 1 ? 0 : (i / (n - 1)) - 0.5;
+        const a = center + tt * spread + boss.rnd(-0.03, 0.03);
+        const sp = varySpeed(p.speed, boss.rnd(0.95, 1.06));
+        b.spawn({
+          x: boss.x, y: boss.y,
+          vx: Math.cos(a) * sp,
+          vy: Math.sin(a) * sp,
+          color, r, type, life,
+        });
+      }
     }
   }
 
@@ -552,6 +663,9 @@ function firePattern(p, boss, api, fireT) {
         });
       }
     }
+  }
+  } finally {
+    b.skinMap = null;
   }
 }
 
@@ -981,7 +1095,7 @@ export const BOSS_DEFS = {
         ],
       },
       {
-        name: '未明「明けない夜の約束」', hp: 3850, patterns: [
+        name: '未明「长夜不醒之约」', hp: 3850, patterns: [
           { typeName: 'ring', n: 40, speed: 150, color: '#ff4d6a', rate: 0.95, r: 7, rings: 2, spinAngle: 0.6 },
           { typeName: 'spiral', arms: 8, speed: 210, color: '#ff8fa8', rate: 0.05, spin: 4.0, r: 5, type: 3, weight: 0.95 },
           { typeName: 'laser', n: 10, speed: 620, color: '#ffffff', rate: 0.6, angle: 0, weight: 0.9 },
@@ -1034,7 +1148,7 @@ export class Boss {
     this.phases = scaleBossHp(trimmed, this.difficulty, def.hp * hpMul);
 
     /* ---------- 逐卡数据：限时 / 生存模式 / 卡面特效 / 密度与弹速倍率 ----------
-     * 数据来自 bossTuning.js（28 张符卡的目标时长）与 bossPatternDesigns.js（创造模式弹幕表）。
+     * 数据来自 bossTuning.js（43 张符卡的目标时长，含 EXTRA）与 bossPatternDesigns.js（创造模式弹幕表，仅 28+3 张）。
      * 有逐卡 dps 设定了目标时长，就反推出该卡血量：
      *   目标有效血量 = limit × dps（不乘难度血量倍率，保证限时奖励跨难度公平）；
      * 生存卡不吃 dps（Boss 不可击破，只按时间切卡），保留原有血量做血条底。
@@ -1049,19 +1163,28 @@ export class Boss {
         if (!ph || !t) continue;
         const limit = Number(t.limit);
         const dps = Number(t.dps);
-        const mode = t.mode === 'survival' ? 'survival' : 'damage';
-        if (mode === 'damage' && Number.isFinite(dps) && dps > 0 && Number.isFinite(limit) && limit > 0) {
+        // 'both' = 双条件卡：撑满限时算过关，打空血条也算过关（谁先满足都行）
+        const mode = t.mode === 'survival' ? 'survival' : (t.mode === 'both' ? 'both' : 'damage');
+        const hpOverride = Number(t.hp);
+        if (Number.isFinite(hpOverride) && hpOverride > 0) {
+          // 显式血量优先（双条件卡 / 单独加厚的卡用）
+          ph.hp = Math.max(1, Math.round(hpOverride));
+        } else if (mode !== 'survival' && Number.isFinite(dps) && dps > 0 && Number.isFinite(limit) && limit > 0) {
           // 逐卡限时卡的时长必须跨难度一致：若再乘 hpScale，Easy 会提前 ~15%、Hard 必然
           // 超时 ~15%，限时奖励在 Hard 上系统性拿不到。难度差异交给弹幕预算/弹速承担。
-          ph.hp = Math.max(1, Math.round(limit * dps));
+          // CARD_HP_ANCHOR：保底火力从「满火力 Lv4」下调到「Lv2 / Lv3」（见 bossTuning.js）。
+          ph.hp = Math.max(1, Math.round(limit * dps * CARD_HP_ANCHOR));
         }
         ph.mode = mode;
         ph.limit = Number.isFinite(limit) && limit > 0 ? limit : null;
         ph.fx = t.fx || null;
         ph.accent = t.accent || null;
         ph.effect = t.effect || null;
-        ph.densityMul = Number(t.densityMul) > 0 ? Number(t.densityMul) : 1;
-        ph.speedMul = Number(t.speedMul) > 0 ? Number(t.speedMul) : 1;
+        // 单卡难度档：在自身 densityMul / speedMul 之上再乘一次等级倍率
+        const tm = tierMultipliers(t.tier);
+        ph.densityMul = (Number(t.densityMul) > 0 ? Number(t.densityMul) : 1) * tm.density;
+        ph.speedMul = (Number(t.speedMul) > 0 ? Number(t.speedMul) : 1) * tm.speed;
+        ph.tier = Number(t.tier) || 3;
         // 弹幕：优先用创造模式的逐卡设计，否则保留 BOSS_DEFS 原表
         if (Array.isArray(t.patterns) && t.patterns.length) {
           ph.patterns = t.patterns;
@@ -1132,6 +1255,7 @@ export class Boss {
     // 逐卡计时 / 生存模式 / 卡面（constructor 末尾由 _applyCard(0) 套用第一张卡）
     this._baseDensity = this.density;
     this.mode = 'damage';        // damage | survival
+    this.cardDual = false;       // true = 双条件卡（撑满限时或打空血条都算过关）
     this.cardLimit = null;       // 限时（秒）；null = 不限时（EXTRA 等）
     this.cardElapsed = 0;        // 本卡已用时间（符卡宣言无敌结束后开始累计）
     this.cardRemain = null;      // 剩余秒数
@@ -1237,9 +1361,98 @@ export class Boss {
     this.phantomVulnK = 1;  // 本体受击伤害倍率：消散中 1.35
     if (this.system === 'phantom') this._initPhantom();
 
+    /* ---------------- 四重存在（芙兰「禁忌『四重存在』」专属） ----------------
+     * 不是弹幕特效，是「人物四重存在」：本体之外再画三个分身，四个芙兰一起在场、
+     * 一起开火。分身是纯幻影：不吃伤害、不碰撞、不进入 HP 结算，卡结束自动消失。
+     * 偏移相对本体实时计算，本体随机漂移时分身整组跟着走，不会掉队。
+     */
+    this._clones = null;
+    this._cloneDispatching = false;
+    this._cloneTurn = 0;
+
     // 开场也是随机一招，背板第一招不再固定
     this._applyCard(0);
     this._startPattern(this.rndInt(0, this.phases[0].patterns.length - 1));
+  }
+
+  /* ---------------- 四重存在：三个分身 ---------------- */
+
+  /** 只在芙兰「禁忌『四重存在』」这一张卡上维持三个分身，换卡/败退后立即清空。 */
+  _syncClones() {
+    const want = this.key === 'flandre' && this.spellIdx === 2 && this.state === 'battle';
+    if (!want) { this._clones = null; return; }
+    if (this._clones) return;
+    // 阵型刻意错开高度/远近：四个立绘都很大，纯一字排开会糊成一团
+    this._clones = [
+      { dx: -300, dy: 58, phase: 0.0, facing: -1, alpha: 0.80, scale: 0.94 },
+      { dx: -150, dy: -46, phase: 2.2, facing: -1, alpha: 0.72, scale: 0.92 },
+      { dx: 158, dy: 42, phase: 4.4, facing: -1, alpha: 0.64, scale: 0.90 },
+    ];
+  }
+
+  /**
+   * 分身同步开火：临时把本体坐标挪到分身位置，直接复用本卡正在跑的招式派发，
+   * 弹道/配色/专属弹型全部与本体同源；弹数乘 0.45、弹速乘 0.85，保证本体仍是主体。
+   * 同一拍内逐个分身调用，_cloneDispatching 防止重复进入。
+   */
+  _fireClonePatterns(pat, bullets, pc) {
+    if (!bullets || !this._clones || this._cloneDispatching) return;
+    if (bullets.activeCount >= this.bulletBudget) return;
+    this._cloneDispatching = true;
+    const ox = this.x, oy = this.y;
+    const op = this.pressure, ocap = this.speedCap;
+    // 三个分身轮转接拍：每次落到不同的一人，四个人从头到尾都在输出，
+    // 但同一拍只多出一份弹，不至于叠成弹墙。
+    const c = this._clones[this._cloneTurn % this._clones.length];
+    this._cloneTurn++;
+    try {
+      this.x = ox + c.dx;
+      this.y = oy + c.dy;
+      this.pressure = op * 0.45;
+      this.speedCap = ocap * 0.85;
+      firePattern(pat, this, { bullets, px: pc.x, py: pc.y, t: this.t }, this.patternT);
+    } finally {
+      this.x = ox; this.y = oy;
+      this.pressure = op; this.speedCap = ocap;
+      this._cloneDispatching = false;
+    }
+  }
+
+  /**
+   * 画分身：先画（在本体之下），带一点猩红幻影光晕与相位差浮动。
+   * 调用点固定是 Boss.draw 里 ctx 已经 translate(this.x, this.y) 之后，
+   * 所以这里只叠分身自己的相对偏移，绝对坐标留给外部。
+   */
+  _drawClones(ctx, t) {
+    if (!this._clones || this.alpha <= 0.01) return;
+    const accent = this.def.accent;
+    for (const c of this._clones) {
+      const bx = c.dx + Math.sin(t * 0.9 + c.phase) * 3;
+      const by = c.dy + Math.sin(t * 1.35 + c.phase) * 5;
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.globalCompositeOperation = 'lighter';
+      const gr = ctx.createRadialGradient(0, -this.h * 0.55, 8, 0, -this.h * 0.55, 118);
+      gr.addColorStop(0, accent + '30');
+      gr.addColorStop(1, accent + '00');
+      ctx.fillStyle = gr;
+      ctx.beginPath();
+      ctx.arc(0, -this.h * 0.55, 118, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      const opts = {
+        boss: this.key,
+        state: this.state === 'defeat' ? 'defeat' : 'idle',
+        t: t + c.phase,
+        facing: c.facing,
+        flash: 0,
+        alpha: this.alpha * c.alpha,
+        scale: c.scale,
+        cast: 0,
+      };
+      if (!drawGenBoss(ctx, opts)) drawBossPlaceholder(ctx, opts, accent);
+      ctx.restore();
+    }
   }
 
   /* ---------------- 半灵二天一流（def.system === 'phantom'） ---------------- */
@@ -1467,6 +1680,7 @@ export class Boss {
   _applyCard(i) {
     const ph = this.phases[i] || {};
     this.mode = ph.mode === 'survival' ? 'survival' : 'damage';
+    this.cardDual = ph.mode === 'both';
     const lim = Number(ph.limit);
     this.cardLimit = Number.isFinite(lim) && lim > 0 ? lim : null;
     this.cardElapsed = 0;
@@ -1505,13 +1719,16 @@ export class Boss {
     }
     this.cardRemain = this.cardLimit != null ? Math.max(0, this.cardLimit - this.cardElapsed) : null;
     this.cardRatio = this.spellMaxHp > 0 ? clamp(this.spellHp / this.spellMaxHp, 0, 1) : 0;
+    // 双条件卡：撑到限时也算过关（走统一切卡流程，血条没打空也不判失败）
+    if (this.cardDual && this.cardLimit && this.cardElapsed >= this.cardLimit) this.spellBroken = true;
   }
 
   /** 本卡结算快照：damage 卡在限时内打空才算成功；生存卡坚持到点即成功 */
   _cardResultSnapshot() {
     const limit = this.cardLimit;
     let ok = true;
-    if (this.mode !== 'survival' && limit != null) ok = this.cardElapsed <= limit + 1e-6;
+    // 双条件卡两种过关方式都算成功；普通 damage 卡必须限时内打空
+    if (this.mode !== 'survival' && !this.cardDual && limit != null) ok = this.cardElapsed <= limit + 1e-6;
     return {
       index: this.spellIdx,
       name: this.spellName,
@@ -1722,8 +1939,8 @@ export class Boss {
     // 结算当前卡：必须在切卡前快照（限时内打空 = 成功；生存卡坚持到点 = 成功）
     const result = this._cardResultSnapshot();
     this.lastCardResult = result;
-    // 只有带逐卡调参数据的 Boss（stage1–6）才上报结算：EXTRA（remilia / flandre）保持旧行为，
-    // 既不显示限时、也不发限时奖励（用户要求 EXTRA 本轮不动）。
+    // 只有带逐卡调参数据（cardTune）的 Boss 才上报结算。当前 stage1–6 与 EXTRA 的 remilia /
+    // flandre 都已登记逐卡数据，因此 EXTRA 同样参与限时显示与结算；没有 cardTune 的旧 Boss 保持旧行为。
     if (this.cardTune && typeof this._cardResultCb === 'function') {
       try {
         this._cardResultCb(result);
@@ -1855,6 +2072,9 @@ export class Boss {
       if (this.state !== 'battle') return;
     }
 
+    // 四重存在：本卡期间维持三个分身（换卡 / 结束时自动清空）
+    this._syncClones();
+
     // 破势球独立推进：符卡宣言无敌 / 硬直 / 俯冲期间球也照常下落，玩家随时可踩
     this._updateOrbs(dt, player, fx);
 
@@ -1913,7 +2133,14 @@ export class Boss {
     // 延迟弹幕（meteor / mine 的壳弹到点爆裂）：每帧推进一次，和主开火共用同一帧时钟
     if (this._laterQ.length) {
       const pcq = this._playerCenter(player);
-      this._processLater(dt, { bullets, px: pcq.x, py: pcq.y });
+      // 延迟爆裂的二次 spawn 也要套本卡的专属弹型（壳弹炸开的碎片），
+      // 作用域只包这一帧的推进，避免污染弹池里其他来源的弹。
+      if (bullets) bullets.skinMap = skinMapper(this.key, this.spellIdx);
+      try {
+        this._processLater(dt, { bullets, px: pcq.x, py: pcq.y });
+      } finally {
+        if (bullets) bullets.skinMap = null;
+      }
     }
 
     // 模式计时 / 开火（节奏也在抖动）
@@ -1932,6 +2159,9 @@ export class Boss {
         t: this.t,
       }, this.patternT);
       this.volleys++;
+      // 四重存在：三个分身按 1→2→3 轮转接拍开火，每三拍才轮到一次（本体每一拍都开火）。
+      // 卡面主打仍是本体弹幕，分身只是「另外三个人也在打」的持续输出，不能把屏铺满。
+      if (this._clones && this.volleys % 3 === 0) this._fireClonePatterns(pat, bullets, pc);
       this._nextRate = this._rollRate(pat);
     }
 
@@ -2763,6 +2993,9 @@ export class Boss {
     ctx.arc(0, -this.h * 0.55, 150, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
+
+    // 四重存在：三个分身画在本体之下（本体压前面，主次分明）
+    this._drawClones(ctx, t);
 
     // 落地破势球画在立绘之前（它们在脚下，Boss 身体应该压在上面）
     this._drawOrbs(ctx);

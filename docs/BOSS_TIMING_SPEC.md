@@ -1,10 +1,49 @@
-# Boss 符卡节奏 · 限时奖励 · 卡面差异 改造规格（v1）
+# Boss 符卡节奏 · 限时奖励 · 卡面差异 改造规格（v1；限时 / 血量 v2、奖励 v3）
 
-> 来源：用户 2026-10-20 语音需求 m00054 / m00085 / m00087 / m00089 / m00097 / m00099 / m00102 / m00104 / m00106 / m00107 / m00109 / m00177。
-> 范围：stage1–6 的 **28 张符卡**（2+3+4+5+6+8；早前文档误写 30，已按 `BOSS_DEFS` 校正）；EXTRA（remilia / flandre）本轮**不改**（保持现状：无计时、无新奖励）。
+> 来源：用户 2026-10-20 语音需求 m00054 / m00085 / m00087 / m00089 / m00097 / m00099 / m00102 / m00104 / m00106 / m00107 / m00109 / m00177；
+> 2026-10-24 全量重定标 m00001 / m00113 / m00142 / m00144。
+> 范围：**全 43 张**（主线 28 + 5 面中途妖梦 3 + EXTRA 12：蕾米莉亚 2 + 芙兰朵露 10）。EXTRA 自 2026-10-24 起**已接入逐卡限时与结算奖励**（旧文档「EXTRA 不改」作废，见 §0 / §2.8）。
+> 本轮（v3）把**逐卡奖励**定型为「基础 1/4P + 无伤 1/2P，超时 +10 点」，并给擦弹加 1UP 点数，全 43 张一致，见 §0.1 / §2 规则 4。
+> **v3.1（2026-10-24 深夜）**：按实际落地实现（`src/game/power.js` / `src/game/stage.js` / `src/main.js`）校正——基础与无伤合并成一笔入账、满槽走 `_addExtend(POWER.extend + bonus)`、横幅实际文案与「满槽无伤不静默」。
 > 工作方式：Lead + 5 名智能体协作（见任务板）。
 
-## 1. 目标时长表（Normal 难度，单位秒）
+## 0. 2026-10-24 重定标（v2，数值以本文 §0 + `BOSS_TIMING_TABLE.md` v4 为准，§1 为历史稿）
+
+用户这一轮的要求：**每张符卡重新给「限时」和「难度」**，覆盖 EXTRA 全部浮卡。
+
+1. **逐卡限时全部重给**（用户口述，见 `BOSS_TIMING_TABLE.md` v4 §1「限时」列）。主线 3189s → 1736s（28 张关底卡），EXTRA 12 张首次有表。
+2. **新增逐卡难度档 1–5**（`bossTuning.js` 的 `CARD_TIER_MUL`）：只调这一张卡的弹数与弹速，
+   1 = ×0.75/×0.90，2 = ×0.88/×0.95，3 = ×1.00/×1.00（基准），4 = ×1.15/×1.06，5 = ×1.30/×1.12。
+   旧的散装 `densityMul` / `speedMul`（只存在于几张 survival 卡）已被档位取代。
+3. **血量锚点改为「Lv2 火力」**：`hp = round(limit × dps × CARD_HP_ANCHOR)`，`CARD_HP_ANCHOR = 0.4 × 2.7 × 0.85 = 0.918`。
+   含义：**Lv2、不落命**的玩家约 0.76×limit 打空（Lv3 ≈0.51×、Lv4 ≈0.30×）；落命降到 Lv1（≈0.20×）→ 需要 1.5×limit，必超时。
+   （`0.4` = Lv2/Lv4 主弹 2:5；`2.7` = `balance.PLAYER_ATK_SCALE`；`0.85` = bot 实测满火力 DPS 相对 2.7 倍线性外推的折损。）
+4. **存活卡收敛为 5 张**：4-5、5-4、6-7（燕的子安贝）、芙-4、芙-7；4-2 / 6-1 / 6-8 改回击破卡。
+5. **新增 `mode: 'both'` 双条件卡**：芙-10 未明「明けない夜の約束」——撑满 60s **或**打空血条，任一即过关；
+   血量给 `0.55 × limit × 实测 dps = 6778`（仍是全 EXTRA 最高，第二是芙-6 的 6293）；
+   满火力约 33s 打空（55%）——**三档约 92% 勉强能杀、二档只能走「撑满 60s」**。
+6. **`bossTuning.js` 支持可选 `hp` 字段**：EXTRA 12 张没有历史 dps，用 **20 seeds 的带 tier 实测满火力 dps** 反推
+   （击破卡 `0.304 × limit × dps` → Lv4 ≈30%、Lv2 ≈76%；双条件卡 0.55×）。
+   那套 dps 是 2026-10-24 当场实测的新单位，与主线「2026-10-21 之前的旧标定」不能混用，故 EX 一律显式 `hp`。
+
+## 0.1 2026-10-24 第三轮：擦弹点数与符卡奖励（本文 v3；`BOSS_TIMING_TABLE.md` v4 的限时 / 血量不变）
+
+奖励以 **P 基准 = 满火力槽 64 点** 计量：1/4P = 16 POWER、1/2P = 32 POWER、3/4P = 48 POWER。
+文案一律写「1/4P / 1/2P / 3/4P」，括号里的点数只是当前数值，实现按 `power.js` 常量取（比例 × `POWER.max`）。
+
+1. **擦弹点数**：飞行关（STG）每擦到一颗子弹，POWER 仍 +0.075（`POWER.graze`，保留原收益但**不计入 1UP**），1UP 进度 **+0.02「点」**（`POWER.grazePoints`）。
+   这个「点」是 **99 点制的 1UP 累计点数**（HUD 的 1UP 计数），**不是 POWER**；擦弹每颗的 1UP 总增量就是 **0.02**，不是 0.075 + 0.02（`_addPower` 在擦弹处传 `countExtend=false`，避免把 POWER 收益重复记进 1UP）。
+   同一颗弹只结算一次（沿用 `bullets.grazeTest` 的 `grazed` 标记）。
+2. **符卡基础奖励 1/4P**：每张 Boss 符卡**按时击破**（damage / both 打空）或**存活卡坚持到点**（survival / both 到点），给 `POWER.cardClear = 0.25` → `POWER.max × 0.25`（当前 16 POWER）。
+   击破符与存活符同待遇，主线 / 中途战（妖梦、蕾米莉亚）/ EXTRA 同待遇，全 43 张一致。
+3. **无伤加算 1/2P**：该卡期间玩家**没有受击、也没有落命** → 额外 `POWER.cardNoHit = 0.5` → 当前 32 POWER；
+   基础 + 无伤 = 3/4P（48 POWER）。两笔**合并成一笔入账，不是先给 `base` 再给 `bonus`**：未满槽 `_addPower(base + bonus)`，满槽 `_addExtend(POWER.extend + bonus)`（见本 § 第 5 条）。
+4. **超时不改**：击破卡没在限时内打空仍按旧规则 `stage._addExtend(10)`（+10 点，99 点制 1UP 点数），**不发 1/4P**、也不看无伤。
+5. **满槽分流**：POWER 已满（`player.power >= player.maxPower`）时基础 1/4P 仍走旧的「转 1 残机」通道，但**与无伤 1/2P 合并成一次** `_addExtend(POWER.extend + bonus)`（99 + 32 = 131 点）；结算前若已有 ≥67 点进度，这一帧会连给 2 条残机。
+   `extend` 事件照常播「1UP / 残机 +1」，无伤时 `main.js` 再补「无伤通过 / 1UP + 1/2P」覆盖同帧横幅（**满槽无伤不是静默**）。
+6. 常量集中在 `src/game/power.js`：新增 `grazePoints: 0.02`、`cardClear: 0.25`、`cardNoHit: 0.5`（后者是**比例**，乘 `POWER.max`）。
+
+## 1. 目标时长表（Normal 难度，单位秒）· 历史稿
 
 “模式”列：`damage` = 打空血条进下一张；`survival` = Boss 免疫伤害、坚持到时间自动进下一张。
 `fx` / `effect` 只是占位键名，具体视觉/机制由创意弹幕位定稿。
@@ -48,20 +87,29 @@
 2. **damage 卡**：血条打空即为结束。若 `elapsed <= limit` → 成功奖励；否则 → 失败奖励。
    血条不会因超时而跳过，玩家必须打空才进下一张。
 3. **survival 卡**：Boss 免疫玩家伤害；`elapsed >= limit` 时自动结束并进入下一张，视为成功奖励。玩家中弹/落命照常，计时继续；残机耗尽走原有 gameover。
-4. **成功奖励**：`POWER += POWER.perLevel`（当前 `POWER.perLevel = 16` 点 = 火力升一格；实现按常量取，不写死数值，走 `stage._addPower` 以同步 1UP 计数）。
-   **若当前 POWER 已满**（`player.power >= player.maxPower`）→ 残机 +1（沿用现有 `extend` 事件/横幅）。
-5. **失败奖励**：`stage._addExtend(10)`（+10 点，99 点换 1 命的既有系统），UI 提示「+10 点」。
+   **`both`（双条件）卡**（2026-10-24 新增，仅芙-10）：Boss **会掉血**，`elapsed >= limit` 时按 survival 规则自动结束并成功；若先被打空血条则按 damage 规则结束。两条路都算过关。
+4. **成功奖励（按时击破 / 存活到点）= 基础 1/4P + 无伤 1/2P，合并成一笔结算**：
+   - `power.js` 导出辅助函数 `cardClearPower()` = `round(POWER.max × POWER.cardClear)`（当前 0.25 × 64 = 16）与 `cardNoHitPower()` = `round(POWER.max × POWER.cardNoHit)`（当前 0.5 × 64 = 32）。
+   - **火力未满**（`player.power < player.maxPower`）→ `stage._addPower(base + bonus)`：16 + 32 = 48 **一次入账**（不是 16、32 两次），超出槽上限的部分照旧由 `_addPower` 转进 1UP 进度。
+   - **火力已满**（`player.power >= player.maxPower`）→ `stage._addExtend(POWER.extend + bonus)`：99 + 32 = 131 点**一次**进 1UP 循环；结算前若已有 ≥67 点进度，这一帧会连给 2 条残机。`extend` 事件照常触发（横幅「1UP / 残机 +1」），无伤时 `main.js` 再补「无伤通过 / 1UP + 1/2P」覆盖它（见 §3.5）。
+   - 「基础 + 无伤」= 3/4P = 48 POWER。表述统一用「1/4P / 1/2P / 3/4P」，不把 16/32 当作唯一口径（改 `POWER.max` 时点数随之变）。
+5. **失败奖励**：`stage._addExtend(10)`（+10 点，99 点换 1 命的既有系统），UI 提示「+10 点」；
+   **超时的击破卡不发 1/4P**（也不看无伤），与 v2 一致。
 6. 每张卡只结算一次；最后一张卡结算后仍进入 `state='defeat'`。
 7. **取消 E/N 的裁卡**：`difficulty.js` 的 `trimHardCards`（E: [4,5]，N: [4,5,6]）改为空数组，六面所有难度都打全部符卡。
    **逐卡限时卡的血量不再乘难度 `hpScale`**：Easy 提前 15%、Hard 必然超时 15% 会让限时成功奖励在 Hard 上系统性拿不到，因此限时卡时长跨难度一致；难度差异由既有弹幕预算/弹速承担。EXTRA 与非限时逻辑不受影响。
-8. **EXTRA 不做任何改动**：仍无计时、无结算奖励。
+8. **EXTRA 不再例外（2026-10-24 起）**：蕾米莉亚 2 张 + 芙兰朵露 10 张全部登记进 `BOSS_CARD_TUNING`，
+   逐卡有 `limit` / `mode` / `tier` / `fx` / `accent`，到点结算走与主线完全相同的 `_onBossCardResult`（奖励/横幅一致）。
+   旧规则「EXTRA 无计时、无结算奖励」作废。
 9. 血量对齐（2026-10-21 修订，用户 m00001 / m00123）：每张 damage 卡的有效血量 `H = limit × dps`（不乘难度系数），`dps` = 2026-10-20 标定值（满火力实测 ×0.95 贴线）再 ×0.8，等价于「满火力实测有效 DPS × 0.76」。标定含义：
    - **满火力 bot 约 0.76×limit 击破**（旧口径 0.95×limit，正常玩家一失误就超时）；
    - **掉一级火力（Lv3）约 1.2–1.4×limit**：落命一次 POWER 64→32、主弹 5→3 发，实测 DPS ≈0.58–0.61×，作为失误惩罚保留；
    - **正常玩家（在 bot 命中率之上再折损 ~20%）约 0.92–0.95×limit 击破**，留 ≥5% 余量 —— 这就是「正常玩家能在规定时间内击破」的落地口径。
    验收口径：`ratio = elapsed / limit`；`ratio ≤ 0.95` PASS（余量不足 5% 即 FAIL），`ratio < 0.65` 仅告警（打得偏快，多为 bot 噪声）；N/E/H 三档均需 0 失败（见 `BOSS_TIMING_VERIFY.md`）。
    **逐卡 dps 必须按关型分别取**：stage4（射命丸文）是 stg 关，bot 站位/命中天生低，其 damage 卡 dps（125–142）明显低于其他面（147–178），拉平到 ~190 会使实测超时 20%+。
-   **EXTRA（remilia / flandre）除外**：无逐卡数据，本轮不调血量。
+   **EXTRA（remilia / flandre）**：2026-10-24 起改用**实测 DPS 直接钉血量**（`hp = 0.304 × limit × 实测 Lv4 dps`），
+   不再走 `limit × dps × 0.918` 的旧标定链 —— 那批 dps 是 2026-10-21 攻击力翻倍前的旧数据，两套单位不能混用。
+   实测值见 `BOSS_TIMING_TABLE.md` v4 §4.2。
 
 ## 3. 代码接口契约（实现依据）
 
@@ -74,20 +122,21 @@ export const BOSS_CARD_TUNING = {
       { limit: 50, mode: 'damage', fx: 'darkVeil', accent: '#b48cff',
         effect: 'none', dps: 200,        // dps: Normal 满火力下该卡实测 hp/s（首轮 200 占位）
         note: '宵暗「月之暗面」' },
+        tier: 3,                         // 1–5 档（2026-10-24 新增，只调该卡弹数/弹速）
       // …按 # 顺序；数量必须等于该 Boss 的卡数
     ],
   },
   // wriggle / cirno / aya / yuyuko / kaguya …
-  // remilia / flandre 不提供（EXTRA 不改）
+  // remilia / flandre 自 2026-10-24 起也必须提供（EXTRA 已接入限时；EXTRA 卡用显式 hp）
 };
 export function cardTuningFor(key) { … }
 ```
-字段：`limit`(秒|null)、`mode`('damage'|'survival')、`fx`(字符串)、`accent`(色号)、`effect`(字符串)、`dps`(数字)、`hp`(可选，直接给 Boss 定义里的基础血量，优先于 dps 反推)、`patterns`(可选，覆盖该卡 pattern 数组，由创意位产出)、`densityMul`/`speedMul`(可选)。
+字段：`limit`(秒|null)、`mode`('damage'|'survival'|'both')、`fx`(字符串)、`accent`(色号)、`effect`(字符串)、`dps`(数字)、`hp`(可选，直接给 Boss 定义里的基础血量，优先于 dps 反推)、`patterns`(可选，覆盖该卡 pattern 数组，由创意位产出)、`tier`(1–5，可选，缺省 3)、`densityMul`/`speedMul`(可选，与 tier 相乘，一般不再手写)。
 
 ### 3.2 `src/game/boss.js`（Lead 负责）
 运行期由 Boss 暴露（HUD/Stage 只读）：
 ```
-boss.mode          'damage' | 'survival'
+boss.mode          'damage' | 'survival'（'both' 双条件卡在运行期按 'damage' 暴露，另有 boss.cardDual=true）
 boss.cardLimit     number | null
 boss.cardElapsed   本卡已战斗秒数（spellLock 期间不累计）
 boss.cardRemain    number | null（limit - elapsed，≥0）
@@ -95,7 +144,7 @@ boss.cardRatio     本卡进度：damage 卡 = spellHp/spellMaxHp；survival 卡
 boss.cardFx        fx 键
 boss.cardEffect    effect 键
 boss.cardAccent    accent 色号
-boss.lastCardResult 最近一次结算 { index, name, mode, ok, elapsed, limit, rewardPreview } | null
+boss.lastCardResult 最近一次结算 { index, name, mode, ok, elapsed, limit, last } | null   // 与 _cardResultSnapshot() 一致（boss.js:1530）；实发 reward / noHit / base / bonus 只出现在 stage 补全的 cardResult 事件里（§3.3）
 ```
 `boss.update(dt, player, bullets, fx, opts)` 新增回调：
 ```
@@ -105,9 +154,14 @@ opts.onCardResult({ index, name, mode, ok, elapsed, limit, last })
 
 ### 3.3 `src/game/stage.js`（stage-rewards 位负责）
 - `boss.update(..., { onPhase, onCardResult: (res)=>this._onBossCardResult(res) })`
-- `_onBossCardResult(res)`：
-  - `ok`：POWER 满 → `player.lives += 1; player.maxLives = max(...)` + `onEvent('extend', …)`；否则 `_addPower(POWER.perLevel)`；`onEvent('cardResult', {...res, reward:'power'|'life'})`。
-  - `!ok`：`_addExtend(10)`；`onEvent('cardResult', {...res, reward:'points'})`。
+- `_onBossCardResult(res)`（以下为实际实现顺序）：
+  - `noHit = !!res.ok && !this._cardDamaged`；`base = res.ok ? cardClearPower() : 0`；`bonus = noHit ? cardNoHitPower() : 0`。**先算 `noHit`，再算 `base` / `bonus`**。
+  - `noHit` 判定在 stage 侧做：开卡 / 切卡时 `_cardDamaged = false`，Boss battle 期间收到受击 / 落命事件即置 true，结算时读一次——**不改 boss.js 的职责**（boss 只报 `ok` / `elapsed`）。
+  - `ok` 且 POWER 满（`p.power >= p.maxPower`）→ `_addExtend(POWER.extend + bonus)`（99 + 32 = 131 点，一次结算，视已有进度可能连给 2 条残机）+ `onEvent('extend', …)`；`reward:'life'`。
+  - `ok` 且 POWER 未满 → `_addPower(base + bonus)`（16 + 32 = 48 点一次入账）；`reward:'power'`。
+  - `!ok` → `_addExtend(10)`；`reward:'points'`，且 `noHit` 恒 false、`base = bonus = 0`（不发 1/4P、不看无伤）。
+  - `onEvent('cardResult', { ...res, reward, noHit, base, bonus })`；`res` 仍是 boss 的 `{ index, name, mode, ok, elapsed, limit, last }`，新增字段由 stage 补齐。
+- 1UP 记账细节：`_addExtend` 内按 `Math.round(x * 1e4) / 1e4` 保留 4 位小数再累加（擦弹 0.02 的粒度不会漂成 98.9999）；`extendPts` 初始化上限为 `POWER.extend - 1e-6`（构造处），关间继承时不会把小数进度截掉。
 - `hudState.boss` 追加：`mode, cardLimit, cardElapsed, cardRemain, cardRatio, cardFx, cardEffect, cardAccent, cardIndex: spellIdx, cardTotal: spellCount, lastResult`。
 - Boss 战期间每帧调用 `updateCardEffect(player, boss.cardEffect, dt)`（`src/game/cardEffects.js`）；卡面渲染分两层调用 `drawCardFx`：①世界层（地形/道具/敌机）之后、Boss/玩家/弹幕之前——让场景泡在卡面气氛里；②仅 `darkSpot` 在 Boss/玩家/弹幕之后、环境层之前再压一层——亮区外连 Boss 与弹幕都不可见（用户 2026-10-21 追加要求）。
 
@@ -119,12 +173,18 @@ opts.onCardResult({ index, name, mode, ok, elapsed, limit, last })
 
 ### 3.5 `src/game/hud.js` + `index.html` + `src/main.js`（hud-timer 位负责）
 - 血条下方一行计时：damage 卡显示「限时 剩余 12.4s」（超时后显示「超时 · 击破 +10 点」）；survival 卡显示「坚持 12.4s」且血条改用 `cardRatio`。
-- `main.js` 的 `_onStageEvent` 增加 `case 'cardResult'`：成功 → `hud.banner('+POWER', '火力 +1 格', 1.4)`；满槽 → `hud.banner('1UP', '残机 +1', 1.6)`；失败 → `hud.banner('超时', '奖励 +10 点', 1.4)`。
+- `main.js` 的 `_onStageEvent` 增加 `case 'cardResult'`，按 `reward` + `noHit` 播横幅（点数用比例文案，不写死 16/32）：
+  - `reward==='power'` 且 `noHit===false` → `hud.banner('符卡击破', '火力 +1/4P', 1.4)`；
+  - `reward==='power'` 且 `noHit===true` → `hud.banner('无伤通过', '火力 +3/4P', 1.8)`；
+  - `reward==='life'` 且 `noHit===false` → 不额外弹横幅，沿用同帧 `extend` 事件的 `hud.banner('1UP', '残机 +1', 1.6)`；
+  - `reward==='life'` 且 `noHit===true` → `hud.banner('无伤通过', '1UP + 1/2P', 1.8)`，**覆盖同帧的 1UP 横幅**（满槽无伤不静默）；
+  - `reward==='points'` → `hud.banner('超时', '奖励 +10 点', 1.4)`。
+- 1UP 计数文本（`hud.js`）：整数显示整数，带小数时 `floor(x*100)/100` 后再 `toFixed(2)`（如 `0.02`、`12.34`），分母固定 99；`index.html` 的 `#extendBox` title 已同步（本文只记录，不改 HTML）。
 - 不改动现有生命/火力/残机 HUD 的布局与行为。
 
 ### 3.6 验证（verifier 位负责）
 - 复用 `tools/_verify_stage.mjs` 的 headless Edge/CDP 思路，新建 `tools/_verify_bosscards.mjs`：跑 stage1–6（至少 N；E/H/L 抽样），从页面抓 `cardResult` 事件与 `hudState.boss`，输出 `_pt/bosscards_s<N>_<diff>.json`。
-- 检查：每张 damage 卡实际击破时间 vs limit（±15% 内为通过）；survival 卡到点自动切卡；POWER 满时给残机、未满时 `+POWER.perLevel`（随版本常量，当前 16）；超时卡 +10；Wriggle 3 卡黑暗截图；HUD 计时文本截图；控制台无报错。
+- 检查：每张 damage 卡实际击破时间 vs limit（±15% 内为通过）；survival 卡到点自动切卡；POWER 满时 `_addExtend(POWER.extend + cardNoHitPower())` 给残机、未满时 `_addPower(cardClearPower() + cardNoHitPower())` 一次入账（当前 16 + 32；无伤要求 `res.ok && !_cardDamaged`）；超时卡 +10；擦弹每颗 +0.02 点进 1UP；Wriggle 3 卡黑暗截图；HUD 计时文本截图；控制台无报错。
 - 产出 `docs/BOSS_TIMING_VERIFY.md`（表格 + 截图路径 + 结论）。
 
 ## 4. 文件分工（写作用域，互不重叠）
@@ -138,8 +198,13 @@ opts.onCardResult({ index, name, mode, ok, elapsed, limit, last })
 | hud-timer | `src/game/hud.js`、`index.html`、`src/main.js` |
 | verifier | `tools/_verify_bosscards.mjs`、`docs/BOSS_TIMING_VERIFY.md`、`_pt/**` |
 
-## 5. 已知取舍 / 待确认
-- 辉夜第 6 卡未给时长 → 暂定 240s，验收后可改。
-- 莉格露 2/3 卡与幽幽子 3 卡给了区间 → 取中值。
+## 5. 已知取舍 / 待确认（2026-10-24 后）
+- 辉夜第 6 卡（火蜥蜴之盾）2026-10-24 用户拍定 **30s**（原暂定 240s，已作废）。
+- 4-2 / 6-1 / 6-8 三张卡原本是存活卡、没有可用的 dps，先按同面设计基准估 152：
+  4-2 已按整关跑实测回填为 **102**（满火力 308 dps），6-1 / 6-8 实测满火力 481 / 438 dps，二档反推 73% / 80%，**落在设计带内，无需再改**。
 - 取消 E/N 裁卡，保证用户给的每张卡时长都能被验证到；如要保留裁卡需重新指定被裁卡。
-- 奖励成功按「一格 = 4 POWER（一个火力等级）」实现；若用户想要的是一整条满槽（16）或 1 点，改 `POWER.perLevel` 一处即可。
+- EXTRA 逐卡难度档（4–5）会让弹数 +15~30%；2026-10-24 的 3 seeds 复测里满火力耗时落在限时 **22–33%**（芙-10 为 57%），
+  即「档位让卡变难」这一点已经包含在 dps 实测里。若用户觉得 EXTRA 变难，只需改 `tier` 数字，不用动血量。
+- 芙-10（双条件）满火力约 34s 打空（57%）、二档要靠「撑满 60s」；若希望满火力更轻松硬破，把它的 `hp` 从 6778 往下调即可。
+- 奖励已从「火力 +1 格 = `POWER.perLevel`」改为比例制：基础 1/4P（`cardClear` 0.25）+ 无伤加算 1/2P（`cardNoHit` 0.5），都乘 `POWER.max`（当前 64），超时仍是 +10 点；
+  要整体调轻 / 调重只改这两个比例，不必动 43 张卡的限时与血量。满槽时基础 1/4P 与无伤 1/2P 合并为一次 `_addExtend(POWER.extend + bonus)`（99 + 32 = 131 点），视已有进度可能一帧连给 2 条残机。

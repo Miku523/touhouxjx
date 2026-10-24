@@ -5743,21 +5743,32 @@ function frameSprite(key, th, kind) {
   return sp;
 }
 
-/** 画面四角的近景画框：随镜头做 1.3 倍视差，形成最前一档景深 */
+/**
+ * 画面四角的近景画框：随镜头做一点轻微视差，形成最前一档景深。
+ *
+ * 位置必须始终钉在屏幕边缘。以前横向直接拿 cam.x*0.65 再对 74（右下 bush）、
+ * 90（左下）、120（右上 branch）取模，相机每往前走一小段相位就归零重跳，
+ * 玩家跑动时右下那丛草会在一个小范围里反复横跳、看起来像「一根草跟着我跑」；
+ * 纵向又减 cam.y*0.16，34 行的 5/6 面（cam.y 最大 368）会把草丛顶高 76px，
+ * 直接悬在画面中部的半空里。这里换成幅度封顶的正弦摆动：相位跟着相机连续走，
+ * 位移最多几像素，永远压在画面边缘，也不会跟相机一起跑远。
+ */
 function drawFrameDecor(ctx, key, th, cam, t) {
   const bush = frameSprite(key, th, 'bush');
   const branch = frameSprite(key, th, 'branch');
-  const dx = cam.x * 1.3;
-  const dy = cam.y * 1.3;
   const sway = Math.sin(t * 0.55) * 2.2;
+  const cx = cam.x || 0;
+  const cy = cam.y || 0;
+  // 有界视差：只用来做一点点「近景也在动」的呼吸感，绝不离开角落
+  const ox = Math.sin(cx * 0.0013) * 7;
+  const oy = Math.sin(cy * 0.004) * 4 + Math.sin(cx * 0.0007 + 1.1) * 2;
 
   if (bush) {
     // 右下：只压住底部 96px，不挡战斗区
-    const xr = VIEW_W - 262 - ((dx * 0.5) % 74);
-    ctx.drawImage(bush, xr + sway * 0.6, VIEW_H - 96 - dy * 0.16, 269, 96);
+    ctx.drawImage(bush, VIEW_W - 262 + ox + sway * 0.6, VIEW_H - 96 + oy, 269, 96);
     // 左下（镜像，略小，避免两角完全对称）
     ctx.save();
-    ctx.translate(-34 + (dx * 0.5 % 90), VIEW_H - 82 - dy * 0.12);
+    ctx.translate(-34 + ox * 0.8, VIEW_H - 82 + oy);
     ctx.scale(-1, 1);
     ctx.globalAlpha = 0.9;
     ctx.drawImage(bush, 0, 0, 232, 83);
@@ -5767,7 +5778,7 @@ function drawFrameDecor(ctx, key, th, cam, t) {
   const topKeys = { shrine: 1, forest: 1, mountain: 1, nether: 1, moon: 1 };
   if (branch && topKeys[key]) {
     ctx.save();
-    ctx.translate(VIEW_W + 12 - ((dx * 0.7) % 120), -6 + sway * 0.5 - dy * 0.2);
+    ctx.translate(VIEW_W + 12 + ox * 0.6, -6 + sway * 0.5 + oy * 0.5);
     ctx.drawImage(branch, -340, 0, 340, 162);
     ctx.restore();
   }

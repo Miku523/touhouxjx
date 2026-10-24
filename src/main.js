@@ -5,6 +5,9 @@
  */
 import { Renderer, VIEW_W, VIEW_H } from './engine/renderer.js';
 import { Input, ACTION_DEFS, keyLabel } from './engine/input.js';
+import { platform, initPlatform } from './ui/platform.js';
+import { GamepadManager } from './engine/gamepad.js';
+import { TouchPad } from './ui/virtualPad.js';
 import { Loop } from './engine/loop.js';
 import { setPriority, preloadWhenIdle } from './engine/lazy_preload.js';
 import { AudioEngine } from './engine/audio.js';
@@ -14,6 +17,7 @@ import { prewarmSpriteCache } from './game/bullets.js';
 import { Hud } from './game/hud.js';
 import { SpellCutin } from './game/spellCutin.js';
 import { MusicRoom } from './game/musicRoom.js';
+import { BootScreen } from './game/bootScreen.js';
 import { Dialogue } from './game/dialogue.js';
 import { Ending } from './game/ending.js';
 import { endingFor } from './game/endings.js';
@@ -28,6 +32,7 @@ import {
 } from './game/story.js';
 import { DIFFICULTY_KEYS, DIFFICULTIES, getDifficulty } from './game/difficulty.js';
 import { ensureCharArt } from './art/genchars.js';
+import { initLang, tr, localizeDom, getLang, setLang, LANGS, isManualLang, onChange } from './i18n/index.js';
 
 const MAIN_STAGES = () => LEVELS.filter((l) => !l.extra);
 const EXTRA_STAGE = () => LEVELS.find((l) => l.extra);
@@ -76,14 +81,14 @@ const DIFF_CARDS = {
 /**
  * 选择界面的场景底图：每个页面一套独立景别，避免所有子页共用同一块暗紫卡片。
  * img 对应 src/art/gen/bg/*.jpg；mote 是前景粒子（petal 花瓣 / mote 光点 / ember 余烬）；
- * jp 是画面右缘的竖排题签，en 是它下面那行小字。
+ * zh 是画面右缘的竖排题签（简体原文，其余语言走 tr），en 是它下面那行小字。
  */
 const SCENES = {
-  shrine: { img: 'shrine', jp: '博麗神社', en: 'HAKUREI SHRINE', mote: 'petal' },
-  mountain: { img: 'mountain', jp: '妖怪の山', en: 'YOUKAI MOUNTAIN', mote: 'mote' },
-  forest: { img: 'forest', jp: '魔法の森', en: 'FOREST OF MAGIC', mote: 'mote' },
-  mansion: { img: 'mansion', jp: '紅魔館', en: 'SCARLET MANSION', mote: 'ember' },
-  moon: { img: 'moon', jp: '迷いの竹林', en: 'BAMBOO OF THE LOST', mote: 'mote' },
+  shrine: { img: 'shrine', zh: '博丽神社', en: 'HAKUREI SHRINE', mote: 'petal' },
+  mountain: { img: 'mountain', zh: '妖怪之山', en: 'YOUKAI MOUNTAIN', mote: 'mote' },
+  forest: { img: 'forest', zh: '魔法森林', en: 'FOREST OF MAGIC', mote: 'mote' },
+  mansion: { img: 'mansion', zh: '红魔馆', en: 'SCARLET MANSION', mote: 'ember' },
+  moon: { img: 'moon', zh: '迷途竹林', en: 'BAMBOO OF THE LOST', mote: 'mote' },
 };
 
 class Game {
@@ -96,6 +101,27 @@ class Game {
     this.dialogue = new Dialogue();
     this.ending = new Ending();
     this.audio = new AudioEngine();
+    // 平台层：环境识别 / PWA / 全屏 / 安全区 / 安卓返回键。
+    // index.html 里没有单独引它 —— import 即自动初始化，桌面端不会产生副作用。
+    this.platform = platform;
+    initPlatform({ onBack: () => this._onSystemBack() });
+    // 微信 / iOS Safari 的首个手势不一定落在 canvas 上（可能点在平台层的安装条上），
+    // 平台层会在任意首次手势里广播解锁事件，这里把 AudioContext 一并唤醒。
+    platform.onAudioUnlock?.(() => { try { this.audio.unlock?.(); } catch (e) { /* 忽略 */ } });
+    // 蓝牙/USB 手柄：轮询式接入，没有手柄时每帧只多一次 getGamepads() 空跑。
+    // 桌面端插着手柄也能直接玩，且与键盘、触屏摇杆并存（Input 按来源合并）。
+    this.gamepad = new GamepadManager({ input: this.input });
+    this.gamepad.start?.();
+    // 虚拟手柄模拟器：只依赖 Input 的 setStick/padPress/padRelease。
+    // 桌面端（input.touchDevice === false）不渲染任何 DOM，也不会进设置页。
+    this.pad = new TouchPad({ input: this.input });
+    // 切后台 / 锁屏 / 被来电盖住：触屏设备自动暂停。没有这一步，
+    // 手机切出去再回来时往往已经被弹幕打死了。桌面端刻意不接管，保持原有节奏。
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && this.state === 'play' && this.stage && this.input.touchDevice) {
+        this._pause();
+      }
+    });
     // 场景底图在空闲时预热，避免第一次进设置页 / 难度页时闪一下黑底
     this._warmScenes();
 
@@ -184,8 +210,14 @@ class Game {
 
     // 首屏启动幕：标题背景 + 立绘 decode 完之前盖住整屏，
     // 揭幕时 canvas 插画与 DOM 菜单同一帧出现，不会「先看到界面、后看到人物」。
-    this._bootEl = document.getElementById('boot');
+    // 进度条读的是真实里程碑（见 bootScreen.js），不是定时假动画。
+    this._boot = new BootScreen(document.getElementById('boot'));
+    this._bootEl = this._boot.el;
     this._bootDone = false;
+    // 标题开屏：0 = 未播放（静态），非 0 = performance.now() 起点
+    this._titleIntroT0 = 0;
+    this._titleIntroOn = false;
+    this._titleIntroTimer = 0;
     this._waitTitleArt();
 
     // 一次性尖峰预算：
@@ -196,8 +228,12 @@ class Game {
     this._prewarmBulletSprites();
 
     window.addEventListener('keydown', (e) => {
+      // 开屏动画期间任意按键直接落到结束姿态，不耽误想立刻开菜单的玩家
+      this._skipTitleIntro();
       // 只用键盘启动的玩家也要解锁音频：浏览器策略只认用户手势，按键同样算
       this._unlockAudio();
+      // 开屏期间整屏被启动幕盖着：按键不能漏进菜单，否则会盲选到「开始游戏」
+      if (!this._bootDone) return;
       // 隐藏跳关：Shift + 1–6 直达主线第 1–6 面（回忆室 / 改键页里会让位）
       if (this._tryStageWarp(e)) return;
       // 音乐回忆室是整屏页面：按键先交给它，消费掉就不再漏进标题菜单
@@ -207,6 +243,9 @@ class Game {
       if (e.code === 'KeyM' && !this._captureAction && this.state !== 'menu' && this.state !== 'play') {
         e.preventDefault();
         this._toggleMute();
+        // 设置页里的「全部静音」开关是渲染快照，按 M 后必须重画一次，
+        // 否则开关还停在旧状态，玩家会以为没静音成功。
+        if (this._page === 'settings') this._showSettings(this.menuIndex, this._settingsOrigin);
         return;
       }
       this._onMenuKey(e);
@@ -239,8 +278,9 @@ class Game {
       }
     });
 
-    // 鼠标点击解锁音频
+    // 鼠标点击解锁音频；开屏期间点一下也直接落位
     window.addEventListener('pointerdown', () => this._unlockAudio(), { once: true });
+    window.addEventListener('pointerdown', () => this._skipTitleIntro(), { passive: true });
 
     this.loop = new Loop(
       (dt) => this.update(dt),
@@ -250,6 +290,10 @@ class Game {
     this.loop.start();
 
     this.showTitle();
+
+    // 切语言后按「当前这一页」重建：setLang 已经换好 <html lang> 和 data-i18n 静态文案，
+    // 这里只负责标题 / 设置 / 暂停这些由 JS 拼出来的页面。不刷新页面，不丢存档与光标。
+    onChange(() => this.applyLang());
   }
 
   /* ============================================================
@@ -333,8 +377,10 @@ class Game {
       if (b.feedback) {
         // 例如锁着的 EXTRA：`.btn.locked` 默认 pointer-events:none，
         // 这里只放开点击（视觉仍为 locked），用来弹出解锁条件提示。
+        // aria-disabled 让读屏 / Tab 走查也知道它现在不可进入。
         el.style.pointerEvents = 'auto';
         el.style.cursor = 'pointer';
+        el.setAttribute('aria-disabled', 'true');
       }
       if (b.back) el.dataset.back = '1';
       if (b.tone) el.style.setProperty('--dc', b.tone);
@@ -358,6 +404,9 @@ class Game {
 
     this.menuButtons = Array.from(this.buttonsEl.querySelectorAll('.btn'));
     this._selectMenu(Number.isInteger(opts.select) ? opts.select : 0);
+    // 旧面板大量文案是中文直写；统一在一处按当前字典扫一遍，
+    // 避免每个按钮/提示都手工包 tr()。查不到译文的节点保持原样。
+    if (this.overlay) localizeDom(this.overlay);
   }
 
   /** 空闲时把五张场景底图解码进缓存（不阻塞首屏，失败也不影响运行） */
@@ -394,7 +443,12 @@ class Game {
       return;
     }
     ov.dataset.scene = id;
-    if (this._sceneId === id && this._ovBg) return;
+    const captionJp = tr(scene.zh);
+    if (this._sceneId === id && this._ovBg) {
+      const cap = this._ovBg.querySelector('.ov-bg-caption span');
+      if (cap) cap.textContent = captionJp;
+      return;
+    }
     this._sceneId = id;
     if (!this._ovBg) {
       const bg = document.createElement('div');
@@ -420,7 +474,7 @@ class Game {
       '<div class="ov-bg-vignette"></div>' +
       '<div class="ov-bg-grain"></div>' +
       `<div class="ov-bg-motes">${motes}</div>` +
-      `<div class="ov-bg-caption"><span>${scene.jp}</span><em>${scene.en}</em></div>` +
+      `<div class="ov-bg-caption"><span>${captionJp}</span></div>` +
       '<span class="ov-corner tl"></span><span class="ov-corner tr"></span>' +
       '<span class="ov-corner bl"></span><span class="ov-corner br"></span>';
   }
@@ -449,6 +503,167 @@ class Game {
   }
 
   /**
+   * 菜单动作：键盘、蓝牙手柄、虚拟手柄共用这一条路径。
+   * 键盘在 keydown 里调用（需要 preventDefault），手柄/触屏在 update 里消费边沿。
+   * 返回 true 表示这一下被菜单吃掉了。
+   */
+  _menuAction(action) {
+    if (!action || this._captureAction) return false;
+    if (this.state !== 'menu' && this.state !== 'paused' && this.state !== 'gameover') return false;
+    if (!this.overlay || this.overlay.classList.contains('hidden')) return false;
+
+    // 上下选择
+    if (action === 'up' || action === 'down') {
+      this._menuStep(action === 'up' ? -1 : 1);
+      return true;
+    }
+
+    // 左右调整当前行的数值（音量 / 帧率 / 画质）；没有可调项的页面里左右也当作移动
+    if (action === 'left' || action === 'right') {
+      const adjust = this.menuButtons[this.menuIndex]?._spec?.adjust;
+      if (adjust) adjust(action === 'left' ? -1 : 1);
+      else this._menuStep(action === 'left' ? -1 : 1);
+      return true;
+    }
+
+    // 确认
+    if (action === 'confirm' || action === 'jump') {
+      const el = this.menuButtons[this.menuIndex];
+      if (el && !el.classList.contains('info') && !el.disabled) {
+        el.click();
+        return true;
+      }
+      return false;
+    }
+
+    // 返回：优先 back 项，其次标注 Esc 的项（如暂停菜单的「继续」）
+    if (action === 'pause') {
+      const back =
+        this.menuButtons.find((b) => b._spec?.back) ||
+        this.menuButtons.find((b) => b._spec?.key === 'ESC' && !b.classList.contains('info'));
+      if (back) {
+        back.click();
+        return true;
+      }
+      return false;
+    }
+    return false;
+  }
+
+  /**
+   * 没有 keydown 事件可用的输入源（蓝牙手柄 / 虚拟手柄）在这里消费菜单边沿。
+   * 只在菜单类状态生效；键盘按下时 _onMenuKey 已经处理并 endFrame，不会重复走一次。
+   */
+  _padMenuTick() {
+    if (this.state !== 'menu' && this.state !== 'paused' && this.state !== 'gameover') return;
+    if (this._captureAction) return;
+    const inp = this.input;
+    let action = null;
+    if (inp.pressed('up')) action = 'up';
+    else if (inp.pressed('down')) action = 'down';
+    else if (inp.pressed('left')) action = 'left';
+    else if (inp.pressed('right')) action = 'right';
+    else if (inp.pressed('confirm') || inp.pressed('jump')) action = 'confirm';
+    else if (inp.pressed('pause')) action = 'pause';
+    if (action && this._menuAction(action)) this.input.endFrame();
+  }
+
+  /** 状态机 → 虚拟手柄语义状态 */
+  _touchStateName() {
+    switch (this.state) {
+      case 'play': return 'play';
+      case 'paused': return 'paused';
+      case 'dialogue': return 'dialogue';
+      case 'ending': return 'ending';
+      case 'gameover': return 'gameover';
+      default: return 'menu';
+    }
+  }
+
+  /** 每帧同步虚拟手柄状态（TouchPad 内部会判重，未变化时几乎零开销） */
+  _syncTouchState() {
+    const pad = this.pad;
+    if (!pad || typeof pad.setGameState !== 'function') return;
+    const name = this._touchStateName();
+    if (name === this._touchState) return;
+    this._touchState = name;
+    pad.setGameState(name);
+  }
+
+  /** 设置页：触屏方案循环（摇杆 → 手势 → 按键）并就地重画 */
+  _cyclePadScheme(dir = 1, origin = this._settingsOrigin) {
+    const pad = this.pad;
+    if (!pad || !pad.active) return;
+    if (typeof pad.cycleScheme === 'function') pad.cycleScheme(dir);
+    this._showSettings(this.menuIndex, origin);
+  }
+
+  /**
+   * 安卓返回键 / 手势返回：对局中先暂停，暂停里逐级返回。
+   * 只在触屏设备上由平台层挂载，桌面浏览器返回键行为不变。
+   */
+  _onSystemBack() {
+    this._unlockAudio?.();
+    // 布局编辑器/手柄内部面板开着时，返回键先关它，不要顺带把暂停菜单也退掉
+    if (this.pad?.closeOverlay?.()) return;
+    if (this._captureAction) {
+      this._captureAction = null;
+      this.showKeybinds(this._keybindIndex, tr('已取消改键'));
+      this.input.endFrame();
+      return;
+    }
+    if (this.state === 'dialogue' && this.dialogue.active) {
+      this.dialogue.advance();
+      return;
+    }
+    if (this.state === 'ending') {
+      this.ending.advance();
+      return;
+    }
+    if (this.state === 'play') {
+      this._pause();
+      return;
+    }
+    if (this._menuAction('pause')) return;
+    if (this.state === 'paused') this._resume();
+  }
+
+  /**
+   * 状态机 → 平台层语义状态。
+   * 平台层据此决定安装条 / iOS 添加到桌面弹窗能不能出现：
+   * 只允许 'title'，其余状态（含设置页）都压住，别盖在游戏和按钮上。
+   */
+  _platformStateName() {
+    // 开机动画还没放完先按 menu 算，别让安装条压在 BootScreen 上
+    if (!this._bootDone) return 'menu';
+    if (this.state === 'menu' || this.state === 'paused') {
+      if (this._page === 'settings' || this._page === 'keybinds') return 'settings';
+      if (this.state === 'menu') return this._page === 'title' ? 'title' : 'menu';
+      return 'paused';
+    }
+    return this._touchStateName();
+  }
+
+  /** 平台层同步：语义状态 + 系统返回键拦截（只在触屏端） */
+  _syncPlatformState() {
+    const pf = this.platform;
+    if (!pf || !pf.env) return;
+    // 安装条只在标题页出现，其余状态（菜单/设置/对局/剧情）一律让它退场
+    const name = this._platformStateName();
+    if (name !== this._platformState) {
+      this._platformState = name;
+      if (typeof pf.setGameState === 'function') pf.setGameState(name);
+    }
+    if (!pf.env.touch) return;
+    const want =
+      this.state === 'play' || this.state === 'paused' || this.state === 'dialogue' ||
+      this.state === 'ending' || this.state === 'gameover';
+    if (want === this._backGuardOn) return;
+    this._backGuardOn = want;
+    pf.setBackGuard(want);
+  }
+
+  /**
    * 菜单键盘：
    *  - 按钮上标注的快捷键直接触发（B / M / F / K / 1 / 2 …）
    *  - ↑↓ 选择（W/S 同样可用）、Enter / 空格 确认
@@ -473,7 +688,7 @@ class Game {
       e.preventDefault();
       this.input.resetBinds();
       this.audio.play?.('select');
-      this.showKeybinds(this._keybindIndex, '已恢复默认键位');
+      this.showKeybinds(this._keybindIndex, tr('已恢复默认键位'));
       this.input.endFrame();
       return;
     }
@@ -491,41 +706,11 @@ class Game {
       }
     }
 
-    // 2) 上下选择
-    if (action === 'up' || action === 'down') {
+    // 2) 方向 / 确认 / 返回：统一交给 _menuAction（手柄、虚拟手柄走同一条路径）
+    if (['up', 'down', 'left', 'right', 'confirm', 'jump', 'pause'].includes(action)) {
       e.preventDefault();
-      this._menuStep(action === 'up' ? -1 : 1);
-      return;
-    }
-
-    // 3) 左右调整当前行的数值（音量 / 帧率）；没有可调项的页面里左右也当作移动
-    if (action === 'left' || action === 'right') {
-      const adjust = this.menuButtons[this.menuIndex]?._spec?.adjust;
-      e.preventDefault();
-      if (adjust) adjust(action === 'left' ? -1 : 1);
-      else this._menuStep(action === 'left' ? -1 : 1);
-      return;
-    }
-
-    // 4) 确认
-    if (action === 'confirm' || action === 'jump') {
-      const el = this.menuButtons[this.menuIndex];
-      if (el && !el.classList.contains('info') && !el.disabled) {
-        e.preventDefault();
-        el.click();
-        this.input.endFrame();
-      }
-      return;
-    }
-
-    // 5) Esc：返回上一级；没有返回项时退化为「标注 Esc 的动作」（如暂停菜单的继续）
-    if (action === 'pause') {
-      const back =
-        this.menuButtons.find((b) => b._spec?.back) ||
-        this.menuButtons.find((b) => b._spec?.key === 'ESC' && !b.classList.contains('info'));
-      if (back) {
-        e.preventDefault();
-        back.click();
+      if (this._menuAction(action)) {
+        // 立刻清边沿：否则同一帧的 update 会把这一下当成手柄/触屏输入再走一次
         this.input.endFrame();
       }
     }
@@ -540,14 +725,18 @@ class Game {
     if (e.code === 'Escape') {
       this._captureAction = null;
       this.audio.play?.('menu');
-      this.showKeybinds(this._keybindIndex, '已取消改键');
+      this.showKeybinds(this._keybindIndex, tr('已取消改键'));
+      // 清掉这一下 Esc 的边沿：否则同一帧 _padMenuTick 会再当 pause 消费一次，
+      // 页面从 keybinds 直接退到 settings，玩家以为一次 Esc 跳了两级。
+      this.input.endFrame();
       return;
     }
     if (e.code === 'Delete' || e.code === 'Backspace') {
       this.input.resetBinds();
       this._captureAction = null;
       this.audio.play?.('select');
-      this.showKeybinds(this._keybindIndex, '已恢复默认键位');
+      this.showKeybinds(this._keybindIndex, tr('已恢复默认键位'));
+      this.input.endFrame();
       return;
     }
     if (!e.code) return;
@@ -563,7 +752,7 @@ class Game {
     ]);
     if (RESERVED_KEYS.has(e.code)) {
       // 保持捕获态，玩家可以继续按别的键；只提示一句
-      this.showKeybinds(this._keybindIndex, '这个键浏览器要用（或功能键），换一个吧');
+      this.showKeybinds(this._keybindIndex, tr('这个键浏览器要用（或功能键），换一个吧'));
       return;
     }
 
@@ -584,11 +773,19 @@ class Game {
    * 等标题三张图（背景 + 两张立绘）下载并解码完成后再揭幕。
    * - 图片失败或超时（8s）也放行，宁可退回程序化夜空，也不能一直黑屏。
    * - 后续从选人页回到标题时两套立绘都已 decode，无需再等。
+   * - 每张图就绪推进开屏进度条 1/3：条子跟着真下载/解码走，不是定时假动画。
    */
   _waitTitleArt() {
     const imgs = [this._titleBgImg, ...Object.values(this._titleCharImgs)].filter(Boolean);
+    const total = imgs.length || 1;
+    let ready = 0;
+    this._boot?.setTarget(0.18);
     const decodeAll = Promise.all(imgs.map((img) => new Promise((resolve) => {
-      const done = () => resolve();
+      const done = () => {
+        ready += 1;
+        this._boot?.setTarget(0.18 + 0.66 * (ready / total));
+        resolve();
+      };
       if (img.complete && img.naturalWidth) { done(); return; }
       if (typeof img.decode === 'function') {
         img.decode().then(done, done);
@@ -598,7 +795,13 @@ class Game {
       }
     })));
     const timeout = new Promise((resolve) => setTimeout(resolve, 8000));
-    Promise.race([decodeAll, timeout]).then(() => this._revealTitle());
+    Promise.race([decodeAll, timeout])
+      .then(() => {
+        this._boot?.setTarget(0.94);
+        // 最短停留时间到点后追满 100%，兑现后 main 再等两帧揭幕
+        return this._boot ? this._boot.finish() : Promise.resolve();
+      })
+      .then(() => this._revealTitle());
   }
 
   _revealTitle() {
@@ -606,8 +809,91 @@ class Game {
     this._bootDone = true;
     // 等两帧：确保 renderer 已经用补全后的标题插画画过至少一帧，再淡出启动幕
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      this._bootEl?.classList.add('done');
+      // hide() 内部加 .done 淡出、淡完 display:none，和标题开屏动画同时开始
+      this._boot?.hide();
+      // 启动幕刚开始淡出就开演：人物从右侧滑进来，标题与选项从左侧滑进来
+      this._playTitleIntro();
     }));
+  }
+
+  /* ---------------- 标题开屏动画 ----------------
+     标题曲 150 BPM（一拍 0.4s），所有节拍都压在拍点上：
+       0.0s  人物从右侧屏外滑入，4 拍（1.6s）落位
+       0.8s  标题从左屏外滑入，2 拍落位（正好和人物同时到位）
+       1.0s  副标题跟着滑入
+       1.2s  金线展开、选项区斜向扫光
+       1.6s  起六行选项逐行斜向滑入，每行再迟半拍（0.2s），1.5 拍到位
+       1.6s  内框角饰淡入
+       1.8s  版本号与语言胶囊淡入
+       2.0s  底部提示淡入
+     开场前会用 audio.musicProgress 把整段挪到下一拍，人物第一步正好踩鼓点；
+     DOM 部分交给 CSS（.overlay.title-mode.intro 触发，CSS 里用 --lead 补齐卡拍偏移），
+     这里只管开关与画布计时；任意按键 / 点击会立刻摘掉 .intro，直接落到结束姿态。 */
+
+  _playTitleIntro() {
+    const ov = this.overlay;
+    if (!ov || !ov.classList.contains('title-mode')) return;
+    clearTimeout(this._titleIntroTimer);
+    if (this._prefersReducedMotion()) {
+      this._titleIntroOn = false;
+      this._titleIntroT0 = 0;
+      return;
+    }
+    const beat = 0.4; // 标题曲 150 BPM
+    // 卡拍：等到下一个拍点再起步；已经踩在拍上（±30ms）就立刻开始
+    let lead = 0;
+    const elapsed = this.audio?.musicProgress?.elapsed;
+    if (Number.isFinite(elapsed)) {
+      const phase = ((elapsed % beat) + beat) % beat;
+      if (phase >= 0.03 && beat - phase >= 0.03) lead = beat - phase;
+    }
+    this._titleIntroOn = true;
+    this._titleIntroT0 = performance.now() + lead * 1000;
+    // CSS 的每段延时都会加上 --lead，让标题与选项跟着人物一起踩同一个拍点
+    ov.style.setProperty('--lead', lead.toFixed(3) + 's');
+    // 每行一个序号：CSS 用它算出「越往下越靠左、越靠下、也越晚到」的斜向梯度
+    this.menuButtons?.forEach((el, i) => el.style.setProperty('--ti', i));
+    // 同名动画要先摘掉再强制重排，才肯从头播（回标题 / 重绘都靠这个重播）
+    ov.classList.remove('intro');
+    void ov.offsetWidth;
+    ov.classList.add('intro');
+    // 演完就把类摘掉：之后切语言等重绘不会再莫名其妙重播一遍入场
+    this._titleIntroTimer = setTimeout(() => {
+      this._titleIntroOn = false;
+      this.overlay?.classList.remove('intro');
+    }, lead * 1000 + 3600);
+  }
+
+  /** 按键或点击：跳过开屏，直接落到结束姿态 */
+  _skipTitleIntro() {
+    if (!this._titleIntroOn) return;
+    this._titleIntroOn = false;
+    this._titleIntroT0 = 0;
+    clearTimeout(this._titleIntroTimer);
+    // 摘掉 .intro 会让进行中的 CSS 动画立刻取消，元素直接回到静止时的最终姿态
+    this.overlay?.classList.remove('intro');
+  }
+
+  _prefersReducedMotion() {
+    return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  /** 人物入场进度：0 = 右侧屏外，1 = 落位（没在播时恒为 1） */
+  _titleIntroProgress() {
+    const t0 = this._titleIntroT0;
+    if (!t0 || !this._titleIntroOn) return 1;
+    return Math.min(1, Math.max(0, (performance.now() - t0 - 40) / 1600));
+  }
+
+  /**
+   * EXTRA 还锁着时的统一反馈。
+   * 底部提示行在深色背景里只有 12px 半透明字，锁着的菜单项又不参与选中，
+   * 玩家点了以后很容易以为什么都没发生——所以再叠一条平台 toast（桌面 / 手机都可见）。
+   */
+  _extraLockedFeedback() {
+    const msg = tr('EXTRA 尚未解锁：用 N / H / L 难度不续命通关即可开启');
+    try { platform.showToast?.(msg, 3200); } catch (e) { /* toast 失败也不能挡住标题 */ }
+    this.showTitle(msg);
   }
 
   /**
@@ -615,6 +901,9 @@ class Game {
    * @param {string} [notice] 底部提示行（例如「已重置进度」），留空则不显示
    */
   showTitle(notice = '') {
+    // 从子页 / 回忆室回到标题时重播开屏；标题页自身重绘（切语言、EXTRA 提示）不重播
+    const replayIntro = this._bootDone
+      && (this._page !== 'title' || this.overlay?.classList.contains('hidden'));
     // 先掐断上一局的残留：隐藏中的对话、关卡结算的延迟回调，
     // 否则回到标题后按 Enter 会被旧剧本吃掉，甚至把游戏重新拉进关卡。
     this._pendingTimeout = 0;
@@ -633,22 +922,24 @@ class Game {
     this.audio.playMusic?.('title');
     this.audio.setMusic?.(this.musicOn !== false);
 
+    this._titleNotice = notice || '';
+
     const buttons = [
-      { label: '开始游戏', en: 'START', key: 'ENTER', cls: 'primary', onPick: () => this.showDifficultySelect() },
+      { label: tr('开始游戏'), en: 'START', key: 'ENTER', cls: 'primary', onPick: () => this.showDifficultySelect() },
       this.unlockedExtra
-        ? { label: '门内的祭典', en: 'EXTRA', key: 'E', hotkey: 'KeyE', cls: 'extra', onPick: () => this.showExtraCharSelect() }
+        ? { label: tr('门内的祭典'), en: 'EXTRA', key: 'E', hotkey: 'KeyE', cls: 'extra', onPick: () => this.showExtraCharSelect() }
         : {
           // 锁着也给出反馈：保留 locked 视觉（样式表 pointer-events:none 由 feedback 覆盖），
           // 点击 / 按 E 都能问出解锁条件，而不是毫无反应。noSelect 保证它不参与 ↑↓ 与 Enter 默认选中。
-          label: '门内的祭典', en: 'EXTRA', key: 'E', hotkey: 'KeyE',
+          label: tr('门内的祭典'), en: 'EXTRA', key: 'E', hotkey: 'KeyE',
           cls: 'extra locked', noSelect: true, feedback: true,
-          onPick: () => this.showTitle('EXTRA 尚未解锁：用 N / H / L 难度不续命通关即可开启'),
+          onPick: () => this._extraLockedFeedback(),
         },
     ];
-    buttons.push({ label: '操作说明', en: 'MANUAL', key: '?', hotkey: 'Slash', onPick: () => this.showHelp() });
-    buttons.push({ label: '音乐回忆室', en: 'MUSIC ROOM', key: 'M', hotkey: 'KeyM', onPick: () => this.showMusicRoom() });
-    buttons.push({ label: '设置', en: 'SETTINGS', key: 'S', hotkey: 'KeyS', onPick: () => this._showSettings(this._settingsIndex || 0, 'title') });
-    buttons.push({ label: '退出游戏', en: 'QUIT', key: 'Q', hotkey: 'KeyQ', cls: 'danger', onPick: () => this.showQuit() });
+    buttons.push({ label: tr('操作说明'), en: 'MANUAL', key: '?', hotkey: 'Slash', onPick: () => this.showHelp() });
+    buttons.push({ label: tr('音乐回忆室'), en: 'MUSIC ROOM', key: 'M', hotkey: 'KeyM', onPick: () => this.showMusicRoom() });
+    buttons.push({ label: tr('设置'), en: 'SETTINGS', key: 'S', hotkey: 'KeyS', onPick: () => this._showSettings(this._settingsIndex || 0, 'title') });
+    buttons.push({ label: tr('退出游戏'), en: 'QUIT', key: 'Q', hotkey: 'KeyQ', cls: 'danger', onPick: () => this.showQuit() });
 
     this._setPanel(
       '東方新紀行',
@@ -657,6 +948,41 @@ class Game {
       notice || '',
       { title: true, page: 'title' }
     );
+    if (replayIntro) this._playTitleIntro();
+    else if (this.overlay?.classList.contains('intro')) {
+      // 开屏途中切语言会重建按钮：补上序号，新按钮仍按斜向梯度入场
+      this.menuButtons?.forEach((el, i) => el.style.setProperty('--ti', i));
+    }
+  }
+
+  /* ---------------- 四语言 ----------------
+     设计见 docs/SETTINGS_I18N_DESIGN.md：原文当键、语言包懒加载、缺译回退中文。 */
+
+  /** 语言变了之后，把当前这一页按新语言重建（由 i18n 的 onChange 触发） */
+  applyLang() {
+    const page = this._page;
+    if (page === 'settings') return this._showSettings(this._settingsIndex || 0, this._settingsOrigin);
+    if (page === 'keybinds') return this.showKeybinds(this._keybindIndex || 0);
+    if (page === 'paused') return this._showPause();
+    if (page === 'title') return this.showTitle(this._titleNotice || '');
+    // 其他页（难度 / 说明 / 回忆室等）P1 再逐个接线，目前只保持 <html lang> 与静态文案同步
+  }
+
+  /** 切到某种语言：加载语言包（首次可能 await）→ 写入设置 → 重建当前页 */
+  async _setLanguage(tag) {
+    if (!LANGS.some((l) => l.tag === tag) || tag === getLang()) return;
+    this.audio.play?.('menu');
+    await setLang(tag, { manual: true });
+    // 手动选择要写进设置：_saveSettings 里只在 isManualLang() 时带 lang 字段
+    this._saveSettings();
+  }
+
+  /** 语言行上 ← → / Enter：按 LANGS 顺序循环 */
+  _cycleLang(dir = 1) {
+    const list = LANGS;
+    const i = Math.max(0, list.findIndex((l) => l.tag === getLang()));
+    const next = list[(i + (dir > 0 ? 1 : list.length - 1)) % list.length];
+    this._setLanguage(next.tag);
   }
 
   /**
@@ -681,13 +1007,13 @@ class Game {
     const art = (file) => new URL(`./art/gen/${file}`, import.meta.url).href;
     const cards = [
       {
-        key: 'reimu', name: '博丽灵梦', en: 'HAKUREI REIMU',
-        note: '追踪御札 · 符卡「梦想封印」', digit: '1',
+        key: 'reimu', name: tr('博丽灵梦'), en: 'HAKUREI REIMU',
+        note: tr('追踪御札 · 符卡「梦想封印」'), digit: '1',
         tone: '#ff92a8', glow: '255, 120, 145', img: art('reimu_title.png'),
       },
       {
-        key: 'marisa', name: '雾雨魔理沙', en: 'KIRISAME MARISA',
-        note: '扩散穿透 · 符卡「魔炮」', digit: '2',
+        key: 'marisa', name: tr('雾雨魔理沙'), en: 'KIRISAME MARISA',
+        note: tr('扩散穿透 · 符卡「魔炮」'), digit: '2',
         tone: '#ffd45e', glow: '255, 205, 110', img: art('marisa_title.png'),
       },
     ];
@@ -709,13 +1035,13 @@ class Game {
     }));
 
     rows.push({
-      label: '返回', cls: 'back-ghost', key: 'ESC', back: true,
+      label: tr('返回'), cls: 'back-ghost', key: 'ESC', back: true,
       onPick: () => this.showDifficultySelect(),
     });
 
     const diff = getDifficulty(this.difficulty);
-    this._setPanel('选择主角', `当前难度：${diff.cn} · ${diff.stageCount} 面`, rows,
-      '← → 选择　ENTER 确认　ESC 返回难度',
+    this._setPanel(tr('选择主角'), tr('当前难度：{d} · {n} 面', { d: tr(diff.cn), n: diff.stageCount }), rows,
+      tr('← → 选择　ENTER 确认　ESC 返回难度'),
       { screen: true, en: 'SELECT HEROINE', grid: 'cc-grid', scene: 'shrine', select: this.char === 'marisa' ? 1 : 0 }
     );
     this._bindPortraitArt();
@@ -731,20 +1057,20 @@ class Game {
    */
   showExtraCharSelect(notice = '') {
     if (!this.unlockedExtra) {
-      this.showTitle('EXTRA 尚未解锁：用 N / H / L 难度不续命通关即可开启');
+      this._extraLockedFeedback();
       return;
     }
     this.state = 'menu';
     const art = (file) => new URL(`./art/gen/${file}`, import.meta.url).href;
     const cards = [
       {
-        key: 'reimu', name: '博丽灵梦', en: 'HAKUREI REIMU',
-        note: '追踪御札 · 符卡「梦想封印」', digit: '1',
+        key: 'reimu', name: tr('博丽灵梦'), en: 'HAKUREI REIMU',
+        note: tr('追踪御札 · 符卡「梦想封印」'), digit: '1',
         tone: '#ff92a8', glow: '255, 120, 145', img: art('reimu_title.png'),
       },
       {
-        key: 'marisa', name: '雾雨魔理沙', en: 'KIRISAME MARISA',
-        note: '扩散穿透 · 符卡「魔炮」', digit: '2',
+        key: 'marisa', name: tr('雾雨魔理沙'), en: 'KIRISAME MARISA',
+        note: tr('扩散穿透 · 符卡「魔炮」'), digit: '2',
         tone: '#ffd45e', glow: '255, 205, 110', img: art('marisa_title.png'),
       },
     ];
@@ -759,19 +1085,19 @@ class Game {
         noSelect: !on,
         feedback: !on,
         html:
-          (on ? '' : '<span class="cc-lock">未解锁</span>') +
+          (on ? '' : '<span class="cc-lock">' + tr('未解锁') + '</span>') +
           '<span class="cc-portrait"><img src="' + c.img + '" alt="" decoding="async" draggable="false" /></span>' +
           '<span class="cc-key">' + c.digit + '</span>' +
           '<span class="cc-body">' +
             '<span class="cc-en">' + c.en + '</span>' +
             '<span class="cc-name">' + c.name + '</span>' +
-            '<span class="cc-note">' + (on ? c.note : '不续命通关 1–6 面后解锁') + '</span>' +
+            '<span class="cc-note">' + (on ? c.note : tr('不续命通关 1–6 面后解锁')) + '</span>' +
           '</span>',
         onPick: () => {
           if (on) { this.startExtra(c.key); return; }
           // 未解锁也要有反馈：告诉玩家这位主角差什么，而不是按了没反应
           this.showExtraCharSelect(
-            `${c.name}还没有在 EXTRA 解锁：用她在 N / H / L 难度一次续命都不用地通过 1–6 面即可开启`
+            tr('{name}还没有在 EXTRA 解锁：用她在 N / H / L 难度一次续命都不用地通过 1–6 面即可开启', { name: c.name })
           );
         },
       };
@@ -779,15 +1105,15 @@ class Game {
 
     const onCount = this._extraCharKeys().length;
     rows.push({
-      label: '返回', cls: 'back-ghost', key: 'ESC', back: true,
+      label: tr('返回'), cls: 'back-ghost', key: 'ESC', back: true,
       onPick: () => this.showTitle(),
     });
 
     this._setPanel(
-      'EXTRA 选择主角',
-      `已解锁 ${onCount} / ${CHAR_KEYS.length} 位 · 门内的祭典`,
+      tr('EXTRA 选择主角'),
+      tr('已解锁 {n} / {m} 位 · 门内的祭典', { n: onCount, m: CHAR_KEYS.length }),
       rows,
-      notice || 'EXTRA 的主角各自解锁：N / H / L 不续命通关 1–6 面，那位主角才能进入 EXTRA',
+      notice || tr('EXTRA 的主角各自解锁：N / H / L 不续命通关 1–6 面，那位主角才能进入 EXTRA'),
       {
         screen: true, en: 'SELECT HEROINE · EXTRA', grid: 'cc-grid', scene: 'mansion',
         select: Math.max(0, cards.findIndex((c) => this._extraUnlockedFor(c.key))),
@@ -839,10 +1165,10 @@ class Game {
         glow: art.glow,
         hotkey: `Key${key}`,
         html:
-          '<span class="dc-now">当前难度</span>' +
+          '<span class="dc-now">' + tr('当前难度') + '</span>' +
           '<span class="dc-key">' + key + '</span>' +
           '<span class="dc-glyph">' + key + '</span>' +
-          '<span class="dc-cn">' + d.cn + '</span>' +
+          '<span class="dc-cn">' + tr(d.cn) + '</span>' +
           '<span class="dc-en">' + d.label + '</span>',
         onPick: () => {
           this.difficulty = key;
@@ -853,7 +1179,7 @@ class Game {
     });
 
     rows.push({
-      label: '返回标题',
+      label: tr('返回标题'),
       cls: 'back-ghost',
       key: 'ESC',
       back: true,
@@ -861,10 +1187,10 @@ class Game {
     });
 
     this._setPanel(
-      '选择难度',
-      '按 E / N / H / L 选择　·　Enter 确认',
+      tr('选择难度'),
+      tr('按 E / N / H / L 选择　·　Enter 确认'),
       rows,
-      '↑ ↓ ← → 选择　ENTER 确认　ESC 返回标题',
+      tr('↑ ↓ ← → 选择　ENTER 确认　ESC 返回标题'),
       {
         screen: true,
         en: 'SELECT DIFFICULTY',
@@ -886,27 +1212,27 @@ class Game {
     });
 
     const rows = [
-      { ...row('help-move', '左右移动', cap('left') + cap('right')), groupTitle: '移动', glyph: '動' },
-      row('help-move', '上下移动 / 选择', cap('up') + cap('down')),
-      row('help-move', '跳跃', cap('jump') + '<span class="help-tip">二段跳</span>'),
+      { ...row('help-move', tr('左右移动'), cap('left') + cap('right')), groupTitle: tr('移动'), glyph: '動' },
+      row('help-move', tr('上下移动 / 选择'), cap('up') + cap('down')),
+      row('help-move', tr('跳跃'), cap('jump') + '<span class="help-tip">' + tr('二段跳') + '</span>'),
       // label 别写太长：三栏面板里「低速移动 / 判定点」会折成两行（试玩反馈 P3-4）
-      row('help-move', '低速 / 判定点', cap('slow') + '<span class="help-tip">按住显示判定点</span>'),
-      { ...row('help-act', '射击', cap('shoot')), groupTitle: '战斗', glyph: '戰' },
-      row('help-act', '向上射击', cap('up') + '<span class="help-tip">按住打空中</span>'),
-      row('help-act', '向下射击', cap('down') + '<span class="help-tip">按住打脚下</span>'),
+      row('help-move', tr('低速 / 判定点'), cap('slow') + '<span class="help-tip">' + tr('按住显示判定点') + '</span>'),
+      { ...row('help-act', tr('射击'), cap('shoot')), groupTitle: tr('战斗'), glyph: '戰' },
+      row('help-act', tr('向上射击'), cap('up') + '<span class="help-tip">' + tr('按住打空中') + '</span>'),
+      row('help-act', tr('向下射击'), cap('down') + '<span class="help-tip">' + tr('按住打脚下') + '</span>'),
       // 冲刺只做高速位移，没有无敌帧（别照旧文案写「无敌」）；符卡消耗 POWER.castCost=24
-      row('help-act', '冲刺', cap('dash') + '<span class="help-tip">可穿敌</span>'),
-      row('help-act', '符卡', cap('cast') + '<span class="help-tip">耗 24 · 火力下降</span>'),
-      { ...row('help-sys', '暂停菜单', cap('pause')), groupTitle: '系统', glyph: '系' },
-      row('help-sys', '界面', '<span class="help-tip">↑↓ 选择 · ENTER 确认</span>'),
-      row('help-sys', '静音', cap('mute')),
-      row('help-sys', '退出游戏', cap('quit')),
-      { label: '返回', cls: 'set-foot-btn back-ghost', key: 'ESC', back: true, group: 'help-foot', onPick: () => this.showTitle() },
+      row('help-act', tr('冲刺'), cap('dash') + '<span class="help-tip">' + tr('可穿敌') + '</span>'),
+      row('help-act', tr('符卡'), cap('cast') + '<span class="help-tip">' + tr('耗 24 · 火力下降') + '</span>'),
+      { ...row('help-sys', tr('暂停菜单'), cap('pause')), groupTitle: tr('系统'), glyph: '系' },
+      row('help-sys', tr('界面'), '<span class="help-tip">' + tr('↑↓ 选择 · ENTER 确认') + '</span>'),
+      row('help-sys', tr('静音'), cap('mute')),
+      row('help-sys', tr('退出游戏'), cap('quit')),
+      { label: tr('返回'), cls: 'set-foot-btn back-ghost', key: 'ESC', back: true, group: 'help-foot', onPick: () => this.showTitle() },
     ];
 
-    this._setPanel('操作说明', '键位可在「设置 → 按键设置」中修改',
+    this._setPanel(tr('操作说明'), tr('键位可在「设置 → 按键设置」中修改'),
       rows,
-      '设置页内：K 按键设置　G 画质　F 帧率　M 静音　X 重置进度　ESC 返回',
+      tr('设置页内：K 按键设置　G 画质　F 帧率　M 静音　X 重置进度　ESC 返回'),
       { screen: true, en: 'HOW TO PLAY', page: 'help', grid: 'help-grid', scene: 'forest', select: rows.length - 1 }
     );
   }
@@ -1003,7 +1329,7 @@ class Game {
     // 只认已解锁的主角：非法参数 / 未解锁角色一律回退，不让她们偷渡进门
     const unlocked = this._extraCharKeys();
     if (!unlocked.length) {
-      this.showTitle('EXTRA 尚未解锁：用 N / H / L 难度不续命通关即可开启');
+      this._extraLockedFeedback();
       return;
     }
     const pick = unlocked.includes(charKey)
@@ -1191,8 +1517,11 @@ class Game {
     this.hudEl?.classList.remove('hidden');
     this.hud.reset();
     this.hud.setMaxLives(startLives, this.char);
-    this.hud.setStageName(isExtra ? 'EXTRA' : `STAGE ${index + 1}`, def.title || '');
-    this.hud.banner(isExtra ? 'EXTRA STAGE' : `STAGE ${index + 1}`, def.title || '', 2.6);
+    this.hud.setStageName(isExtra ? 'EXTRA' : `STAGE ${index + 1}`, tr(def.title) || '');
+    // STG 面（第 4 面）开场 1s 就有弹幕和道具列车，横幅再压 2.6s 会挡住视线；
+    // 横向卷轴面缩到 1.6s，平台面保持原来的节奏。
+    const bannerSec = this.stage?.mode === 'stg' ? 1.6 : 2.6;
+    this.hud.banner(isExtra ? 'EXTRA STAGE' : `STAGE ${index + 1}`, tr(def.title) || '', bannerSec);
     if (!this._bossMusicSwitched) {
       this.audio.playMusic?.(this._levelMusic.pre || this._levelMusic.boss || 'stage1');
     }
@@ -1224,13 +1553,36 @@ class Game {
     this.audio.play?.(name);
   }
 
+  /**
+   * 触觉反馈：统一走这里，手机用 navigator.vibrate，蓝牙手柄用马达。
+   * 设置里的「手柄震动」只控手柄；手机震动跟系统静音/专注模式走，不做开关。
+   */
+  _haptic(kind = 'tap') {
+    // TouchPad 只分轻/重两档：受伤、死亡给重震，其余给轻震。
+    // 是否真的震由它内部读 hks.touch.v1 的 haptics 开关决定。
+    this.pad?.haptic?.(kind === 'hurt' || kind === 'death' ? 'heavy' : 'light');
+    const gp = this.gamepad;
+    if (!gp || !gp.getVibration?.()) return;
+    const table = {
+      hurt: [0.75, 0.3, 120],
+      death: [1, 0.6, 340],
+      cast: [0.9, 0.4, 240],
+      boss: [0.45, 0.15, 80],
+      clear: [0.55, 0.2, 160],
+    };
+    const [strong, weak, ms] = table[kind] || table.boss;
+    gp.rumble?.(strong, weak, ms);
+  }
+
   _onStageEvent(type, data) {
     switch (type) {
       case 'hurt':
         this.audio.play?.('hurt');
+        this._haptic('hurt');
         break;
       case 'death':
         this.audio.play?.('die');
+        this._haptic('death');
         break;
       case 'checkpoint':
         this.audio.play?.('checkpoint');
@@ -1265,23 +1617,32 @@ class Game {
         this.cutin.show(this.stage?.char || this.char);
         this._slowT = SLOW_TIME; // 世界短暂减速，cut-in 更有冲击力
         this._sfx('spell');
+        this._haptic('cast');
         break;
       case 'extend':
-        // 拾取 POWER 累计满 99 点 → 恢复 1 命
-        this.hud.banner('1UP', '残机 +1', 1.6);
+        // 1UP 累计满 99 点（拾取 POWER / 擦弹 / 符卡奖励）→ 恢复 1 命
+        this.hud.banner('1UP', tr('残机 +1'), 1.6);
         this._sfx('extend');
         break;
       case 'cardResult': {
-        // 符卡限时结算（spec 3.5）：Stage 决定 reward —— 按时击破/坚持到点给 POWER（满槽改残机），超时给 10 点
+        // 符卡限时结算（spec 3.5）：Stage 决定 reward —— 按时击破/坚持到点给 1/4P（满槽改残机），
+        // 本卡无伤再追加 1/2P；超时仍只给 10 点。
         const reward = data && data.reward;
+        const noHit = !!(data && data.noHit);
         if (reward === 'power') {
-          this.hud.banner('+POWER', '火力 +1 格', 1.4);
+          if (noHit) {
+            this.hud.banner(tr('无伤通过'), tr('火力 +3/4P'), 1.8);
+          } else {
+            this.hud.banner(tr('符卡击破'), tr('火力 +1/4P'), 1.4);
+          }
           this._sfx('checkpoint'); // 复用存档点双音上行：小奖励，不盖过 Boss 主题曲
         } else if (reward === 'life') {
-          // 满火力奖励残机：stage 侧走 _addExtend 已同步 emit 'extend'，
-          // 横幅与音效交给上面的 case 'extend' 播一次即可，这里不重复弹。
+          // 满火力基础奖励残机：stage 侧走 _addExtend 已同步 emit 'extend'，
+          // 1UP 横幅与音效交给上面的 case 'extend' 播一次即可；
+          // 无伤时补一条合并提示（1UP + 额外 1/2P），覆盖同帧的 1UP 横幅。
+          if (noHit) this.hud.banner(tr('无伤通过'), tr('1UP + 1/2P'), 1.8);
         } else if (reward === 'points') {
-          this.hud.banner('超时', '奖励 +10 点', 1.4);
+          this.hud.banner(tr('超时'), tr('奖励 +10 点'), 1.4);
           this._sfx('bossStagger'); // 复用破势警报：超时提示要能一下听出来
         }
         break;
@@ -1292,7 +1653,7 @@ class Game {
         break;
       case 'bossStart':
         seedReset?.(); // 从开战这一帧把随机序列拨回起点，弹幕才有复现意义
-        this.hud.banner(data.name || '', data.title || '', 2.0);
+        this.hud.banner(tr(data.name || ''), tr(data.title || ''), 2.0);
         this.audio.play?.('menu');
         // 道中曲 → Boss 曲：只有配了 musicPre 的关卡这么切，其余保持原样。
         // 平台关的「道中中途战」（STAGE5 妖梦）沿用道中曲，把 Boss 曲留给关底；
@@ -1312,13 +1673,14 @@ class Game {
         }
         break;
       case 'bossPhase':
-        this.hud.banner('', data.name || '', 1.4);
+        this.hud.banner('', tr(data.name || ''), 1.4);
+        this._haptic('boss');
         break;
       case 'midbossClear':
         this.hud.banner('MID BOSS CLEAR', '', 1.4);
         this.audio.play?.('win');
         // EXTRA：姐姐认输 → 回道中曲（血月编），并放开 _bossMusicSwitched，
-        // 6:00 芙兰朵露登场时 ensure 还能切到 Boss 曲。
+        // 3:00 芙兰朵露登场时 ensure 还能切到 Boss 曲。
         if (this.inExtra && this._levelMusic && this._levelMusic.pre) {
           this._bossMusicSwitched = false;
           this.audio.playMusic?.(this._levelMusic.pre);
@@ -1341,6 +1703,7 @@ class Game {
         }
         break;
       case 'clear':
+        this._haptic('clear');
         this._onStageClear();
         break;
       case 'gameover':
@@ -1510,41 +1873,43 @@ class Game {
     const atBoss = this._canResumeBoss();
     // 真正在 Boss 战里（而不是「妖梦已击破、关底还没出」的道中状态）
     const midFight = !!this.stage?.bossStarted;
-    // EXTRA 没有 platform Boss 检查点：_retryStage 会按时间轴回到 3:00 / 6:00 的检查点。
+    // EXTRA 没有 platform Boss 检查点：_retryStage 会按时间轴回到 2:00 / 3:00 的检查点。
     // 这里用与 _retryStage 完全相同的判定算出恢复点，按钮文案必须跟实际接关位置一致，
-    // 否则玩家看到「重新挑战本关」却直接从 3:00 雷米莉亚战开始，文案与行为不符。
+    // 否则玩家看到「重新挑战本关」却直接从 2:00 雷米莉亚战开始，文案与行为不符。
     // 文案保持精简（检查点细节放在脚注），避免长标签在 960 宽下压到右侧 ENTER 键帽。
     const s = this.stage;
     const extraResume = this.inExtra
       ? ((s && s.midbossDone) ? 'final' : (s && s.bossStarted) ? 'midboss' : null)
       : null;
     const retryLabel = this.inExtra
-      ? (extraResume === 'final' ? '从芙兰战继续'
-        : extraResume === 'midboss' ? '从雷米莉亚战继续'
-          : '重新挑战本关')
-      : (midFight ? '再战 Boss' : atBoss ? '从中途继续' : '重新挑战本关');
+      ? (extraResume === 'final' ? tr('从芙兰战继续')
+        : extraResume === 'midboss' ? tr('从雷米莉亚战继续')
+          : tr('重新挑战本关'))
+      : (midFight ? tr('再战 Boss') : atBoss ? tr('从中途继续') : tr('重新挑战本关'));
     const extraFoot = extraResume === 'final'
-      ? '将从 6:00 芙兰战的检查点继续'
+      ? tr('将从 3:00 芙兰战的检查点继续')
       : extraResume === 'midboss'
-        ? '将从 3:00 雷米莉亚战的检查点继续'
-        : '整理好状态，再挑战一次';
+        ? tr('将从 2:00 雷米莉亚战的检查点继续')
+        : tr('整理好状态，再挑战一次');
     const canTrue = !this.inExtra && getDifficulty(this.difficulty).unlockExtra;
     const sub = this.inExtra
-      ? '残机用尽 · EXTRA STAGE'
-      : `残机用尽 · STAGE ${this.levelIndex + 1} · 续命 ${this.continues} 次`;
+      ? tr('残机用尽 · EXTRA STAGE')
+      : tr('残机用尽 · STAGE {n} · 续命 {c} 次', { n: this.levelIndex + 1, c: this.continues });
     const foot = this.inExtra
-      ? `EXTRA 关失败不会触发结局\n${extraFoot}`
+      ? tr('EXTRA 关失败不会触发结局') + '\n' + extraFoot
       : [
         atBoss
           ? (midFight
-            ? '从 Boss 场地重新开始\n前面的进度不会丢失'
-            : '从中途战后的检查点继续\n前面的进度不会丢失')
+            ? tr('从 Boss 场地重新开始') + '\n' + tr('前面的进度不会丢失')
+            : tr('从中途战后的检查点继续') + '\n' + tr('前面的进度不会丢失'))
           : '',
-        canTrue ? '续命将无法进入真结局，也无法解锁 EXTRA\n想要 TRUE ENDING 与 EXTRA，请一次通过' : 'EASY 难度没有真结局\nEXTRA 需要在 N/H/L 一次续命都不用地通关',
+        canTrue
+          ? tr('续命将无法进入真结局，也无法解锁 EXTRA') + '\n' + tr('想要 TRUE ENDING 与 EXTRA，请一次通过')
+          : tr('EASY 难度没有真结局') + '\n' + tr('EXTRA 需要在 N/H/L 一次续命都不用地通关'),
       ].filter(Boolean).join('\n');
-    this._setPanel('游戏结束', sub, [
+    this._setPanel(tr('游戏结束'), sub, [
       { label: retryLabel, key: 'ENTER', cls: 'primary', onPick: () => this._retryStage() },
-      { label: '返回标题', key: 'ESC', onPick: () => this.showTitle() },
+      { label: tr('返回标题'), key: 'ESC', onPick: () => this.showTitle() },
     ], foot);
   }
 
@@ -1569,8 +1934,8 @@ class Game {
     this.runLives = null;
     this.carryExtend = 0;
     if (this.inExtra) {
-      // EXTRA 失败：打到中途 Boss 之后就从 3:00 接上，打到芙兰就从终盘接上，
-      // 不用把六分钟道中重跑一遍（火力用 retryPower 兜底，不从零开始）。
+      // EXTRA 失败：打到中途 Boss 之后就从 2:00 接上，打到芙兰就从终盘接上，
+      // 不用把三分钟道中重跑一遍（火力用 retryPower 兜底，不从零开始）。
       const s = this.stage;
       const from = (s && s.midbossDone) ? 'final' : (s && s.bossStarted) ? 'midboss' : null;
       this._startExtraStage(from ? { resumeFrom: from } : {});
@@ -1652,6 +2017,10 @@ class Game {
       idle.endFrame = () => {};
       Object.defineProperty(idle, 'axisX', { get: () => 0, configurable: true });
       Object.defineProperty(idle, 'axisY', { get: () => 0, configurable: true });
+      // 模拟量也必须归零：否则立绘等待期玩家不能操作，
+      // stage 读 input.moveX/moveY 却还能拿到真实摇杆值。
+      Object.defineProperty(idle, 'moveX', { get: () => 0, configurable: true });
+      Object.defineProperty(idle, 'moveY', { get: () => 0, configurable: true });
       this.__idleInput = idle;
     }
     return this.__idleInput;
@@ -1710,6 +2079,13 @@ class Game {
 
   update(dt) {
     this.t += dt;
+
+    // 输入设备维护：蓝牙手柄每逻辑帧轮询一次；虚拟手柄跟着状态机显示/隐藏。
+    // 两者都不会产生 keydown，菜单导航要在这里主动消费边沿。
+    this.gamepad?.poll?.();
+    this._padMenuTick();
+    this._syncTouchState();
+    this._syncPlatformState();
 
     // 符卡演出的「时停感」：放 Bomb 后世界短暂减速，再在 0.34s 内平滑回升。
     // 用真实 dt 计衰减，避免减速把自己拖成更长的慢动作。
@@ -1783,7 +2159,8 @@ class Game {
 
     if (this.state === 'play' && this.stage) {
       if (this.input.pressed('pause')) { this._pause(); this.input.endFrame(); return; }
-      if (this.input.pressed('restart')) { this._retryStage(); this.input.endFrame(); return; }
+      // R 是高频误触键：先问一句，避免把本关的残机 / 1UP / 符卡积累一键清空
+      if (this.input.pressed('restart')) { this._showRestartRun(); this.input.endFrame(); return; }
       if (this.input.pressed('mute')) this._toggleMute();
       this.stage.update(dt, this.input);
       this.hud.update(this.stage.hudState, dt);
@@ -1804,14 +2181,14 @@ class Game {
     this._captureAction = null;
     const left = this.stage?.player?.lives ?? this.lives;
     const diff = this.inExtra ? 'EXTRA' : this.difficulty;
-    this._setPanel('暂停', `游戏已暂停 · 难度 ${diff} · 剩余残机 ${left}`, [
-      { label: '继续', key: 'ESC', cls: 'primary', onPick: () => this._resume() },
-      { label: '设置', key: 'S', hotkey: 'KeyS', onPick: () => this._showSettings(this._settingsIndex || 0, 'pause') },
+    this._setPanel(tr('暂停'), tr('游戏已暂停 · 难度 {d} · 剩余残机 {n}', { d: diff, n: left }), [
+      { label: tr('继续'), key: 'ESC', cls: 'primary', onPick: () => this._resume() },
+      { label: tr('设置'), key: 'S', hotkey: 'KeyS', onPick: () => this._showSettings(this._settingsIndex || 0, 'pause') },
       // README 写的是「重开本关：暂停菜单 → 重新开始本关，或 R」，
       // 之前按钮丢了导致文案与实现对不上；这里补回来，R 也走同一条路径。
-      { label: '重新开始本关', key: 'R', hotkey: 'KeyR', cls: 'danger', onPick: () => this._retryStage() },
-      { label: '退出到标题', key: 'Q', hotkey: 'KeyQ', onPick: () => this._showQuitRun() },
-    ], '↑ ↓ 选择　ENTER 确认　Esc 返回　重开会重置本关进度', {
+      { label: tr('重新开始本关'), key: 'R', hotkey: 'KeyR', cls: 'danger', onPick: () => this._showRestartRun() },
+      { label: tr('退出到标题'), key: 'Q', hotkey: 'KeyQ', onPick: () => this._showQuitRun() },
+    ], tr('↑ ↓ 选择　ENTER 确认　Esc 返回　重开会重置本关进度'), {
       page: 'paused',
       // 从设置/退出确认返回时保持光标，别每次都跳回「继续」（试玩反馈的一致性小项）
       select: this._pauseIndex || 0,
@@ -1828,15 +2205,37 @@ class Game {
     const diff = this.inExtra ? 'EXTRA' : this.difficulty;
     const level = this.inExtra ? 'EXTRA' : `STAGE ${this.levelIndex + 1}`;
     this._setPanel(
-      '退出到标题',
-      '当前进度不会保存，确定离开本局？',
+      tr('退出到标题'),
+      tr('当前进度不会保存，确定离开本局？'),
       [
         // 取消退出后光标回到「继续游戏」，别停在危险项上（试玩反馈 P3-2）
-        { label: '继续游戏', key: 'ESC', back: true, onPick: () => { this._pauseIndex = 0; this._showPause(); } },
-        { label: '退出到标题', key: 'Q', hotkey: 'KeyQ', cls: 'danger', onPick: () => this.showTitle() },
+        { label: tr('继续游戏'), key: 'ESC', back: true, onPick: () => { this._pauseIndex = 0; this._showPause(); } },
+        { label: tr('退出到标题'), key: 'Q', hotkey: 'KeyQ', cls: 'danger', onPick: () => this.showTitle() },
       ],
-      `${level} · 难度 ${diff} · 退出后需从标题重新开始`,
+      tr('{level} · 难度 {d} · 退出后需从标题重新开始', { level, d: diff }),
       { select: 0 }
+    );
+  }
+
+  /**
+   * 暂停 → 重新开始本关的二次确认。
+   * 和退出确认同理：R 在暂停菜单里太容易误触，而重开会清掉本关的
+   * 残机、1UP 与符卡积累，用默认高亮的「继续游戏」兜一层。
+   */
+  _showRestartRun() {
+    this.state = 'paused';
+    this._captureAction = null;
+    const diff = this.inExtra ? 'EXTRA' : this.difficulty;
+    const level = this.inExtra ? 'EXTRA' : `STAGE ${this.levelIndex + 1}`;
+    this._setPanel(
+      tr('重新开始本关'),
+      tr('本关进度、残机与 1UP 加成都会重置，确定重开？'),
+      [
+        { label: tr('继续游戏'), key: 'ESC', back: true, onPick: () => { this._pauseIndex = 0; this._showPause(); } },
+        { label: tr('重新开始本关'), key: 'R', hotkey: 'KeyR', cls: 'danger', onPick: () => { this._hidePanel(); this._retryStage(); } },
+      ],
+      tr('{level} · 难度 {d} · 重开会回到本关起点', { level, d: diff }),
+      { select: 0, page: 'paused' }
     );
   }
 
@@ -1868,9 +2267,17 @@ class Game {
       return `<b class="${cap === this.frameCap ? 'on' : ''}">${txt}</b>`;
     }).join('')}</span>`;
     // 画质：自动 / 高 / 低（分段控件，与帧率上限同一套皮肤）
-    const qseg = `<span class="seg">${[['auto', '自动'], ['high', '高'], ['low', '低']].map(([k, txt]) =>
+    const qseg = `<span class="seg">${[['auto', tr('自动')], ['high', tr('高')], ['low', tr('低')]].map(([k, txt]) =>
       `<b class="${k === (this.quality || 'auto') ? 'on' : ''}">${txt}</b>`).join('')}</span>`;
-    const qi = this.renderer?.qualityInfo?.() || { label: '自动', detail: '' };
+    const qi = this.renderer?.qualityInfo?.() || { label: tr('自动'), detail: '' };
+    // 触屏方案三分段：摇杆 / 手势 / 按键。选中态与 TouchPad 内部设置同源（hks.touch.v1）。
+    const tset = this.pad?.getSettings?.() || { scheme: 'stick', haptics: true };
+    const schemeSeg = `<span class="seg">${[['stick', tr('摇杆')], ['gesture', tr('手势')], ['keys', tr('按键')]]
+      .map(([k, txt]) => `<b class="${k === tset.scheme ? 'on' : ''}">${txt}</b>`).join('')}</span>`;
+    // 语言：四语分段控件。点哪格直接切哪门（监听在函数末尾统一挂），
+    // ← → / Enter 则按顺序循环——鼠标党和键盘党都不别扭。
+    const langSeg = `<span class="seg seg-lang" data-i18n-skip>${LANGS.map((l) =>
+      `<b class="${l.tag === getLang() ? 'on' : ''}" data-lang="${l.tag}">${l.short}</b>`).join('')}</span>`;
     const row = (text, ctl, key) =>
       `<span class="set-label">${text}</span><span class="set-ctl">${ctl}</span>` +
       (key ? `<span class="k">${key}</span>` : '');
@@ -1878,9 +2285,9 @@ class Game {
     const rows = [
       /* ---- 声音 ---- */
       {
-        group: 'sound', groupTitle: '声音', glyph: '音',
+        group: 'sound', groupTitle: tr('声音'), glyph: '音',
         cls: 'set-row', key: 'M', hotkey: 'KeyM',
-        html: row('全部静音', sw(!!this.audio.muted), 'M'),
+        html: row(tr('全部静音'), sw(!!this.audio.muted), 'M'),
         onPick: (i) => {
           this._toggleMute();
           this._showSettings(i, origin);
@@ -1889,7 +2296,7 @@ class Game {
       {
         group: 'sound',
         cls: 'set-row', key: 'B', hotkey: 'KeyB',
-        html: row('背景音乐', sw(this.musicOn !== false), 'B'),
+        html: row(tr('背景音乐'), sw(this.musicOn !== false), 'B'),
         onPick: (i) => {
           this.musicOn = !(this.musicOn !== false);
           this.audio.setMusic?.(this.musicOn);
@@ -1900,14 +2307,14 @@ class Game {
       {
         group: 'sound',
         cls: 'set-row', key: '← →',
-        html: row('音乐音量', sld(this.audio.musicVolume), '← → / ENTER'),
+        html: row(tr('音乐音量'), sld(this.audio.musicVolume), '← → / ENTER'),
         adjust: (d) => this._adjustVolume('music', d, origin),
         onPick: () => this._adjustVolume('music', 1, origin),
       },
       {
         group: 'sound',
         cls: 'set-row', key: 'N', hotkey: 'KeyN',
-        html: row('音效', sw(this.audio.sfxEnabled), 'N'),
+        html: row(tr('音效'), sw(this.audio.sfxEnabled), 'N'),
         onPick: (i) => {
           this.audio.setSfxEnabled?.(!this.audio.sfxEnabled);
           this.audio.play?.('menu');
@@ -1918,16 +2325,24 @@ class Game {
       {
         group: 'sound',
         cls: 'set-row', key: '← →',
-        html: row('音效音量', sld(this.audio.sfxVolume), '← → / ENTER'),
+        html: row(tr('音效音量'), sld(this.audio.sfxVolume), '← → / ENTER'),
         adjust: (d) => this._adjustVolume('sfx', d, origin),
         onPick: () => this._adjustVolume('sfx', 1, origin),
       },
 
-      /* ---- 画面 ---- */
+      /* ---- 画面 ----
+         第一行放语言：外语玩家一进设置页就能看到，不用先猜「语言」藏在哪个二级页。 */
       {
-        group: 'display', groupTitle: '画面', glyph: '畫',
+        group: 'display', groupTitle: tr('画面'), glyph: '畫',
+        cls: 'set-row set-row-lang', key: 'L', hotkey: 'KeyL',
+        html: row(tr('语言'), langSeg, 'L'),
+        adjust: (d) => this._cycleLang(d),
+        onPick: () => this._cycleLang(1),
+      },
+      {
+        group: 'display',
         cls: 'set-row', key: 'G', hotkey: 'KeyG',
-        html: row('画质', qseg, 'G'),
+        html: row(tr('画质'), qseg, 'G'),
         adjust: (d) => {
           this._adjustQuality(d);
           this._showSettings(this.menuIndex, origin);
@@ -1937,12 +2352,12 @@ class Game {
       {
         // 只读行：让玩家看得见当前到底跑在什么渲染模式上（软件光栅 / GPU、实际 backing、辉光开关）
         group: 'display', cls: 'set-row info',
-        html: row('当前渲染', `<span class="qinfo">${qi.label} · ${qi.detail}</span>`, ''),
+        html: row(tr('当前渲染'), `<span class="qinfo">${qi.label} · ${qi.detail}</span>`, ''),
       },
       {
         group: 'display',
         cls: 'set-row', key: 'H', hotkey: 'KeyH',
-        html: row('屏幕震动', sw(this.screenShake), 'H'),
+        html: row(tr('屏幕震动'), sw(this.screenShake), 'H'),
         onPick: (i) => {
           this.screenShake = !(this.screenShake !== false);
           if (this.stage?.camera) this.stage.camera.shakeEnabled = this.screenShake;
@@ -1953,7 +2368,7 @@ class Game {
       {
         group: 'display',
         cls: 'set-row', key: 'F', hotkey: 'KeyF',
-        html: row('帧率上限', seg, 'F'),
+        html: row(tr('帧率上限'), seg, 'F'),
         adjust: (d) => {
           this._adjustFrameCap(d);
           this._showSettings(this.menuIndex, origin);
@@ -1961,18 +2376,78 @@ class Game {
         onPick: (i) => this.cycleFrameCap(true, i),
       },
 
+      /* ---- 操作与外设（触屏 / 蓝牙手柄专属；桌面无手柄时整组不出现） ---- */
+      ...((this.input.touchDevice || (this.gamepad?.connected?.length > 0)) ? [
+        {
+          group: 'device', groupTitle: tr('操作'), glyph: '操',
+          cls: 'set-row', key: 'J', hotkey: 'KeyJ',
+          html: row(tr('手柄震动'), sw(!!this.gamepad.getVibration?.()), 'J'),
+          onPick: (i) => {
+            const on = !this.gamepad.getVibration?.();
+            this.gamepad.setVibration?.(on);
+            this.gamepad.rumble?.(0.3, 0.1, 60); // 开启时给一次轻震当确认
+            this._saveSettings();
+            this._showSettings(i, origin);
+          },
+        },
+        {
+          group: 'device', cls: 'set-row info',
+          html: row(tr('蓝牙手柄'), `<span class="qinfo">${this.gamepad.statusText?.() || tr('未连接')}</span>`, ''),
+        },
+      ] : []),
+      ...(this.pad?.active ? [
+        {
+          group: 'device', cls: 'set-row', key: 'T', hotkey: 'KeyT',
+          html: row(tr('触屏方案'), schemeSeg, 'T'),
+          adjust: (d) => this._cyclePadScheme(d, origin),
+          onPick: () => this._cyclePadScheme(1, origin),
+        },
+        {
+          group: 'device', cls: 'set-row', key: 'V', hotkey: 'KeyV',
+          html: row(tr('触屏震动'), sw(tset.haptics !== false), 'V'),
+          onPick: (i) => {
+            this.pad.setSetting?.('haptics', tset.haptics === false);
+            this.pad.haptic?.('light');
+            this._showSettings(i, origin);
+          },
+        },
+        {
+          group: 'device', cls: 'set-row set-row-link', key: 'Y', hotkey: 'KeyY',
+          html: row(tr('自定义按键布局'), '<span class="chev">›</span>', 'Y'),
+          onPick: () => this.pad.openLayoutEditor?.(),
+        },
+      ] : []),
+      ...(this.platform?.env?.touch ? [
+        {
+          group: 'device', cls: 'set-row', key: 'O', hotkey: 'KeyO',
+          html: row(tr('全屏'), sw(this.platform.isFullscreen()), 'O'),
+          onPick: (i) => {
+            this.platform.toggleFullscreen();
+            // 全屏状态由浏览器异步更新，稍等再重画设置页，开关才不会停在旧状态
+            setTimeout(() => this._showSettings(i, origin), 160);
+          },
+        },
+        ...(this.platform.canInstall?.() || (this.platform.env.ios && !this.platform.isStandalone?.())
+          ? [{
+              group: 'device', cls: 'set-row set-row-link', key: 'I', hotkey: 'KeyI',
+              html: row(tr('添加到桌面'), '<span class="chev">›</span>', 'I'),
+              onPick: () => this.platform.promptInstall?.(),
+            }]
+          : []),
+      ] : []),
+
       /* ---- 游戏 ---- */
       {
-        group: 'game', groupTitle: '游戏', glyph: '戲',
+        group: 'game', groupTitle: tr('游戏'), glyph: '戲',
         cls: 'set-row', key: '← →',
-        html: row('残机', pips, '← → / ENTER'),
+        html: row(tr('残机'), pips, '← → / ENTER'),
         adjust: (d) => this._adjustLives(d, origin),
         onPick: () => this._adjustLives(1, origin),
       },
       {
         group: 'game',
         cls: 'set-row set-row-link', key: 'K', hotkey: 'KeyK',
-        html: row('按键设置', '<span class="chev">›</span>', 'K'),
+        html: row(tr('按键设置'), '<span class="chev">›</span>', 'K'),
         onPick: (i) => {
           this._settingsKeyIndex = i;
           this.showKeybinds(0);
@@ -1980,17 +2455,27 @@ class Game {
       },
     ];
 
+    // 「操作」组可能因为设备不同而少了首行（例如桌面只有手柄、没有触屏），
+    // 组标题挂在第一行上，这里统一补一次，免得出现无标题的裸行。
+    {
+      const dev = rows.filter((r) => r.group === 'device');
+      if (dev.length && !dev[0].groupTitle) {
+        dev[0].groupTitle = tr('操作');
+        dev[0].glyph = '操';
+      }
+    }
+
     /* ---- 底部：重开（仅暂停来源）/ 重置进度（仅标题来源）/ 返回 ---- */
     if (this._settingsOrigin === 'pause') {
       rows.push({
         group: 'foot', cls: 'set-foot-btn', key: 'R', hotkey: 'KeyR',
-        html: '<span class="set-label">重新开始本关</span><span class="k">R</span>',
-        onPick: () => { this._hidePanel(); this._retryStage(); },
+        html: `<span class="set-label">${tr('重新开始本关')}</span><span class="k">R</span>`,
+        onPick: () => { this._hidePanel(); this._showRestartRun(); },
       });
     } else {
       rows.push({
         group: 'foot', cls: 'set-foot-btn set-foot-danger', key: 'X', hotkey: 'KeyX',
-        html: '<span class="set-label">重置进度</span><span class="k">X</span>',
+        html: `<span class="set-label">${tr('重置进度')}</span><span class="k">X</span>`,
         onPick: (i) => {
           this._settingsIndex = i;
           this.showResetProgress();
@@ -1999,7 +2484,7 @@ class Game {
     }
     rows.push({
       group: 'foot', cls: 'set-foot-btn', key: 'ESC', back: true,
-      html: `<span class="set-label">${origin === 'pause' ? '返回暂停菜单' : '返回标题'}</span>` +
+      html: `<span class="set-label">${origin === 'pause' ? tr('返回暂停菜单') : tr('返回标题')}</span>` +
         '<span class="k">ESC</span>',
       onPick: () => {
         this._settingsIndex = this.menuIndex;
@@ -2007,10 +2492,22 @@ class Game {
       },
     });
 
-    this._setPanel('设置', '即时生效，自动保存 · 残机从下一局开始生效', rows,
-      '↑ ↓ 选择　← → / ENTER 调整　ESC 返回',
+    this._setPanel(tr('设置'), tr('即时生效，自动保存 · 残机从下一局开始生效'), rows,
+      tr('↑ ↓ 选择　← → / ENTER 调整　ESC 返回'),
       { screen: true, en: 'OPTIONS', grid: 'set-grid', scene: 'moon', select: index, page: 'settings' }
     );
+
+    // 语言分段控件：点哪格直接切哪门。必须 stopPropagation，
+    // 否则点击会先冒泡到整行按钮，触发 onPick 再切一格。
+    // 点方格先把选中行挪到语言行，键盘 ← → 才能接着循环。
+    const langRowIdx = rows.findIndex((r) => r.cls && r.cls.includes('set-row-lang'));
+    this.buttonsEl.querySelectorAll('.seg-lang [data-lang]').forEach((b) => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (langRowIdx >= 0) this._selectMenu(langRowIdx);
+        this._setLanguage(b.dataset.lang);
+      });
+    });
   }
 
   /**
@@ -2021,19 +2518,19 @@ class Game {
     this.state = 'paused';
     this._captureAction = null;
     this._setPanel(
-      '重置进度',
-      '清除通关记录？',
+      tr('重置进度'),
+      tr('清除通关记录？'),
       [
         {
-          label: '确认重置', en: 'RESET', key: 'ENTER', cls: 'primary danger',
+          label: tr('确认重置'), en: 'RESET', key: 'ENTER', cls: 'primary danger',
           onPick: () => this._doResetProgress(),
         },
         {
-          label: '取消', key: 'ESC', back: true,
+          label: tr('取消'), key: 'ESC', back: true,
           onPick: () => this._showSettings(this._settingsIndex || 0, 'title'),
         },
       ],
-      '重置后两位主角的 EXTRA 解锁都会清空；设置、键位与音乐回忆不受影响',
+      tr('重置后两位主角的 EXTRA 解锁都会清空；设置、键位与音乐回忆不受影响'),
       // 危险操作：初始高亮落在「取消」上，避免手快再按一次 Enter 就把档删了
       { noDirect: true, select: 1 }
     );
@@ -2050,7 +2547,7 @@ class Game {
       // 无 localStorage：内存里已经清掉，本局内同样保持封闭
     }
     this.audio.play?.('select');
-    this.showTitle('已重置进度 · EXTRA 重新封闭');
+    this.showTitle(tr('已重置进度 · EXTRA 重新封闭'));
   }
 
   /** 残机 ±1（1–4 条），下一局 / 重开本关时生效 */
@@ -2082,9 +2579,9 @@ class Game {
     const cap = this._captureAction;
 
     const CATEGORIES = [
-      { id: 'kb-move', title: '移动', glyph: '動', actions: ['left', 'right', 'up', 'down', 'slow'] },
-      { id: 'kb-act', title: '战斗', glyph: '戰', actions: ['jump', 'shoot', 'dash', 'cast'] },
-      { id: 'kb-sys', title: '系统', glyph: '系', actions: ['confirm', 'pause', 'restart', 'mute', 'quit'] },
+      { id: 'kb-move', title: tr('移动'), glyph: '動', actions: ['left', 'right', 'up', 'down', 'slow'] },
+      { id: 'kb-act', title: tr('战斗'), glyph: '戰', actions: ['jump', 'shoot', 'dash', 'cast'] },
+      { id: 'kb-sys', title: tr('系统'), glyph: '系', actions: ['confirm', 'pause', 'restart', 'mute', 'quit'] },
     ];
 
     const rows = [];
@@ -2099,10 +2596,10 @@ class Game {
           group: cat.id, groupTitle: cat.title, glyph: cat.glyph,
           action: def.action,
           cls: 'set-row kb-row' + (capturing ? ' capturing' : ''),
-          html: `<span class="set-label">${def.label}</span>` +
+          html: `<span class="set-label">${tr(def.label)}</span>` +
             `<span class="set-ctl">` +
             (capturing
-              ? '<span class="kb-wait">按下新键…</span>'
+              ? `<span class="kb-wait">${tr('按下新键…')}</span>`
               : `<span class="keycap">${this.input.labelFor(def.action)}</span>`) +
             '</span>',
           onPick: () => {
@@ -2117,17 +2614,17 @@ class Game {
 
     rows.push({
       group: 'kb-foot', cls: 'set-foot-btn', key: 'Del',
-      html: '<span class="set-label">恢复默认键位</span><span class="k">Del</span>',
+      html: `<span class="set-label">${tr('恢复默认键位')}</span><span class="k">Del</span>`,
       onPick: () => {
         this.input.resetBinds();
         this._captureAction = null;
         this.audio.play?.('select');
-        this.showKeybinds(this._keybindIndex, '已恢复默认键位');
+        this.showKeybinds(this._keybindIndex, tr('已恢复默认键位'));
       },
     });
     rows.push({
       group: 'kb-foot', cls: 'set-foot-btn', key: 'ESC', back: true,
-      html: '<span class="set-label">返回</span><span class="k">ESC</span>',
+      html: `<span class="set-label">${tr('返回')}</span><span class="k">ESC</span>`,
       onPick: () => {
         this._captureAction = null;
         this._showSettings(this._settingsKeyIndex || 0, this._settingsOrigin);
@@ -2138,10 +2635,10 @@ class Game {
     const select = rowAt.has(wanted) ? rowAt.get(wanted) : 0;
 
     this._setPanel(
-      '按键设置',
-      note || (cap ? '按下要绑定的新键…' : '点选一项，再按下新键；重复的键会自动互换'),
+      tr('按键设置'),
+      note || (cap ? tr('按下要绑定的新键…') : tr('点选一项，再按下新键；重复的键会自动互换')),
       rows,
-      cap ? '按任意键绑定　ESC 取消　Del 恢复默认' : '↑ ↓ 选择　ENTER 改键　Del 恢复默认　ESC 返回',
+      cap ? tr('按任意键绑定　ESC 取消　Del 恢复默认') : tr('↑ ↓ 选择　ENTER 改键　Del 恢复默认　ESC 返回'),
       { screen: true, en: 'KEY CONFIG', grid: 'kb-grid', scene: 'mansion', noDirect: true, page: 'keybinds', select }
     );
   }
@@ -2153,10 +2650,10 @@ class Game {
   showQuit() {
     this.state = 'paused';
     this._captureAction = null;
-    this._setPanel('退出游戏', '要离开幻想乡吗？', [
-      { label: '退出到桌面', en: 'QUIT', key: 'ENTER', cls: 'primary danger', onPick: () => this._quitGame() },
-      { label: '返回标题', key: 'ESC', back: true, onPick: () => this.showTitle() },
-    ], 'ENTER 确认　ESC 返回', { noDirect: true });
+    this._setPanel(tr('退出游戏'), tr('要离开幻想乡吗？'), [
+      { label: tr('退出到桌面'), en: 'QUIT', key: 'ENTER', cls: 'primary danger', onPick: () => this._quitGame() },
+      { label: tr('返回标题'), key: 'ESC', back: true, onPick: () => this.showTitle() },
+    ], tr('ENTER 确认　ESC 返回'), { noDirect: true });
   }
 
   /** 尝试真正关掉页面；浏览器通常不允许脚本关闭非脚本打开的窗口，这时给一个收尾页 */
@@ -2184,9 +2681,9 @@ class Game {
 
   _showFarewell() {
     this.state = 'menu';
-    this._setPanel('已退出游戏', '感谢游玩　東方新紀行', [
+    this._setPanel(tr('已退出游戏'), tr('感谢游玩　東方新紀行'), [
       {
-        label: '返回标题', key: 'ENTER', cls: 'primary', back: true,
+        label: tr('返回标题'), key: 'ENTER', cls: 'primary', back: true,
         onPick: () => {
           this.audio.setMuted?.(this._settingsMuted);
           this.loop.start?.();
@@ -2194,7 +2691,7 @@ class Game {
           this.showTitle();
         },
       },
-    ], '现在可以关闭此页面了', { noDirect: true });
+    ], tr('现在可以关闭此页面了'), { noDirect: true });
   }
 
   /* ============================================================
@@ -2237,6 +2734,9 @@ class Game {
         musicVolume: this.audio.musicVolume,
         sfxVolume: this.audio.sfxVolume,
         sfxOn: this.audio.sfxEnabled,
+        // 语言只在手选过之后才写：没手选就继续跟随浏览器语言，
+        // 换一台设备打开还能自动匹配（见 docs/SETTINGS_I18N_DESIGN.md）。
+        ...(isManualLang() ? { lang: getLang() } : {}),
       }));
     } catch (e) {
       // 忽略写入失败
@@ -2476,6 +2976,21 @@ class Game {
   }
 
   render(alpha) {
+    // 暂停 / 结算 / 对话 / GameOver：模拟已经冻结，画布没必要跟着 rAF 全速重绘。
+    // 这些画面在 1280x720 上仍要跑一遍背景 + 后处理 + 辉光，是纯浪费；
+    // 限到约 30fps 既保留窗口缩放 / 淡入的响应，也把 GPU 占用和发热压下来。
+    const frozen = this.state === 'paused'
+      || this.state === 'clear'
+      || this.state === 'gameover'
+      || (this.state === 'dialogue' && this.dialogue?.active);
+    if (frozen) {
+      const now = performance.now();
+      if (this._frozenRenderAt && now - this._frozenRenderAt < 32) return;
+      this._frozenRenderAt = now;
+    } else {
+      this._frozenRenderAt = 0;
+    }
+
     const ctx = this.renderer.begin('#05030a');
 
     if (this.state === 'ending') {
@@ -2506,6 +3021,36 @@ class Game {
     ctx.fillStyle = '#05030a';
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     ctx.restore();
+  }
+
+  /** 标题页三层压暗的预合成图（左侧暗部 + 左上径向暗角 + 底部压暗） */
+  _buildTitleShade() {
+    const c = document.createElement('canvas');
+    c.width = VIEW_W; c.height = VIEW_H;
+    const g = c.getContext('2d');
+    if (!g) return c;
+
+    let grd = g.createLinearGradient(0, 0, VIEW_W * 0.66, 0);
+    grd.addColorStop(0, 'rgba(5, 3, 12, 0.88)');
+    grd.addColorStop(0.3, 'rgba(5, 3, 12, 0.66)');
+    grd.addColorStop(0.62, 'rgba(5, 3, 12, 0.24)');
+    grd.addColorStop(1, 'rgba(5, 3, 12, 0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, VIEW_W, VIEW_H);
+
+    grd = g.createRadialGradient(300, 170, 40, 300, 170, 540);
+    grd.addColorStop(0, 'rgba(6, 4, 14, 0.55)');
+    grd.addColorStop(0.55, 'rgba(6, 4, 14, 0.24)');
+    grd.addColorStop(1, 'rgba(6, 4, 14, 0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, VIEW_W, VIEW_H);
+
+    grd = g.createLinearGradient(0, VIEW_H * 0.66, 0, VIEW_H);
+    grd.addColorStop(0, 'rgba(5, 3, 12, 0)');
+    grd.addColorStop(1, 'rgba(5, 3, 12, 0.62)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, VIEW_W, VIEW_H);
+    return c;
   }
 
   /**
@@ -2955,29 +3500,10 @@ class Game {
       ctx.drawImage(this._titleBg, 0, 0, VIEW_W, VIEW_H);
     }
 
-    /* 左侧压暗，给 logo 和菜单留出可读的暗部 */
-    let g = ctx.createLinearGradient(0, 0, VIEW_W * 0.66, 0);
-    g.addColorStop(0, 'rgba(5, 3, 12, 0.88)');
-    g.addColorStop(0.3, 'rgba(5, 3, 12, 0.66)');
-    g.addColorStop(0.62, 'rgba(5, 3, 12, 0.24)');
-    g.addColorStop(1, 'rgba(5, 3, 12, 0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-
-    /* 左上角再压一层，避免樱枝和 logo 抢在一起 */
-    g = ctx.createRadialGradient(300, 170, 40, 300, 170, 540);
-    g.addColorStop(0, 'rgba(6, 4, 14, 0.55)');
-    g.addColorStop(0.55, 'rgba(6, 4, 14, 0.24)');
-    g.addColorStop(1, 'rgba(6, 4, 14, 0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-
-    /* 底部压暗，让人物落地、提示文字更清楚 */
-    g = ctx.createLinearGradient(0, VIEW_H * 0.66, 0, VIEW_H);
-    g.addColorStop(0, 'rgba(5, 3, 12, 0)');
-    g.addColorStop(1, 'rgba(5, 3, 12, 0.62)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    /* 左侧压暗 / 左上暗角 / 底部压暗三层都是静态的：
+       预合成成一张离屏图，每帧只 drawImage 一次，省掉 3 个渐变对象和 3 遍全屏混合。 */
+    if (!this._titleShade) this._titleShade = this._buildTitleShade();
+    ctx.drawImage(this._titleShade, 0, 0);
 
     /* 月亮呼吸辉光：插画里月亮中心约 (817, 236) */
     const pulse = 0.94 + Math.sin(t * 0.55) * 0.06;
@@ -3080,7 +3606,7 @@ class Game {
     ctx.restore();
   }
 
-  /** 右侧站姿立绘：轻微呼吸 + 投影，主角随选择切换 */
+  /** 右侧站姿立绘：轻微呼吸 + 投影，主角随选择切换；标题开屏时从右侧屏外滑入 */
   _drawTitleCharacter(ctx) {
     const img = this._titleCharImgs?.[this.char] || this._titleCharImgs?.reimu;
     if (!img || !img.complete || !img.naturalWidth) return;
@@ -3091,29 +3617,53 @@ class Game {
     const w = img.naturalWidth * (h / img.naturalHeight);
     const cx = VIEW_W - 275;
     const bottom = VIEW_H + 42 + Math.sin(t * 0.9) * 3;
-    const x = cx - w / 2;
-    const y = bottom - h;
 
-    // 人物背后的柔光，和插画分离
+    // 开屏进度：0 = 完全在右侧屏外，1 = 落位。落位后 shift / tilt 为 0、alpha 为 1，
+    // 画面与静止时逐像素一致，不会因为多包一层变换而跳一下。
+    const ip = this._titleIntroProgress();
+    const ease = 1 - Math.pow(1 - ip, 3);          // easeOutCubic：快速切入、慢慢停稳
+    const shift = (1 - ease) * (w * 0.55 + 300);   // 起点在最右屏外，随立绘宽度自适应
+    const tilt = (1 - ease) * 0.045;               // 入场时轻微侧倾，落位归零
+    const alpha = Math.min(1, 0.12 + ip * 5);
+
+    // 人物背后的柔光，和插画分离（入场时跟着人物一起走，落位后与原来重合）
     ctx.save();
+    ctx.globalAlpha = alpha;
     ctx.globalCompositeOperation = 'lighter';
-    const ag = ctx.createRadialGradient(cx, VIEW_H * 0.56, 30, cx, VIEW_H * 0.56, 380);
+    const gx = cx + shift * 0.8;
+    const ag = ctx.createRadialGradient(gx, VIEW_H * 0.56, 30, gx, VIEW_H * 0.56, 380);
     ag.addColorStop(0, 'rgba(255, 128, 168, 0.10)');
     ag.addColorStop(0.55, 'rgba(255, 110, 160, 0.045)');
     ag.addColorStop(1, 'rgba(255, 100, 150, 0)');
     ctx.fillStyle = ag;
-    ctx.fillRect(cx - 400, VIEW_H * 0.56 - 400, 800, 800);
+    ctx.fillRect(gx - 400, VIEW_H * 0.56 - 400, 800, 800);
     ctx.restore();
 
     ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx + shift, bottom);
+    ctx.rotate(tilt);
+
+    // 残影：入场高速段在右后方拖两道，落位前完全淡掉
+    if (ip < 0.8) {
+      for (let k = 1; k <= 2; k++) {
+        ctx.globalAlpha = alpha * (0.16 / k) * (1 - ip / 0.8);
+        ctx.drawImage(img, -w / 2 + k * (16 + w * 0.035), -h, w, h);
+      }
+      ctx.globalAlpha = alpha;
+    }
+
     ctx.shadowColor = 'rgba(4, 2, 10, 0.75)';
     ctx.shadowBlur = 36;
     ctx.shadowOffsetY = 8;
-    ctx.drawImage(img, x, y, w, h);
+    ctx.drawImage(img, -w / 2, -h, w, h);
     ctx.restore();
   }
 }
 
 /* ---------------- 启动 ---------------- */
+// 先把语言定下来（可能懒加载一个语言包），再做任何 DOM 渲染，
+// 免得标题页先闪一下中文再被替换。
+await initLang();
 const game = new Game();
 window.__game = game;

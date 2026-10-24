@@ -12,6 +12,7 @@
 import { VIEW_W, VIEW_H } from '../engine/renderer.js';
 import { setPriority } from '../engine/lazy_preload.js';
 import { ENDINGS } from './endings.js';
+import { getLang, tr } from '../i18n/index.js';
 import { CHAR_NAMES } from './dialogue.js';
 
 const BG_BASE = new URL('../art/gen/bg/', import.meta.url);
@@ -145,7 +146,7 @@ export class Ending {
     this.cardEl?.classList.remove('show');
     this.promptEl?.classList.remove('show');
     this.skipEl?.classList.remove('hidden');
-    if (this.promptEl) this.promptEl.textContent = 'ENTER / 点击继续';
+    if (this.promptEl) this.promptEl.textContent = tr('ENTER / 点击继续');
 
     this._enterShot(0);
     this.opts.onStart?.();
@@ -176,7 +177,7 @@ export class Ending {
     this._applyLine(SHOT_IN);
     if (this.cardEl) this.cardEl.classList.remove('show');
     if (this.promptEl) {
-      this.promptEl.textContent = 'ENTER / 点击继续';
+      this.promptEl.textContent = tr('ENTER / 点击继续');
       this.promptEl.classList.remove('show');
     }
     this.root?.classList.remove('is-card');
@@ -195,7 +196,7 @@ export class Ending {
       return;
     }
     const who = line.who || 'narrator';
-    this.fullText = line.text || '';
+    this.fullText = tr(line.text || '');
     this.shown = 0;
     this.lineDone = !this.fullText;
     this.holdT = 0;
@@ -204,7 +205,7 @@ export class Ending {
     if (who === 'player') whoName = CHAR_NAMES[this.spec.char] || '';
     else if (who === 'partner') whoName = CHAR_NAMES[this.spec.char === 'reimu' ? 'marisa' : 'reimu'] || '';
     else if (who !== 'narrator') whoName = CHAR_NAMES[who] || who;
-    if (this.speakerEl) this.speakerEl.textContent = whoName;
+    if (this.speakerEl) this.speakerEl.textContent = whoName ? tr(whoName) : '';
     this.linesEl?.classList.toggle('narrator', who === 'narrator');
     this._setText('');
     this._retrigger(this.linesEl);
@@ -314,14 +315,24 @@ export class Ending {
     this.promptEl?.classList.remove('show');
 
     const s = this.spec;
+    // 结局卡：每种语言只显示本语言标题，不叠英文/中文副标题，避免混排。
+    const zhUi = getLang() === 'zh-Hans' || getLang() === 'zh-Hant';
+    const titleCn = zhUi && s.titleCn && s.titleCn !== s.title ? tr(s.titleCn) : '';
+    const enSub = '';
     if (this.cardNoEl) this.cardNoEl.textContent = s.noLabel;
     if (this.cardKindEl) this.cardKindEl.textContent = s.kindLabel;
-    if (this.cardTitleEl) this.cardTitleEl.textContent = s.title;
-    if (this.cardTitleCnEl) this.cardTitleCnEl.textContent = s.titleCn;
-    if (this.cardEnEl) this.cardEnEl.textContent = s.en;
-    if (this.cardCharEl) this.cardCharEl.textContent = `${s.charName} · ${s.code}`;
-    if (this.cardQuoteEl) this.cardQuoteEl.textContent = s.quote;
-    if (this.promptEl) this.promptEl.textContent = 'ENTER / 点击返回';
+    if (this.cardTitleEl) this.cardTitleEl.textContent = tr(s.title);
+    if (this.cardTitleCnEl) {
+      this.cardTitleCnEl.textContent = titleCn;
+      this.cardTitleCnEl.hidden = !titleCn;
+    }
+    if (this.cardEnEl) {
+      this.cardEnEl.textContent = enSub;
+      this.cardEnEl.hidden = !enSub;
+    }
+    if (this.cardCharEl) this.cardCharEl.textContent = `${tr(s.charName)} · ${s.code}`;
+    if (this.cardQuoteEl) this.cardQuoteEl.textContent = tr(s.quote);
+    if (this.promptEl) this.promptEl.textContent = tr('ENTER / 点击返回');
 
     if (this.cardEl) {
       this.cardEl.classList.remove('show');

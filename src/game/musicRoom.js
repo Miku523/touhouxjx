@@ -15,6 +15,7 @@
 
 import { MUSIC_TRACKS } from './musicTracks.js';
 import { SONGS } from '../engine/songs/index.js';
+import { tr as i18n, localizeDom, getLang } from '../i18n/index.js';
 
 const EQ_BARS = 18;
 const PREVIEW_SEC = 30;   // 试听模式：到点自动抬针
@@ -23,6 +24,17 @@ const PREVIEW_SEC = 30;   // 试听模式：到点自动抬针
 function fmtTime(sec) {
   const s = Math.max(0, Math.floor(Number(sec) || 0));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** 未遭遇曲目的占位问号：英文用半角，中日文用全角 */
+function unknownMarks(n) {
+  return getLang() === 'en' ? '?'.repeat(n) : '？'.repeat(n);
+}
+
+/** 未遭遇曲目的分类标签 */
+function unknownCat() {
+  const l = getLang();
+  return l === 'en' ? 'UNKNOWN' : l === 'ja' ? '不明' : '未知';
 }
 
 export class MusicRoom {
@@ -84,6 +96,7 @@ export class MusicRoom {
     this.el.classList.remove('hidden');
     this._paint();
     this._paintList();
+    localizeDom(this.el);
     this._reveal();
     // 下一帧再加 is-in，让 CSS 的淡入真的发生
     requestAnimationFrame(() => {
@@ -315,10 +328,11 @@ export class MusicRoom {
   _paintWarn() {
     if (!this._warn || !this.d) return;
     const tr = this.tracks[this._warn.index];
-    this.d.warnText.textContent =
-      `第 ${tr.no} 号唱片被一层薄雾罩着。提前播放会揭晓曲名、人物与解说——` +
-      '要现在听吗？';
-    this.d.warnPlay.textContent = this._warn.preview ? '试听 30 秒' : '播放';
+    this.d.warnText.textContent = i18n(
+      '第 {no} 号唱片被一层薄雾罩着。提前播放会揭晓曲名、人物与解说——要现在听吗？',
+      { no: tr.no }
+    );
+    this.d.warnPlay.textContent = this._warn.preview ? i18n('试听 30 秒') : i18n('播放');
     this.d.warnPlay.classList.toggle('sel', this._warn.sel === 0);
     this.d.warnCancel.classList.toggle('sel', this._warn.sel === 1);
   }
@@ -367,7 +381,7 @@ export class MusicRoom {
       // 光标停在别的曲子上时，提示真正在响的是哪一首
       const other = this.tracks.find((t) => t.key === playingKey);
       this.d.loop.textContent =
-        p && other && other.key !== tr.key ? `♪ ${other.title}` : '';
+        p && other && other.key !== tr.key ? `♪ ${i18n(other.title)}` : '';
     }
     this._syncStatus();
     this._syncRowPlaying();
@@ -378,12 +392,12 @@ export class MusicRoom {
     const on = !!this.audio.musicOn;
     const playing = this.tracks.find((t) => t.key === this.audio.currentSong);
     this.d.state.textContent = this._preview
-      ? '试听中'
+      ? i18n('试听中')
       : this._previewDone && !on
-        ? '试听结束'
+        ? i18n('试听结束')
         : on
-          ? (playing ? '再生中' : '待机')
-          : '停止中';
+          ? (playing ? i18n('播放中') : i18n('待机'))
+          : i18n('停止中');
     if (this.d.previewTag) {
       this.d.previewTag.classList.toggle('hidden', !this._preview);
       if (this._preview) {
@@ -391,8 +405,8 @@ export class MusicRoom {
       }
     }
     this.d.vol.textContent = this.audio.muted
-      ? '静音'
-      : `音量 ${Math.round(this.audio.musicVolume * 100)}%`;
+      ? i18n('静音')
+      : i18n('音量 {v}%', { v: Math.round(this.audio.musicVolume * 100) });
   }
 
   _syncRowPlaying() {
@@ -413,19 +427,18 @@ export class MusicRoom {
     const known = this.isHeard(tr.key);
     const d = this.d;
 
-    d.cat.textContent = known ? tr.cat : 'UNKNOWN';
-    d.title.textContent = known ? tr.title : '？？？？？？';
+    d.cat.textContent = known ? i18n(tr.cat) : unknownCat();
+    d.title.textContent = known ? i18n(tr.title) : unknownMarks(6);
     d.title.classList.toggle('is-locked', !known);
-    d.subname.textContent = known ? tr.sub : '未遭遇';
-    d.place.textContent = known ? tr.place : '？？？';
-    d.orig.textContent = known ? tr.orig : '锁在旧留声机里，尚未刻下纹路。';
+    d.subname.textContent = known ? i18n(tr.sub) : i18n('未遭遇');
+    d.place.textContent = known ? i18n(tr.place) : unknownMarks(3);
+    d.orig.textContent = known ? i18n(tr.orig) : i18n('锁在旧留声机里，尚未刻下纹路。');
     d.note.textContent = known
-      ? tr.note
-      : '这段旋律还没有在旅途中出现。等你在某个关卡里真正听见它，这张唱片才会被点亮——' +
-        '当然，也可以现在就让留声机替你提前揭开。';
+      ? i18n(tr.note)
+      : i18n('这段旋律还没有在旅途中出现。等你在某个关卡里真正听见它，这张唱片才会被点亮——当然，也可以现在就让留声机替你提前揭开。');
     d.dur.textContent = known ? fmtTime(tr.time) : '--:--';
     d.discNo.textContent = known ? `No.${tr.no}` : 'No.??';
-    d.discName.textContent = known ? tr.title : '？？？';
+    d.discName.textContent = known ? i18n(tr.title) : unknownMarks(3);
     d.disc.style.setProperty('--dtone', tr.tone);
     d.disc.style.setProperty('--dglow', tr.glow);
     d.bpm.textContent = known && tr.bpm ? String(Math.round(tr.bpm)) : '—';
@@ -450,7 +463,7 @@ export class MusicRoom {
       row.el.classList.toggle('is-sel', i === this.index);
       row.el.classList.toggle('is-locked', !known);
       row.el.classList.toggle('is-playing', this._isPlaying(tr.key));
-      row.title.textContent = known ? tr.title : '？？？？';
+      row.title.textContent = known ? i18n(tr.title) : unknownMarks(4);
       row.time.textContent = known ? fmtTime(tr.time) : '--:--';
     });
     this.d.count.textContent = String(heard);
@@ -467,7 +480,15 @@ export class MusicRoom {
      ============================================================ */
 
   _build() {
-    if (this.el) return;
+    // 语言变了就重建 DOM：静态标签（标题/表头/底部操作）在构建期翻译，不重建会留在旧语言
+    if (this.el) {
+      if (this._builtLang === getLang()) return;
+      this.el.remove();
+      this.el = null;
+      this.d = null;
+      this.rows = [];
+    }
+    this._builtLang = getLang();
     const el = document.createElement('div');
     el.id = 'musicRoom';
     el.className = 'mr hidden';
@@ -477,20 +498,20 @@ export class MusicRoom {
       '<div class="mr-frame">' +
         '<header class="mr-head">' +
           '<div class="mr-head-main">' +
-            '<p class="mr-kicker">MUSIC ROOM · 音楽室</p>' +
-            '<h1 class="mr-heading">音乐回忆室</h1>' +
-            '<p class="mr-head-sub">旅途中听过的旋律，都会在留声机上留下一圈纹路。</p>' +
+            '<p class="mr-kicker">' + i18n('音乐室') + '</p>' +
+            '<h1 class="mr-heading">' + i18n('音乐回忆室') + '</h1>' +
+            '<p class="mr-head-sub">' + i18n('旅途中听过的旋律，都会在留声机上留下一圈纹路——一圈，就是一夜。') + '</p>' +
           '</div>' +
           '<div class="mr-count">' +
             '<b class="mr-count-num">0</b>' +
             '<span class="mr-count-sep">/</span>' +
             '<span class="mr-count-all">19</span>' +
-            '<span class="mr-count-label">曲已回想</span>' +
+            '<span class="mr-count-label">' + i18n('曲已回想') + '</span>' +
           '</div>' +
         '</header>' +
         '<div class="mr-body">' +
           '<section class="mr-list-wrap">' +
-            '<div class="mr-list-head"><span>NO.</span><span>曲目</span><span>时长</span></div>' +
+            '<div class="mr-list-head"><span>NO.</span><span>' + i18n('曲目') + '</span><span>' + i18n('时长') + '</span></div>' +
             '<ol class="mr-list"></ol>' +
           '</section>' +
           '<article class="mr-detail">' +
@@ -498,14 +519,14 @@ export class MusicRoom {
               '<div class="mr-grooves"></div>' +
               '<div class="mr-disc-label">' +
                 '<span class="mr-disc-no">No.??</span>' +
-                '<span class="mr-disc-name">？？？</span>' +
+                '<span class="mr-disc-name">' + unknownMarks(3) + '</span>' +
               '</div>' +
               '<i class="mr-disc-hole"></i>' +
               '<div class="mr-sheen"></div>' +
             '</div>' +
             '<div class="mr-detail-body">' +
-              '<p class="mr-cat">UNKNOWN</p>' +
-              '<h2 class="mr-title">？？？？？？</h2>' +
+              '<p class="mr-cat">' + unknownCat() + '</p>' +
+              '<h2 class="mr-title">' + unknownMarks(6) + '</h2>' +
               '<p class="mr-tags"><span class="mr-subname"></span><span class="mr-place"></span></p>' +
               '<p class="mr-orig"></p>' +
               '<div class="mr-progress">' +
@@ -522,9 +543,9 @@ export class MusicRoom {
               '<div class="mr-stats">' +
                 '<div class="mr-stat"><span class="mr-stat-k">BPM</span>' +
                   '<span class="mr-stat-v mr-bpm">—</span></div>' +
-                '<div class="mr-stat"><span class="mr-stat-k">时长</span>' +
+                '<div class="mr-stat"><span class="mr-stat-k">' + i18n('时长') + '</span>' +
                   '<span class="mr-stat-v mr-len">--:--</span></div>' +
-                '<div class="mr-stat"><span class="mr-stat-k">唱片</span>' +
+                '<div class="mr-stat"><span class="mr-stat-k">' + i18n('唱片') + '</span>' +
                   '<span class="mr-stat-v mr-code">No.?? / 19</span></div>' +
               '</div>' +
             '</div>' +
@@ -532,12 +553,12 @@ export class MusicRoom {
         '</div>' +
         '<footer class="mr-foot">' +
           '<div class="mr-keys">' +
-            '<span><b>↑ ↓</b>选曲</span>' +
-            '<span><b>← →</b>换曲</span>' +
-            '<span><b>ENTER</b>播放 / 停止</span>' +
-            '<span><b>M</b>静音</span>' +
-            '<button class="mr-preview-btn" type="button"><b>T</b>试听 30 秒</button>' +
-            '<button class="mr-back" type="button"><b>ESC</b>返回标题</button>' +
+            '<span><b>↑ ↓</b>' + i18n('选曲') + '</span>' +
+            '<span><b>← →</b>' + i18n('换曲') + '</span>' +
+            '<span><b>ENTER</b>' + i18n('播放 / 停止') + '</span>' +
+            '<span><b>M</b>' + i18n('静音') + '</span>' +
+            '<button class="mr-preview-btn" type="button"><b>T</b>' + i18n('试听 30 秒') + '</button>' +
+            '<button class="mr-back" type="button"><b>ESC</b>' + i18n('返回标题') + '</button>' +
           '</div>' +
           '<div class="mr-status"><i class="mr-led"></i>' +
             '<span class="mr-state">停止中</span>' +
@@ -549,13 +570,13 @@ export class MusicRoom {
       '<div class="mr-warn hidden" role="dialog" aria-modal="true">' +
         '<div class="mr-warn-box">' +
           '<p class="mr-warn-kicker">UNKNOWN MELODY</p>' +
-          '<h3 class="mr-warn-title">这段旋律还没有在旅途中出现。</h3>' +
+          '<h3 class="mr-warn-title">' + i18n('这段旋律还没有在旅途中出现。') + '</h3>' +
           '<p class="mr-warn-text"></p>' +
           '<div class="mr-warn-actions">' +
-            '<button class="mr-warn-btn" data-act="play" type="button">播放</button>' +
-            '<button class="mr-warn-btn" data-act="cancel" type="button">取消</button>' +
+            '<button class="mr-warn-btn" data-act="play" type="button">' + i18n('播放') + '</button>' +
+            '<button class="mr-warn-btn" data-act="cancel" type="button">' + i18n('取消') + '</button>' +
           '</div>' +
-          '<p class="mr-warn-hint">← → 选择　ENTER 确认　ESC 取消</p>' +
+          '<p class="mr-warn-hint">' + i18n('← → 选择　ENTER 确认　ESC 取消') + '</p>' +
         '</div>' +
       '</div>';
 

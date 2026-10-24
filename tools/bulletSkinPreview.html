@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>符卡专属弹型 · 预览表</title>
+<style>
+  html, body { margin: 0; background: #05070f; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="sheet" width="1280" height="600"></canvas>
+<script type="module">
+import { bakeBulletSprite, bakeBulletGlow } from '../src/game/bullets.js';
+import { SKIN_META, SKIN_NAMES, SKIN_IDS, skinGlow } from '../src/game/bulletArt/index.js';
+
+const SS = 2;
+const VIS = 1.16;
+
+/* 每张符卡里实际用的代表色（和 b.color 同一支），第二个是做对比的伴随色 */
+const COLORS = {
+  5:  ['#c9a6ff', '#ff5a70'],   // 月牙
+  6:  ['#6b4bb0', '#ff4d6a'],   // 吞噬暗球
+  7:  ['#d8ff9a', '#8ef07a'],   // 萤火虫
+  8:  ['#7ef07a', '#c8ff6a'],   // 小虫
+  9:  ['#7fd8ff', '#bfeaff'],   // 小冰块
+  10: ['#ff6b6b', '#ffb347'],   // 枫叶
+  11: ['#ffe6f4', '#ffa8d8'],   // 樱花
+  12: ['#ffd1e8', '#ff9ecb'],   // 樱瓣
+  13: ['#c9b6ff', '#ffe9b0'],   // 五色玉
+  14: ['#ffe9b0', '#ffd23f'],   // 龙玉
+  15: ['#cfc6b4', '#b8a88e'],   // 碎石
+  16: ['#bfeaff', '#ffffff'],   // 金刚石
+  17: ['#ff8a3c', '#ffd23f'],   // 不灭火
+  18: ['#ff6b4a', '#ffb347'],   // 火鳞
+  19: ['#9fe8ff', '#7fd8ff'],   // 燕尾
+  20: ['#8ef0b0', '#ffe9b0'],   // 玉枝
+  21: ['#9fe8d0', '#dff4ff'],   // 太刀
+  22: ['#9fe8d0', '#ffffff'],   // 刀斩
+  23: ['#c8fff0', '#9fe8d0'],   // 半灵
+  24: ['#ff4d6a', '#ffd0e0'],   // 血蝠
+  25: ['#ff4d6a', '#ff8fa8'],   // 血枪
+  26: ['#ff8fa8', '#ffd0d8'],   // 血水晶
+  27: ['#ff4d6a', '#ff8a3c'],   // 熔岩
+};
+
+const cv = document.getElementById('sheet');
+const ctx = cv.getContext('2d');
+const W = 1280;
+const ROW_H = 132;
+
+/* 背景：夜色 + 静态星点（确定性） */
+function paintBg(h) {
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#0b1226');
+  g.addColorStop(0.5, '#070b18');
+  g.addColorStop(1, '#04060d');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, h);
+  let s = 12345;
+  const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  for (let i = 0; i < 260; i++) {
+    const x = rnd() * W, y = rnd() * h, a = 0.04 + rnd() * 0.10;
+    ctx.fillStyle = `rgba(190,220,255,${a})`;
+    ctx.fillRect(x, y, 1.4, 1.4);
+  }
+}
+
+/* 按游戏里的真实尺寸画一颗弹（option.scale 只是为了放大看细节） */
+function drawBullet(type, color, size, cx, cy, scale = 1, withGlow = true) {
+  const body = bakeBulletSprite(type, color, size);
+  const w = (body.width / SS) * VIS * scale;
+  if (withGlow) {
+    const glow = bakeBulletGlow(type, color, size);
+    const gw = (glow.width / SS) * VIS * scale * 1.35;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.85;
+    ctx.drawImage(glow, cx - gw / 2, cy - gw / 2, gw, gw);
+    ctx.restore();
+  }
+  ctx.drawImage(body, cx - w / 2, cy - w / 2, w, w);
+}
+
+function label(text, x, y, color, font = '500 15px system-ui, sans-serif') {
+  ctx.fillStyle = color;
+  ctx.font = font;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, y);
+}
+
+function build() {
+  const qp = new URLSearchParams(location.search);
+  const only = (qp.get('types') || '').split(',').map((s) => Number(s.trim())).filter((n) => n > 0);
+  const ids = only.length ? SKIN_IDS.filter((id) => only.includes(id)) : SKIN_IDS;
+  const H = 96 + ids.length * ROW_H + 360;
+  cv.width = W;
+  cv.height = H;
+  paintBg(H);
+
+  /* 标题 */
+  label('符卡专属弹型 · 预览表', 24, 34, '#eaf4ff', '600 22px system-ui, sans-serif');
+  label('每行：放大细节 / 游戏真实尺寸 r=9 / r=7 / r=5 / 伴随色 / 辉光色  ·  判定半径未改，绘制=1.16r', 24, 62, '#7d93b8', '400 13px system-ui, sans-serif');
+  ctx.fillStyle = 'rgba(120,160,230,0.20)';
+  ctx.fillRect(24, 80, W - 48, 1);
+
+  let y = 96;
+  for (const id of ids) {
+    const meta = SKIN_META[id];
+    const [c1, c2] = COLORS[id] || ['#ffffff', '#ffd23f'];
+
+    /* 行分隔 */
+    ctx.fillStyle = 'rgba(120,160,230,0.10)';
+    ctx.fillRect(24, y + ROW_H - 6, W - 48, 1);
+
+    /* 左侧标签 */
+    label(SKIN_NAMES[id] || ('#' + id), 28, y + 46, '#dcecff', '600 17px system-ui, sans-serif');
+    label('type ' + id + '  ext ' + meta.ext.toFixed(2) + (meta.autoSpin ? '  spin' : ''), 28, y + 70, '#6f86aa', '400 11px system-ui, sans-serif');
+    const g = skinGlow(id, c1);
+    if (g) {
+      ctx.beginPath();
+      ctx.arc(34, y + 96, 6, 0, Math.PI * 2);
+      ctx.fillStyle = `rgb(${g[0] | 0},${g[1] | 0},${g[2] | 0})`;
+      ctx.fill();
+      label('glow', 46, y + 96, '#5f7698', '400 11px system-ui, sans-serif');
+    }
+
+    /* 样例格 */
+    const slots = [
+      { size: 9, scale: 3.0, color: c1, tag: '×3' },
+      { size: 9, scale: 1.0, color: c1, tag: 'r9' },
+      { size: 7, scale: 1.0, color: c1, tag: 'r7' },
+      { size: 5, scale: 1.0, color: c1, tag: 'r5' },
+      { size: 9, scale: 1.0, color: c2, tag: '色2' },
+      { size: 9, scale: 1.0, color: mixHex(c1, c2), tag: '混' },
+    ];
+    const x0 = 190;
+    const step = (W - 40 - x0) / slots.length;
+    slots.forEach((s, i) => {
+      const cx = x0 + step * (i + 0.5);
+      const cy = y + ROW_H / 2 - 8;
+      drawBullet(id, s.color, s.size, cx, cy, s.scale, s.scale >= 3 ? false : true);
+      label(s.tag, cx, y + ROW_H - 26, '#54688a', '400 10px system-ui, sans-serif');
+      ctx.textAlign = 'center';
+      label(s.tag, cx, y + ROW_H - 26, '#54688a', '400 10px system-ui, sans-serif');
+      ctx.textAlign = 'left';
+    });
+    y += ROW_H;
+  }
+
+  /* 弹幕墙：混合尺寸的密集度检查 */
+  ctx.fillStyle = 'rgba(120,160,230,0.20)';
+  ctx.fillRect(24, y + 8, W - 48, 1);
+  label('弹幕墙 · 真实尺寸混合（检查暗背景下的可读性与辨识度）', 28, y + 34, '#cfe2ff', '500 15px system-ui, sans-serif');
+  const wallY = y + 52;
+  const wallH = 290;
+  const bg2 = ctx.createLinearGradient(0, wallY, 0, wallY + wallH);
+  bg2.addColorStop(0, '#0a1020');
+  bg2.addColorStop(1, '#04060d');
+  ctx.fillStyle = bg2;
+  ctx.fillRect(24, wallY, W - 48, wallH);
+  let seed = 9876;
+  const rnd2 = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  for (let i = 0; i < 110; i++) {
+    const id = ids[i % ids.length];
+    const [c1] = COLORS[id] || ['#ffffff'];
+    const size = 4 + ((i * 7) % 5);
+    const x = 40 + rnd2() * (W - 90);
+    const yy = wallY + 18 + rnd2() * (wallH - 36);
+    drawBullet(id, c1, size, x, yy, 1, true);
+  }
+
+  window.__previewReady = true;
+}
+
+function mixHex(a, b) {
+  const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
+  const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
+  return '#' + pa.map((v, i) => Math.round((v + pb[i]) / 2).toString(16).padStart(2, '0')).join('');
+}
+
+build();
+</script>
+</body>
+</html>

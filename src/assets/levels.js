@@ -5,7 +5,7 @@
  *
  * 1–6 面的地形不再手写，改为 levelgen.js 按「地块模板」生成 2.1k–3.9k 列的关卡：
  * 纯跑图从 3:00 起逐面 +0:30（3:00 / 3:30 / 4:00 / 4:30 / 5:00 / 5:30），每关末尾自动留出 Boss 场。
- * Extra 走另一套节奏：零火力起手的 6:00 道中 → 3:00 雷米莉亚中途战 → 6:00 芙兰收尾（Boss 战约 10 分钟）。
+ * Extra 走另一套节奏：零火力起手的 3:00 道中——0:00–2:00 推进 → 2:00 雷米莉亚中途战 → 2:00–3:00 收束 → 3:00 芙兰收尾（Boss 战约 10 分钟）。
  *
  * 瓦片字符（与 src/game/level.js 一一对应）：
  *   '.' / ' '  空气          '#'  泥土岩体（实心）     'G'  草皮（实心，地表最上层）
@@ -15,7 +15,7 @@
  *   'W'  水（可游泳）        'V'  藤蔓墙（实心装饰）
  *
  * 实体字符：
- *   'P' 出生点  'o' 金币  'p' 小 P 点（火力）
+ *   'P' 出生点  'o' 金币  'p' 小 P 点（火力）  'U' 1UP 道具（拾取即回一条残机）
  *   's' 地面妖精（巡逻）  'f' 飞行妖精
  *   'C' 检查点  'F' 终点旗（飞行关省略）
  */
@@ -25,16 +25,18 @@ export const TILE = 32;
 /**
  * STAGE5 中途战「魂魄妖梦」的编排参数。
  *
- * 同一份对象同时发给 levelgen（挖舞台 / 停刷小怪 / 放补偿 P）和 stage.js
- * （触发线 / 登场位置 / 呼吸区），避免两处各写一套像素数。
+ * 同一份对象同时发给 levelgen（挖舞台 / 停刷小怪 / 摆开场准备区）和 stage.js
+ * （触发线 / 登场位置 / 呼吸区 / 击破掉落），避免两处各写一套像素数。
  * 关卡是程序生成的，所以位置全都写成「距关卡右端 w 的像素数」，改 cols 不用重算：
  *
  *   triggerFromEnd  玩家越过 w-triggerFromEnd 这条线 → 妖梦拦路（midboss 登场）
  *   arenaFromEnd    妖梦舞台中心在 w-arenaFromEnd；levelgen 把这段挖成平地
- *   arenaHalf       舞台半宽（像素）。舞台内不刷小怪，原本的火力折算成 P 点
+ *   arenaHalf       舞台半宽（像素）。舞台内不刷小怪，火力改由开场准备区补给
  *   breathDist      击破妖梦后还要再前进多少像素，才允许触发关底幽幽子
  *   breathSec       同时要求道中计时再过多少秒（距离 + 时间双保险，防止击破瞬间被接走）
- *   directPower     进妖梦战一次性补进火力条的点数；舞台小怪取消的补偿见 levelgen（会再撒 P 道具）
+ *   opening         开场准备区：{power, life} = 铺在舞台左侧的 P 点 / 1UP 枚数。
+ *                   补给只放在地图上让玩家自己走过去捡，引擎不再在开战时直接补火力。
+ *   dropLife        击破妖梦后掉在舞台上的 1UP 枚数（同样由玩家自己捡）
  *   key             Boss 注册表里的 key（Boss 本体由另一条实现线提供）
  */
 const STAGE5_MIDBOSS = {
@@ -44,10 +46,11 @@ const STAGE5_MIDBOSS = {
   arenaHalf: 900,
   breathDist: 700,
   breathSec: 0.8,
-  // 补偿口径：妖梦舞台（col 998–1054）里原本会刷 5 只小怪，合计 5 点火力；
-  // levelgen 已在舞台内补 2 枚 P 道具（POWER.pickup = 4，合 8 点），
-  // 这里进战再直接补 2 点 → 进妖梦战时约 +10 点，比改动前略高。
-  directPower: 2,
+  // 第一个道中已取消：开场先铺四枚 P 点（每枚 POWER.pickup = 4，合 16 点）和一枚 1UP
+  // 在舞台左侧的准备区，玩家一路走过去自己捡；捡完越线才进妖梦战。
+  opening: { power: 4, life: 1 },
+  // 妖梦击破 → 舞台地面落下一枚 1UP，不用再等 99 点 POWER 的累计。
+  dropLife: 1,
 };
 
 export const LEVELS = [
@@ -110,16 +113,18 @@ export const LEVELS = [
     theme: 'nether',
     mode: 'platform',
     boss: 'yuyuko',
-    // 幽幽子之前先打魂魄妖梦（midboss）：道中 → 妖梦 → 呼吸区 → 幽幽子。
-    // 触发线 / 舞台 / 呼吸区 / 火力补偿全在这份配置里，gen.midboss 是同一份对象的引用。
+    // 幽幽子之前先打魂魄妖梦（midboss）：开场准备区 → 妖梦 → 第二道中（呼吸区）→ 幽幽子。
+    // 第一个道中已取消，关卡从妖梦舞台左侧开场；触发线 / 舞台 / 呼吸区 / 补给全在这份配置里。
     midboss: STAGE5_MIDBOSS,
     musicPre: 'pre5',
     music: 'stage5',
     hint: '纵向高台落差更大　砖块踩久会塌　↑／↓ 上下射击',
     fairyTint: { main: 'purple', mix: ['red', 'yellow', 'blue'] },
     gen: {
-      kind: 'platform', rows: 34, ground: 31, cols: 1170, seed: 5505, style: 'nether',
-      // levelgen 只拿得到 gen：这里放同一个引用，生成器才知道在哪挖妖梦舞台、停刷小怪。
+      kind: 'platform', rows: 34, ground: 31, cols: 208, seed: 5505, style: 'nether',
+      // 舞台位置仍按「距关卡右端像素」算（arenaFromEnd = 4600）：208 列正好让舞台左侧
+      // 剩下 36 列当开场准备区（cols 0–36），右侧依次是出口缓坡、第二道中、关底场（最后 50 列）。
+      // levelgen 只拿得到 gen：这里放同一个引用，生成器才知道在哪挖舞台、摆准备区和补给。
       midboss: STAGE5_MIDBOSS,
     },
   },
@@ -143,16 +148,18 @@ export const LEVELS = [
     theme: 'mansion',
     mode: 'stg',
     boss: 'flandre',
-    // EXTRA 走三段式：0:00 道中放血月编 → 3:00 雷米莉亚拦路切中段曲（亡き王女）→
-    // 姐姐认输后回血月编 → 6:00 芙兰朵露登场才切 U.N.
+    // EXTRA 走三段式：0:00 道中放血月编 → 2:00 雷米莉亚拦路切中段曲（亡き王女）→
+    // 姐姐认输后回血月编 → 3:00 芙兰朵露登场才切 U.N.
     musicPre: 'ex_pre',
     musicMid: 'ex_mid',
     music: 'extra',
     extra: true,
-    hint: '零火力起手的 6:00 道中　3:00 雷米莉亚拦路 → 6:00 芙兰朵露终盘　全程弹幕密度极高',
+    hint: '零火力起手的 3:00 道中　2:00 雷米莉亚拦路 → 再 1:00 道中 → 3:00 芙兰朵露终盘　弹幕密度极高',
     fairyTint: { main: 'red', mix: ['purple', 'yellow', 'blue'] },
-    // 道中要铺满 EXTRA_TIMELINE 的 6:00（165px/s × 360s = 59,400px）。
-    // T=32，cols 1900 → w=60,800，滚动上限 w-1400=59,400 = 360 秒整。
-    gen: { kind: 'stg', rows: 22, cols: 1900 },
+    // 道中要铺满 EXTRA_TIMELINE 的 3:00：2:00 到中途 Boss（165px/s × 120s = 19,800px），
+    // 击破后再推 1:00 到终盘（合计约 29,900px）。
+    // T=32，cols 990 → w=31,680，滚动上限 w-1400=30,280 > 29,900，
+    // 终盘入场时滚动条还没顶到上限，Boss 锁镜头不会被反推。
+    gen: { kind: 'stg', rows: 22, cols: 990 },
   },
 ];

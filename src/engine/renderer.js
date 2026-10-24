@@ -8,6 +8,8 @@
  * 所有游戏代码只管逻辑坐标，由 begin() 把变换装好。
  */
 
+import { tr } from '../i18n/index.js';
+
 export const VIEW_W = 1280;
 export const VIEW_H = 720;
 
@@ -83,6 +85,11 @@ export class Renderer {
     this._gradeKey = '';
     this._vig = null;            // 暗角渐变缓存
     this._vigKey = '';
+    // bloom 恢复：降级后如果帧时间长期稳定，有限次重试，避免「玩着玩着辉光永久消失」
+    this._bloomRetry = 0;        // 已重试次数（上限 3）
+    this._bloomRetryAt = 0;      // 下次允许重试的时间戳
+    this._bloomStable = 0;       // 降级后连续稳定时长（ms）
+    this._lastPresent = 0;       // 上一帧 present 时间戳（算帧间隔）
 
     this._onResize = () => this.fit();
     window.addEventListener('resize', this._onResize);
@@ -119,9 +126,10 @@ export class Renderer {
     const cssW = Math.round(VIEW_W * scale);
     const cssH = Math.round(VIEW_H * scale);
 
-    // backing store：至少 1.5x 超采样，保证矢量描边和细字在 1x 屏上也不糊。
-    // 软件光栅下超采样代价翻倍，降到 clamp(scale*dpr, 1.0, 1.25)（GPU 路径维持原样）。
-    const floor = this.lowSpec ? 1.0 : 1.5;
+    // backing store：至少 1.25x 超采样，保证矢量描边和细字在 1x 屏上也不糊。
+    // 1.5 倍在 1280×720 窗口下会渲染 1920×1080（2.25 倍像素）；1.25 倍省约 30% 填充率，
+    // 而画布仍由浏览器降采样，边缘抗锯齿观感几乎不变。软件光栅再降到 1.0。
+    const floor = this.lowSpec ? 1.0 : 1.25;
     // 软件光栅在 1600×900 / 1920×1080 这类大窗口下，backing 1.25 实测只有 9–14fps
     // （每帧 115ms，见 QA 第三轮）；超过 1.0 全是逐像素光栅成本，而矢量画风对
     // 合成器放大 1.25× 的柔化不敏感。这里锁 1.0（1280×720）换可玩帧率。
@@ -204,22 +212,28 @@ export class Renderer {
     this._bloomDirty = true;
     this.bloomEmaMs = 0;
     this.bloomInterval = 1;
+    this._bloomRetry = 0;
+    this._bloomRetryAt = 0;
+    this._bloomStable = 0;
+    this._lastPresent = 0;
     this._grainPattern = null;
     this.fit();
     this._syncInfo();
     return this.qualityInfo();
   }
 
-  /** 当前画质档位的人话描述：设置页只读行 + 诊断共用 */
+  /** 当前画质档位的人话描述：设置页只读行 + 诊断共用（文案走 i18n，键=中文原文） */
   qualityInfo() {
     const auto = this.quality !== 'high' && this.quality !== 'low';
-    const hw = this.softwareRaster ? '软件光栅' : 'GPU 加速';
-    const post = this.postLevel >= 2 ? '辉光开' : (this.postLevel === 1 ? '辉光关' : '后期关');
+    const hw = this.softwareRaster ? tr('软件光栅') : tr('GPU 加速');
+    const post = this.postLevel >= 2 ? tr('辉光开') : (this.postLevel === 1 ? tr('辉光关') : tr('后期关'));
     const picked = auto ? (this.softwareRaster ? 'low' : 'high') : this.quality;
     return {
       quality: auto ? 'auto' : this.quality,
       picked,
-      label: auto ? (this.softwareRaster ? '自动 → 低' : '自动 → 高') : (this.quality === 'high' ? '高（强制）' : '低（强制）'),
+      label: auto
+        ? (this.softwareRaster ? tr('自动 → 低') : tr('自动 → 高'))
+        : (this.quality === 'high' ? tr('高（强制）') : tr('低（强制）')),
       detail: `${hw} · ${this.backing.toFixed(2)}× · ${post}`,
       hardware: this.softwareRaster ? 'software' : 'gpu',
       backing: this.backing,
@@ -258,9 +272,14 @@ export class Renderer {
    * 这样 bloom 采样不会因为逻辑缩放重复插值。
    */
   present(t = 0) {
+    const now = performance.now();
+    const dtMs = this._lastPresent ? now - this._lastPresent : 0;
+    this._lastPresent = now;
     if (!this.postEnabled || this.postLevel === 0) return;
     // 首帧 / 切场景后的几帧先不做后期：bloom 的读回与着色器冷启动最容易在这里顶出长帧
     if (this.skipPost > 0) { this.skipPost--; return; }
+    // 因 bloom 太贵而关过辉光的机器：帧时间稳定后有限次重试，不让辉光永久消失
+    this._trackBloomRecovery(dtMs);
     const ctx = this.ctx;
     const cw = this.canvas.width, ch = this.canvas.height;
 
@@ -297,6 +316,42 @@ export class Renderer {
       }
     }
     ctx.restore();
+  }
+
+  /**
+   * bloom 降级后的恢复判定。
+   * 关掉 bloom 通常能让帧时间立刻回到 60fps；如果随后连续约 1.2s（按时间累计，
+   * 与刷新率无关）都稳定在 40fps 以上，就值得用更保守的刷新间隔（每 4 帧）再试一次。
+   * 最多重试 3 次，失败则永久保持关闭；玩家手选「高」或软件光栅不参与。
+   */
+  _trackBloomRecovery(dtMs) {
+    if (this.postLevel !== 1 || !this.autoDegrade || this.lowSpec) return;
+    if (this._bloomRetry >= 3) return;
+    if (performance.now() < this._bloomRetryAt) return;
+    // 用时间而不是帧数：240Hz 下 150 帧只要 0.6s，60Hz 要 2.5s，恢复手感会不一致
+    if (dtMs > 0 && dtMs < 25) this._bloomStable = Math.min(this._bloomStable + dtMs, 4000);
+    else if (dtMs >= 100) this._bloomStable = 0;          // 切后台/大卡顿后重新计
+    else this._bloomStable = Math.max(0, this._bloomStable - dtMs * 2);
+    if (this._bloomStable < 1200) return;
+
+    this._bloomRetry++;
+    this.postLevel = 2;
+    this.bloomInterval = 4;      // 先用最省的刷新频率试水
+    this._bloomWarm = 0;
+    this._bloomIdle = 0;
+    this.bloomEmaMs = 0;
+    this._bloomDirty = true;
+    this._bloomStable = 0;
+    this._bloomRetryAt = performance.now() + 12000 * this._bloomRetry;
+    this._syncInfo();
+  }
+
+  /** bloom 再次超预算：关掉并安排带退避的重试 */
+  _fallbackPost() {
+    this.postLevel = 1;
+    this._bloomStable = 0;
+    this._bloomRetryAt = performance.now() + 12000 * Math.max(1, this._bloomRetry);
+    this._syncInfo();
   }
 
   /** 惰性构建/复用两枚全屏渐变（尺寸变化时才重建） */
@@ -365,7 +420,9 @@ export class Renderer {
     if (this._bloomWarm < 2) {
       this._bloomWarm++;
       this.bloomEmaMs = ms;
-      if (this.autoDegrade && this._bloomWarm === 2 && ms > 30) { this.postLevel = 1; this._syncInfo(); }  // 读回成本离谱，直接放弃 bloom
+      // 冷启动时单次 >30ms 就放弃 bloom；重试阶段交给下面的 EMA 判定（需要连续 3 次），
+      // 避免偶尔一帧抖动又把刚恢复的辉光拍死。
+      if (this.autoDegrade && this._bloomRetry === 0 && this._bloomWarm === 2 && ms > 30) this._fallbackPost();
       return;
     }
     this.bloomEmaMs = this.bloomEmaMs > 0 ? this.bloomEmaMs * 0.7 + ms * 0.3 : ms;
@@ -375,7 +432,7 @@ export class Renderer {
     else if (e < 5) this.bloomInterval = 3;
     else this.bloomInterval = 4;
 
-    if (this.autoDegrade && e > 10 && ++this._bloomIdle >= 3) { this.postLevel = 1; this._syncInfo(); }
+    if (this.autoDegrade && e > 10 && ++this._bloomIdle >= 3) this._fallbackPost();
   }
 
   /** 屏幕（client）坐标 -> 逻辑坐标，供鼠标/触摸用 */

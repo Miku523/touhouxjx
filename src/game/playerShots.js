@@ -38,8 +38,8 @@ const SHOT_PROFILE = {
     homingTurn: 0,
     homingRange: 0,
     pierce: false,
-    fanFlat: 0.09,      // 平射时的半张角（原来就是 0.09）
-    fanAim: 0.55,       // 仰射时的半张角（覆盖不同高度）
+    fanFlat: 0.14,      // 平射总张角（≈8°，比旧版更散；Shift 低速时收束到 ≈1.2°）
+    fanAim: 0.65,       // 抬头 / 低头射击时的总张角（覆盖不同高度）
     special: {
       // 2026-10-20 反馈 #6：降低子机（特殊副弹）伤害 2.4 → 1.55（−35%）
       damage: 1.55,
@@ -63,8 +63,8 @@ const SHOT_PROFILE = {
     homingTurn: 0,
     homingRange: 0,
     pierce: false,
-    fanFlat: 0.22,      // 扩散：平射也有明显扇形（约 25° 总张角）
-    fanAim: 0.6,        // 仰射散得更开，像一蓬流星雨
+    fanFlat: 0.32,      // 扩散：平射也有明显扇形（≈18° 总张角），Shift 低速时同样收束
+    fanAim: 0.7,        // 仰射散得更开，像一蓬流星雨
     special: {
       // 2026-10-20 反馈 #6：降低子机（特殊副弹）伤害 3.2 → 2.05（−36%）
       damage: 2.05,
@@ -80,6 +80,15 @@ const SHOT_PROFILE = {
     },
   },
 };
+
+/**
+ * 按住 Shift 低速（显示判定点）时的收束系数（2026-10-24 手感调整）：
+ * 常态为「扩散感」把扇形调宽；低速时反而把弹道收成一束——
+ * 扇形的张角乘 FOCUS_FAN_MUL，出生点的纵向错位乘 FOCUS_OFFSET_MUL，
+ * 火力集中在判定点正前方，用机动性换精准度。
+ */
+const FOCUS_FAN_MUL = 0.14;   // 2026-10-24：初版 0.12 → 0.14（0.16 过宽，回退一档），比初版略放宽
+const FOCUS_OFFSET_MUL = 0.25;
 
 const PI2 = Math.PI * 2;
 
@@ -367,24 +376,28 @@ export class PlayerShots {
    * @param {'reimu'|'marisa'} char
    * @param {number} powerLevel 1-4
    * @param {number} [aim=0] 仰角（弧度，负数向上）
-   * @param {number} [spread] 扇形半宽（默认按是否仰射自动取 0.55 / 0.09）
+   * @param {number} [spread] 扇形总张角（默认按是否仰射自动取 fanAim / fanFlat）
+   * @param {boolean} [focus=false] 按住 Shift 低速时收束扇形
    */
-  fire(x, y, dir, char, powerLevel = 1, aim = 0, spread) {
+  fire(x, y, dir, char, powerLevel = 1, aim = 0, spread, focus = false) {
     const prof = SHOT_PROFILE[char] || SHOT_PROFILE.reimu;
     const lv = Math.min(4, Math.max(1, powerLevel | 0));
-    // 主弹数成长：1 / 2 / 3 / 5 发；灵梦单发 4，魔理沙单发 8（普通弹两倍），
-    // 最终都乘 balance.js 的全局攻击倍率
-    const shots = [1, 2, 3, 5][lv - 1];
+    // 主弹数成长：1 / 2 / 3 / 4 发（2026-10-24 从 1 / 2 / 3 / 5 减一发）；
+    // 灵梦单发 4，魔理沙单发 8（普通弹两倍），最终都乘 balance.js 的全局攻击倍率
+    const shots = [1, 2, 3, 4][lv - 1];
     // 向上射击时用大扇形覆盖不同的高度/距离，平射用较小的散布；
     // 魔理沙的 fanFlat/fanAim 都比灵梦大，形成「扩散弹」
-    const fan = spread === undefined ? (aim ? prof.fanAim : prof.fanFlat) : spread;
+    let fan = spread === undefined ? (aim ? prof.fanAim : prof.fanFlat) : spread;
+    // Shift 低速：扇形与出生错位一起压窄，弹道收成一束直线
+    if (focus) fan *= FOCUS_FAN_MUL;
+    const offsetMul = focus ? FOCUS_OFFSET_MUL : 1;
     for (let i = 0; i < shots; i++) {
       const t = shots === 1 ? 0 : (i / (shots - 1)) - 0.5;
       const ang = aim + t * fan;
       const b = this._take();
       b.active = true;
       b.x = x;
-      b.y = y + t * 12;
+      b.y = y + t * 12 * offsetMul;
       b.vx = Math.cos(ang) * prof.speed * dir;
       b.vy = Math.sin(ang) * prof.speed;
       b.life = prof.life;

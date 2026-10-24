@@ -2,15 +2,30 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <!-- viewport-fit=cover：刘海屏/挖孔屏下让画面铺满，安全区由 platform.css 用 env() 让开 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>东方新纪行 ～ Chronicle of Gensokyo</title>
   <meta name="description" content="东方新纪行 ～ Chronicle of Gensokyo：浏览器里直接开打的东方同人弹幕动作游戏，零安装。" />
   <meta name="theme-color" content="#150e1e" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="format-detection" content="telephone=no" />
+  <!-- PWA：装了之后离线可玩、无地址栏全屏；manifest 由平台层统一维护 -->
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="东方新纪行" />
   <link rel="icon" type="image/png" sizes="128x128" href="./src/art/favicon.png" />
   <link rel="apple-touch-icon" href="./src/art/apple-touch-icon.png" />
   <!-- 入口样式 / 脚本带 ?v= 缓存版本串：改动 src/ 后递增（见 README「部署」），
        旧访客的缓存会立刻失效，不必等 GitHub Pages 的 10 分钟 CDN 缓存到期 -->
-  <link rel="stylesheet" href="./src/style.css?v=1.4.5" />
+  <link rel="stylesheet" href="./src/style.css?v=1.6.2" />
+  <!-- 标题开屏动画：单独成文件，只读 .overlay.title-mode.intro 下的入场状态，
+       不动 style.css 里既有的标题版式，方便整体回滚。 -->
+  <link rel="stylesheet" href="./src/title-intro.css?v=1.6.2" />
+  <!-- 触屏虚拟手柄样式：只有 body.hks-pad-on 时才生效，桌面端零影响 -->
+  <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.2" />
+  <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.2" />
   <!-- Boss 符卡计时行 / survival 血条的追加样式：只新增 id/类，不覆盖 style.css 里既有 Boss 血条规则。
        放这里是为了让「HUD 计时」这一处改动自成一块，改完可整段删除回滚。 -->
   <style>
@@ -92,8 +107,8 @@
               <span class="pdim">/ <b id="powerMax">64</b></span>
               <span id="powerPop" class="ppop" aria-live="polite"></span>
             </div>
-            <!-- 1UP 累计：拾取 POWER 每满 99 点恢复 1 命 -->
-            <div class="extend" id="extendBox" title="累计拾取 99 点 POWER 恢复 1 条残机（循环）">
+            <!-- 1UP 累计：拾取 POWER / 擦弹 / 符卡奖励每满 99 点恢复 1 命 -->
+            <div class="extend" id="extendBox" title="累计 1UP 点数（拾取 POWER / 擦弹 / 符卡奖励），每满 99 点恢复 1 条残机（循环）">
               <span class="ex-tag">1UP</span>
               <span class="ex-bar"><i id="extendFill"></i></span>
               <b id="extendNum">0/99</b>
@@ -108,7 +123,7 @@
               </div>
               <span id="stageSub" class="ss">博丽神社 · 黄昏樱花</span>
             </div>
-            <button id="settingsBtn" class="hud-settings" type="button" title="设置 / 暂停 (Esc)">设置</button>
+            <button id="settingsBtn" class="hud-settings" type="button" data-i18n-title="设置 / 暂停 (Esc)" data-i18n="设置">设置</button>
           </div>
         </div>
       </div>
@@ -160,7 +175,7 @@
         <div class="dlg-box">
           <div id="speaker" class="dlg-speaker"></div>
           <div id="dlgText" class="dlg-text"></div>
-          <div class="dlg-next">▼ 空格 / 点击继续</div>
+          <div class="dlg-next" data-i18n="▼ 空格 / 点击继续">▼ 空格 / 点击继续</div>
         </div>
       </div>
 
@@ -177,16 +192,46 @@
           </div>
         </div>
         <div class="title-deco" aria-hidden="true">
-          <span class="title-ver">Chronicle of Gensokyo · ver 1.4.5</span>
+          <span class="title-ver">Chronicle of Gensokyo · ver 1.6.2</span>
         </div>
       </div>
 
-      <!-- ===== 启动幕：标题插画与立绘 decode 完成前盖住整屏 ===== -->
+      <!-- ===== 启动幕：标题插画与立绘 decode 完成前盖住整屏 =====
+           进度条读的是真实里程碑（见 src/game/bootScreen.js）；JS 接管前是纯 CSS
+           的扫描光带示活；品牌汉字不做外语版。 -->
       <div id="boot" aria-hidden="true">
-        <div class="boot-mark">東方新紀行</div>
-        <div class="boot-sub">～ Chronicle of Gensokyo ～</div>
-        <div class="boot-line"></div>
-        <div class="boot-tip">正在铺开幻想乡的夜色…</div>
+        <div class="boot-sky">
+          <i class="boot-glow"></i>
+          <i class="boot-stars"></i>
+          <div class="boot-petals">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+        </div>
+        <div class="boot-center">
+          <div class="boot-rule-top"></div>
+          <div class="boot-logo" role="img" aria-label="東方新紀行">
+            <span class="bl-ch">東</span>
+            <span class="bl-ch">方</span>
+            <span class="bl-ch">新</span>
+            <span class="bl-ch">紀</span>
+            <span class="bl-ch">行</span>
+          </div>
+          <div class="boot-sub">～ Chronicle of Gensokyo ～</div>
+          <div class="boot-rule"></div>
+          <div class="boot-meter">
+            <span class="bm-load">LOADING</span>
+            <span class="bm-track">
+              <span class="bm-clip">
+                <span class="bm-fill"></span>
+                <span class="bm-scan"></span>
+              </span>
+              <span class="bm-head"></span>
+            </span>
+            <span class="bm-pct"><b>0</b><i>%</i></span>
+          </div>
+          <div class="boot-pray"><span data-i18n="少女祈祷中">少女祈祷中</span><span class="bp-dots"><i>.</i><i>.</i><i>.</i></span></div>
+        </div>
+        <div class="boot-frame"></div>
       </div>
 
       <!-- ===== 结局演出 ===== -->
@@ -240,10 +285,10 @@
           <button data-k="jump" class="tbtn">▲</button>
         </div>
       </div>
-      <div class="rotate-hint" aria-hidden="true">↻ 建议横屏游玩 · 视野更完整</div>
+      <div class="rotate-hint" aria-hidden="true" data-i18n="↻ 建议横屏游玩 · 视野更完整">↻ 建议横屏游玩 · 视野更完整</div>
     </div>
   </div>
 
-  <script type="module" src="./src/main.js?v=1.4.5"></script>
+  <script type="module" src="./src/main.js?v=1.6.2"></script>
 </body>
 </html>

@@ -17,6 +17,9 @@
  *   N：弹数 0.96×  弹速 1.00×  开火 1.02×（几乎等于基准）
  *   H：弹数 1.16×  弹速 1.10×  开火 0.93×
  *   L：弹数 1.45×  弹速 1.22×  开火 0.80×
+ * 道中杂兵另有 stgSpeedBands：同一轮弹幕按发序轮换速度倍率，「该快的快、该慢的慢」；
+ * 越往上快慢差越大（E 同速 → N ±8% → H ±14% → L ±20% → EX 快/中/慢三层），
+ * 快档最后仍被 bulletSpeedCap 夹住，不会破护栏。
  * 上面只是「难度」这一维。第 2–6 面另乘一层分面密度系数（STAGE_DENSITY，
  * 见下），让后期关卡即使同一难度也更薄：2 面 0.80× → 6 面 0.64×。
  * 两层互乘，例如 N 的 6 面 = 0.96 × 0.64 ≈ 0.61，L 的 6 面 = 1.45 × 0.64 ≈ 0.93。
@@ -59,6 +62,8 @@ export const DIFFICULTIES = {
     flyerShots: 2,
     stgScoutShots: 2,
     stgGunnerShots: 3,
+    // 弹速分档（道中）：E 保持同速，新手才读得出弹道
+    stgSpeedBands: [1, 1],
     enemyDifficulty: 'easy',
   },
   N: {
@@ -85,6 +90,8 @@ export const DIFFICULTIES = {
     flyerShots: 2,
     stgScoutShots: 2,
     stgGunnerShots: 4,
+    // 弹速分档：±8% 的轻微快慢差，够读出「两层」但不刺眼
+    stgSpeedBands: [1.08, 0.92],
     enemyDifficulty: 'normal',
   },
   H: {
@@ -110,6 +117,8 @@ export const DIFFICULTIES = {
     flyerShots: 3,
     stgScoutShots: 3,
     stgGunnerShots: 5,
+    // 弹速分档：快弹 1.14× / 慢弹 0.86×，同一波里开始有先后
+    stgSpeedBands: [1.14, 0.86],
     enemyDifficulty: 'hard',
   },
   L: {
@@ -135,6 +144,8 @@ export const DIFFICULTIES = {
     flyerShots: 4,
     stgScoutShots: 4,
     stgGunnerShots: 6,
+    // 弹速分档：快 1.20× / 慢 0.80×，快慢弹在屏幕上分层
+    stgSpeedBands: [1.2, 0.8],
     enemyDifficulty: 'hard',
   },
 
@@ -167,11 +178,16 @@ export const DIFFICULTIES = {
     pressureFloor: 0.62,
     wildAbort: 0.92,
     // 道中 / 平台杂兵
+    // EXTRA 道中缩短到 3:00 后，为了让「道中密度不掉、弹幕样式更丰富」，
+    // 杂兵齐射数抬到 4 / 7、射速 0.52（比 L 更快）；波次表侧的扩编见 stg.js _enrichExtraWaves。
     enemyBulletScale: 1.35,
-    enemyFireScale: 0.55,
+    enemyFireScale: 0.52,
     flyerShots: 3,
-    stgScoutShots: 3,
-    stgGunnerShots: 6,
+    stgScoutShots: 4,
+    stgGunnerShots: 7,
+    // 弹速分档：快 / 中 / 慢三层（1.28 / 0.95 / 0.72）。螺旋三臂 = 三条不同转速的螺线，
+    // 环弹与扇形按发序轮换，密而不齐；倍率最后仍被 bulletSpeedCap 夹住。
+    stgSpeedBands: [1.28, 0.95, 0.72],
     enemyDifficulty: 'hard',
   },
 };

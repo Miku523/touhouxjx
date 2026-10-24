@@ -806,7 +806,9 @@ class Builder {
     if (!m) return null;
     const half = Math.max(6, Math.round((m.arenaHalf || 900) / 32));
     const center = this.cols - Math.round((m.arenaFromEnd || 0) / 32);
-    const ms = Math.max(60, center - half);
+    // 舞台靠左时不再硬性留 60 列：STAGE5 的第一个道中已取消，舞台左边就是开场准备区，
+    // 具体还剩多少列由 cols 与 arenaFromEnd 决定（见 _prepareOpening）。
+    const ms = Math.max(8, center - half);
     // 不侵入关底 Boss 场（最后 50 列），中间至少留 4 列过渡
     const me = Math.min(this.cols - 54, center + half);
     if (me - ms < 8) return null;
@@ -836,6 +838,82 @@ class Builder {
       this.slope(me, rampLen, exitTop);
     }
     return { ms, me };
+  }
+
+  /**
+   * 开场准备区（STAGE5 专用）。
+   *
+   * 第一个道中取消后，关卡从妖梦舞台左侧直接开场：把关卡起点到舞台入口这一整段
+   * 铺成和舞台同层的平地，再把 P 点与 1UP 摆在路面上 —— 补给只放在地图上，
+   * 由玩家自己走过去捡（引擎不再在开战时直接补火力，见 levels.js 的 opening）。
+   *
+   * @returns {{to:number, power:number, life:number}|null} 准备区末列与实际放置数量
+   */
+  _prepareOpening(mid) {
+    const m = this.gen.midboss;
+    const open = m && m.opening;
+    if (!mid || !open) return null;
+    const prep = mid.ms; // 准备区 = 关卡起点到舞台入口（舞台本身由 _prepareMidbossArena 铺平）
+    if (prep < 16) return null;
+    for (let c = 0; c < prep; c++) {
+      this.commit(c, this.ground);
+      for (let r = 0; r < this.ground; r++) this.set(c, r, AIR);
+    }
+    // 一枚道具找最近的空格：优先贴地（看得见、走过去就吃到），被占就往上让一格
+    const put = (c, ch) => {
+      for (let r = this.ground - 1; r >= this.ground - 4; r--) {
+        if (this.get(c, r) === AIR) { this.set(c, r, ch); return true; }
+      }
+      return false;
+    };
+    // 出生点贴在左端，整段准备区都留出来给玩家捡东西
+    this.set(3, this.ground - 1, 'P');
+    this.coins(6, this.ground - 2, 4);
+    const nPower = Math.max(0, Math.min(8, Math.round(open.power || 0)));
+    const nLife = Math.max(0, Math.min(2, Math.round(open.life || 0)));
+    // P 点从出生点右侧均匀铺到妖梦线前：一路捡过去，走到线前刚好捡完
+    const left = 10;
+    const span = Math.max(1, prep - 6 - left);
+    let power = 0;
+    for (let i = 0; i < nPower; i++) {
+      const c = Math.round(left + (span * (i + 0.5)) / nPower);
+      if (put(c, 'p')) power += 1;
+    }
+    // 1UP 收在准备区最后几列：进战前的最后一份补给
+    let life = 0;
+    for (let i = 0; i < nLife; i++) {
+      if (put(prep - 3 - i * 2, 'U')) life += 1;
+    }
+    return { to: prep, power, life };
+  }
+
+  /**
+   * 舞台出口 → 关底场之间的检查点。
+   *
+   * 通用检查点从第 200 列才开始（见构造函数的 nextCheckpoint），STAGE5 新版只有 208 列：
+   * 打掉妖梦后还有一整段第二道中，这段路上死一次不该被扔回舞台入口。
+   * 只在出口缓坡之后的实地上放灯笼，地形不满足就直接跳过（不强改地形）。
+   *
+   * @param {{ms:number, me:number}|null} mid
+   * @returns {number} 检查点列号，-1 = 没放
+   */
+  _placePostArenaCheckpoint(mid) {
+    if (!mid) return -1;
+    const rampLen = Math.max(0, Math.min(14, this.cols - mid.me - 51));
+    const start = mid.me + rampLen + 4;
+    const end = this.cols - 60;
+    for (let c = start; c < end; c++) {
+      const surf = this.surface[c];
+      if (this.gap[c] || (surf !== GRASS && surf !== DIRT)) continue;
+      // 脚下三列同高：复活点不能压在台阶/窄台边缘
+      if (this.top[c - 1] !== this.top[c] || this.top[c + 1] !== this.top[c]) continue;
+      const row = this.top[c] - 1;
+      if (row <= 1 || this.get(c, row) !== AIR) continue;
+      this.set(c, row, 'C');
+      this.coins(c + 2, row, 3);
+      return c;
+    }
+    return -1;
   }
 
   /**
@@ -869,9 +947,15 @@ class Builder {
   placeEntities() {
     // 舞台先挖：见 _prepareMidbossArena 的注释
     const mid = this._prepareMidbossArena();
+    // 开场准备区（STAGE5）：舞台左侧铺平地 + 摆好 4 枚 P 点与 1UP，
+    // 必须在刷金币 / 小怪之前落地，否则道具会被后续模板盖掉。
+    const opening = this._prepareOpening(mid);
     // 坑前起跳区（放在舞台之后：舞台出口坡道不会再被误抬）
     this._widenPitRunways();
     const lastSafe = this.cols - 70;
+    // 中途 Boss 舞台窗口：金币 / 小怪都不进这一段（窗口比舞台左右各多留 10 列）
+    const MID_MARGIN = 10;
+    const inMidWindow = (c) => !!mid && c >= mid.ms - MID_MARGIN && c < mid.me + MID_MARGIN;
     let lastBest = -1;
     // 检查点：等距放在平地上；尖刺/水面/冰面/蘑菇弹床/碎砖/已有装饰占位的列跳过。
     // 只认「普通草皮/土」地表：检查点落在 'M' 上会让玩家复活瞬间被弹床弹飞，
@@ -914,9 +998,13 @@ class Builder {
         if (this.gap[c] && this.get(c, this.top[c]) === AIR) this.commit(c, this.top[c]);
       }
     }
+    // 短关卡（STAGE5 新版只有 208 列）通用检查点一个都放不下：舞台出口到关底之间
+    // 还有一整段第二道中，单独在坡道之后的实地上补一个灯笼（见 _placePostArenaCheckpoint）。
+    const postCp = this._placePostArenaCheckpoint(mid);
 
-    // 金币串 / 妖精：从第 40 列开始，避开 Boss 场与检查点附近
+    // 金币串 / 妖精：从第 40 列开始，避开 Boss 场、中途舞台窗口与检查点附近
     for (let c = 40; c < lastSafe; c += this.ri(11, 19)) {
+      if (inMidWindow(c)) continue;
       if (this.gap[c]) {
         if (c + 1 < this.cols && !this.gap[c + 1]) this.coinArc(c, this.top[c] - 2, 2);
         continue;
@@ -961,8 +1049,7 @@ class Builder {
     // 小怪火力按 POWER.kill=1 点/只、P 点按 POWER.pickup=4 点/枚折算成舞台上的 P 点，
     // 让玩家进战前的火力与「没取消小怪」持平（略高）：撤掉小怪 ≠ 白扣玩家火力。
     // 窗口比舞台左右各多留 10 列：入场前最后一段和出口缓坡也不放怪，跑进战场不会迎面撞上妖精。
-    const MID_MARGIN = 10;
-    const inMidWindow = (c) => !!mid && c >= mid.ms - MID_MARGIN && c < mid.me + MID_MARGIN;
+    // （MID_MARGIN / inMidWindow 已在 placeEntities 顶部定义，金币串也用它避开舞台。）
     let midSuppressed = 0;
     for (const c of pickEven(sTarget)) {
       if (inMidWindow(c)) { midSuppressed += 1; continue; }
@@ -978,9 +1065,10 @@ class Builder {
       if (this.get(c, fr) === AIR) this.set(c, fr, 'f');
     }
     // 火力补偿 P 点：铺在舞台地面上（进场一路捡过去），数量 = 被取消小怪的总火力 / 单枚 P 值。
+    // STAGE5 新版由开场准备区直接摆 P 点（见 _prepareOpening），舞台上不再额外撒补给；
     // 至少 2 枚：本关窗口内的取样可能只有 0~1 只小怪，空舞台也要留下补给感。
     let midP = 0;
-    if (mid) {
+    if (mid && !opening) {
       midP = Math.min(8, Math.max(2, Math.ceil((midSuppressed * POWER.kill) / POWER.pickup)));
       const span = Math.max(1, mid.me - mid.ms - 6);
       for (let i = 0; i < midP; i++) {
@@ -991,15 +1079,20 @@ class Builder {
         }
       }
     }
-    this.midbossInfo = mid ? { from: mid.ms, to: mid.me, suppressed: midSuppressed, power: midP } : null;
+    this.midbossInfo = mid
+      ? { from: mid.ms, to: mid.me, suppressed: midSuppressed, power: midP, opening }
+      : null;
 
-    // 出生点：开头清出 20 列平地
-    for (let c = 0; c < Math.min(20, this.cols); c++) {
-      this.commit(c, this.ground);
-      for (let r = 0; r < this.ground; r++) this.set(c, r, AIR);
+    // 出生点：有开场准备区时由 _prepareOpening 负责（它已铺好平地、摆好 4P + 1UP）；
+    // 其余关卡照旧在开头清出 20 列平地。
+    if (!opening) {
+      for (let c = 0; c < Math.min(20, this.cols); c++) {
+        this.commit(c, this.ground);
+        for (let r = 0; r < this.ground; r++) this.set(c, r, AIR);
+      }
+      this.set(2, this.ground - 1, 'P');
+      this.coins(6, this.ground - 2, 4);
     }
-    this.set(2, this.ground - 1, 'P');
-    this.coins(6, this.ground - 2, 4);
 
     // Boss 场：最后 50 列平地，终点旗在前一点的位置
     const bossStart = Math.max(0, this.cols - 50);

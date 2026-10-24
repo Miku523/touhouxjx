@@ -1,5 +1,9 @@
 # BOSS 符卡限时 · 验收报告（含 2026-10-21 血量重标复验）
 
+> **2026-10-24 全量重定标（43 张、含 EXTRA）的验收结果见 `docs/BOSS_TIMING_TABLE.md` v4 §4**：主线 Lv2/Lv4 抽样 + EXTRA 12 张逐卡实测。本文以下内容为 2026-10-21 那一轮的口径，仅供参考，数值已被覆盖。
+>
+> **2026-10-24 v3 奖励 / 擦弹部分重跑见 §0.1**：`T:1;G:4` 共 4 跑 / 6 卡，奖励分支 5/5 覆盖、擦弹 PASS；**只覆盖 N 面 stage1 + stage4 的部分场景，不是全量 43 卡验收**。下文 2026-10-21 逐卡表仍是旧口径，未逐行重跑。
+
 - **验收人**：verifier（独立复核，不改 `src/**`）
 - **规格**：`docs/BOSS_TIMING_SPEC.md`（§1 目标时长表、§2 结算规则、§3.6 验证要求）
 - **对象工作树**：`C:\Users\GuSheng\Downloads\HKS`
@@ -40,6 +44,46 @@ node tools/_verify_bosscards.mjs --plan "N:1-6" --fullRun 4 --power 32 --god 1 -
 **需知**：下文 §1–§11 是 2026-10-20 旧口径（×0.95 贴线、±15% 对称判定）的历史报告，数字与结论均早于本次血量下调，仅作溯源；**当前验收以本节为准**。
 
 
+## 0.1 2026-10-24 v3 奖励 / 擦弹部分重跑（PASS · 非全量）
+
+**背景**：v3 结算规则（基础 1/4P、无伤 +1/2P、超时 +10 点）与擦弹 1UP 点数落地后，用同一工具补跑奖励 / 擦弹断言。**本轮只覆盖下列面与难度，不是全量 43 卡验收。**
+
+**命令**：
+
+```bash
+node tools/_verify_bosscards.mjs --url http://127.0.0.1:8137/index.html --plan "T:1;G:4" --noShots --port 9354
+```
+
+4 runs / 6 卡；`issues=0`，`warns=6`（5 条「打得偏快」时长阈值提示 + 1 条超时变体跳过时长判定，均非失败）。
+
+**运行时 power.js vs 独立 oracle：9 项全一致**：perLevel 16 / max 64 / extend 99 / graze 0.075 / grazePoints 0.02 / cardClear 0.25 / cardNoHit 0.5 / cardClearPower 16 / cardNoHitPower 32；`powerCfgMismatch=[]`。
+
+**奖励分支覆盖 5/5**：power_hit=1、power_nohit=1、life_hit=1、life_nohit=2、points=1（`missing=[]`）。
+
+**关键实测（stage1；入账 = dExtend + 99×dLives）**：
+
+| 用例 | 场景 | POWER | extendPts | 入账 | 命 | reward / noHit / base / bonus | 横幅 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| a 卡1 | 未满槽 + 受伤 | 16→32（+16） | 90→7 | 16 | +1（跨 99） | power / false / 16 / 0 | 符卡击破 · 火力 +1/4P |
+| a 卡2 | 满槽 + 无伤 | 64→64 | 80→13 | 131 | +2 | life / true / 16 / 32 | 无伤通过 · 1UP + 1/2P |
+| b 卡1 | 未满槽 + 无伤 | 24→64（+40） | 10→58 | 48 | 0 | power / true / 16 / 32 | 无伤通过 · 火力 +3/4P |
+| b 卡2 | 满槽 + 受伤 | 64→64 | 94→94 | 99 | +1 | life / false / 16 / 0 | 1UP · 残机 +1（无「无伤」字样） |
+| c 卡1 | 超时 55.67s > 50s | 64→64 | 90→1 | 10 | +1（跨 99） | points / false / 0 / 0 | 超时 · 奖励 +10 点（HUD「超时 · 击破 +10 点」） |
+
+注：a 卡1 的 +1 命来自 1UP 进度跨 99（16 点奖励 + 已有 90 点），不是奖励分支本身；b 卡2 的 99 点来自满槽成功的基础 1/4P 转残机。
+
+**擦弹（stage4，真实 STG 子弹，3 帧）**：帧1 新子弹进擦弹环：g=1、dPower=0.075、dExtend=0.02；帧2 同一颗不重复计数（g=0、dExtend=0）；帧3 换向再擦一颗：g=1、dPower=0.075、dExtend=0.02。弹距 17.25 / 14.5 / 11.75 / 20.19 均在（命中内半径 8.52，擦弹外环 32）之间；残机 3→3；`graze.verdict=PASS`。
+
+> 口径：擦弹的 POWER 收益（+0.075/颗）保留但**不计入 1UP**；1UP 进度只加 **0.02/颗**（`grazePoints`）。实现见 `stage.js` 擦弹处 `_addPower(g * POWER.graze, false)` + `_addExtend(g * POWER.grazePoints)`。
+
+**覆盖边界（重要）**：
+
+- 只跑 N 面 stage1 的 T 三变体 + stage4 的 G 探针；**未跑 E/H 与 stage2/3/5/6/EXTRA 的全量 43 卡**，不能据此写「全量 43 卡 PASS」或「所有难度 PASS」。
+- noHit 由探针在结算前显式置 `stage._cardDamaged` 构造（god 下自然受击不会发生）；自然受击路径只做了源码静态确认。
+- 满槽由 manip 置 `maxPower` 构造；超时用血条 ×3.6 强制，DPS / 时长为非自然值。
+
+**产物**：T 跑逐卡原始数据 `_pt/bosscards_s1_N_reward_{a,b,c}.json`；擦弹 `_pt/bosscards_s4_N_grazetest.json`；汇总 `_pt/bosscards_reward_report.md` / `_pt/bosscards_summary.json` / `_pt/bosscards_table.md`。
+
 ## 结论
 
 **整体：PASS**（Normal 28 卡全部 `|dev| ≤ 15%`；机制全部 PASS；控制台 0 error / 0 warning）
@@ -50,10 +94,12 @@ node tools/_verify_bosscards.mjs --plan "N:1-6" --fullRun 4 --power 32 --god 1 -
 | 每卡独立计时 / 切卡清零 / 落命不重置 | PASS |
 | damage 卡血条打空才结束、超时不跳过 | PASS |
 | survival 卡免疫伤害 + 到点自动切卡 + 视为成功 | PASS（5/5） |
-| 奖励：成功 +POWER；满槽 1UP；超时 +10 点 | PASS（life 24 卡；power / points 分支 T 跑覆盖） |
+| 奖励：成功 +POWER；满槽 1UP；超时 +10 点（旧口径；v3 断言见 §0.1） | PASS（life 24 卡；power / points 分支 T 跑覆盖） |
 | HUD 计时：damage「限时 剩余」、survival「坚持」、超时「超时 · 击破 +10 点」、逐卡重置 | PASS |
 | darkSpot 黑暗聚光（玩家周围亮、其余近黑） | PASS（见 §7） |
 | 控制台 error / warning | 0 / 0（28 卡 6 跑 + T/D + E/H 抽样） |
+
+> **v3 奖励改版（2026-10-24 当晚，规格见 `BOSS_TIMING_SPEC.md` §0.1 / §2.4）**：本报告 2026-10-21 的逐卡表跑在**旧口径**（成功 = `POWER.perLevel` 16 点），**未逐行重跑**。v3 的奖励 / 擦弹断言已另行部分重跑，结果与边界见 **§0.1**；该重跑只覆盖 N 面 stage1 + stage4 的部分场景，不是全量 43 卡。
 
 **本轮需知（不影响 PASS 判定）：4 张 damage 卡贴线超时**（elapsed 略超 limit → `ok=false`，按规则发 +10 点，不是计时/结算缺陷）：
 

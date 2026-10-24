@@ -2,6 +2,12 @@
  * HUD：把游戏状态同步到 DOM。只在数值变化时写 DOM，避免每帧触发重排。
  */
 import { POWER, powerLevel } from './power.js';
+import { tr } from '../i18n/index.js';
+
+// 残机图标最多画 10 个，超出用「×N」计数：
+// 1UP 没有硬上限，高擦弹/长局里残机可能涨到几十条，逐个画会撑爆 HUD 左栏、
+// 把中间的 POWER 条和右侧关卡信息挤出屏幕（见 docs QA 截图 S6_clear.png）。
+const LIFE_ICON_CAP = 10;
 
 export class Hud {
   constructor() {
@@ -68,13 +74,29 @@ export class Hud {
 
   _buildLives(n) {
     if (!this.elLives) return;
+    const total = Math.max(1, Math.floor(n) || 0);
+    const shown = Math.min(total, LIFE_ICON_CAP);
     this.elLives.innerHTML = '';
     this.elsLives = [];
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < shown; i++) {
       const d = document.createElement('div');
       d.className = 'life';
       this.elLives.appendChild(d);
       this.elsLives.push(d);
+    }
+    // 超过图标上限时余下的残机折成计数，不让左栏无限变宽
+    this.elLivesMore = null;
+    if (total > LIFE_ICON_CAP) {
+      const sp = document.createElement('span');
+      sp.className = 'life-more';
+      sp.textContent = '×' + total;
+      sp.style.fontSize = 'calc(var(--s) * 11px)';
+      sp.style.marginLeft = 'calc(var(--s) * 5px)';
+      sp.style.letterSpacing = '.04em';
+      sp.style.opacity = '.92';
+      sp.style.whiteSpace = 'nowrap';
+      this.elLives.appendChild(sp);
+      this.elLivesMore = sp;
     }
   }
 
@@ -94,11 +116,21 @@ export class Hud {
     if (!stageState) return;
 
     if (stageState.lives !== this._lives) {
+      const total = Math.max(0, Math.floor(stageState.lives) || 0);
       this._lives = stageState.lives;
-      // 1UP 会让残机数超过初始格子数，补建图标再刷新显隐
-      if (stageState.lives > this.elsLives.length) this._buildLives(stageState.lives);
+      // 1UP 会让残机数超过初始格子数，补建图标再刷新显隐；
+      // 超过 LIFE_ICON_CAP 后改为只更新「×N」计数，避免几十个图标撑爆 HUD。
+      if (total > LIFE_ICON_CAP) {
+        if (!this.elLivesMore || this.elsLives.length !== LIFE_ICON_CAP) this._buildLives(total);
+        else this.elLivesMore.textContent = '×' + total;
+      } else if (total === 0) {
+        // 从「×N」回到 0 命时保留整排暗图标，别缩成孤零零一个
+        if (this.elLivesMore) this._buildLives(this.elsLives.length || 1);
+      } else if (total > this.elsLives.length || this.elLivesMore) {
+        this._buildLives(total);
+      }
       for (let i = 0; i < this.elsLives.length; i++) {
-        this.elsLives[i].classList.toggle('off', i >= stageState.lives);
+        this.elsLives[i].classList.toggle('off', i >= total);
       }
     }
 
@@ -145,7 +177,7 @@ export class Hud {
     }
     this._powerRaw = rawPower;
 
-    // 1UP 累计条：每 99 点 POWER → 恢复 1 条残机，条满清零后重新累计
+    // 1UP 累计条：每 99 点（拾取 POWER / 擦弹 / 符卡奖励）→ 恢复 1 条残机，条满清零后重新累计
     const ep = stageState.extendPts || 0;
     const en = stageState.extendNeed || POWER.extend || 99;
     const epct = Math.round((ep / en) * 1000) / 10;
@@ -157,7 +189,12 @@ export class Hud {
       const prev = this._extendPts;
       this._extendNeed = en;
       this._extendPts = ep;
-      if (this.elExtendNum) this.elExtendNum.textContent = `${Math.floor(ep)}/${en}`;
+      if (this.elExtendNum) {
+        // 擦弹以 0.02 推进：显示整数进度（0.24/99 看起来像 bug），
+        // 条宽仍按 ep/en 百分比平滑增长，不会让玩家觉得没在动。
+        const epText = String(Math.floor(ep));
+        this.elExtendNum.textContent = `${epText}/${en}`;
+      }
       // 计数回绕 = 刚刚拿到 1UP，闪一下提醒
       if (prev >= 0 && ep < prev) {
         this._extendBumpT = 1.1;
@@ -175,7 +212,7 @@ export class Hud {
       if (delta <= -5) {
         this._pop(`-${-delta}${this._levelChanged ? ` · Lv.${lv}` : ''}`, 'down');
       } else if (delta > 0 && this._levelChanged) {
-        this._pop(`火力 Lv.${lv} ↑`, 'up');
+        this._pop(tr('火力 Lv.{lv} ↑', { lv }), 'up');
       } else if (delta > 0) {
         this._pop(`+${delta}`, 'gain');
       }
@@ -203,9 +240,10 @@ export class Hud {
         this._bossVisible = true;
         this.elBossBar?.classList.remove('hidden');
       }
-      if (b.name !== this._bossName) {
+      if (b.name !== this._bossName || tr(b.name) !== this._bossNameText) {
         this._bossName = b.name;
-        if (this.elBossName) this.elBossName.textContent = b.name;
+        this._bossNameText = tr(b.name);
+        if (this.elBossName) this.elBossName.textContent = this._bossNameText;
       }
       // 符卡名 + 序号（如「难题「燕的子安贝 -永命线-」 · 7/8」）
       // spell/spellCount 缺失时退回新字段 cardIndex(0 起)/cardTotal，避免老/新 stageState 混用时丢序号
@@ -215,9 +253,10 @@ export class Hud {
       const spellTotal = Number.isFinite(b.spellCount)
         ? b.spellCount
         : (Number.isFinite(b.cardTotal) ? b.cardTotal : 0);
+      const phaseName = tr(b.phase || '');
       const phaseLabel = spellTotal > 1
-        ? `${b.phase || ''}${b.phase ? ' · ' : ''}${spellNo}/${spellTotal}`
-        : (b.phase || '');
+        ? `${phaseName}${phaseName ? ' · ' : ''}${spellNo}/${spellTotal}`
+        : phaseName;
       if (this.elBossPhase && this.elBossPhase.textContent !== phaseLabel) {
         this.elBossPhase.textContent = phaseLabel;
       }
@@ -288,13 +327,13 @@ export class Hud {
     let text;
     if (survival) {
       key = `s:${elapsed.toFixed(1)}`;
-      text = `坚持 ${elapsed.toFixed(1)}s`;
+      text = tr('坚持 {t}s', { t: elapsed.toFixed(1) });
     } else if (over) {
       key = 'over';
-      text = '超时 · 击破 +10 点';
+      text = tr('超时 · 击破 +10 点');
     } else {
       key = `d:${remain.toFixed(1)}`;
-      text = `限时 剩余 ${remain.toFixed(1)}s`;
+      text = tr('限时 剩余 {t}s', { t: remain.toFixed(1) });
     }
     const modeLabel = survival ? 'SURVIVE' : '';
     if (key === this._bossTimerKey && modeLabel === this._bossTimerModeLabel) return;

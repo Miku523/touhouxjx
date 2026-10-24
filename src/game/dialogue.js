@@ -11,6 +11,7 @@
  *   // 推进：dlg.advance()   —— 空格/确认键/点击
  */
 import { preloadWhenIdle } from '../engine/lazy_preload.js';
+import { tr } from '../i18n/index.js';
 
 /* ---------------- AI 立绘（Seedream 生成，tools/cutout.py 抠图） ---------------- */
 const AI_PORTRAITS = {
@@ -173,6 +174,12 @@ export class Dialogue {
     this.active = true;
     this.onEnd = opts.onEnd || null;
     this.t = 0;
+    // 每段剧本从空白立绘开始：旁白行不改立绘，若沿用上一场的 leftChar/rightChar，
+    // 上一面 Boss（如 S4 开场右侧的琪露诺）会残留在旁白旁边，像角色走错片场。
+    this.leftChar = null;
+    this.rightChar = null;
+    this.leftMood = 'normal';
+    this.rightMood = 'normal';
     this.el?.classList.remove('hidden');
     this._applyLine();
   }
@@ -248,9 +255,13 @@ export class Dialogue {
   /** 台词占位符：{me}=玩家名 {partner}=搭档名 {self}=说话人自己 */
   _subst(text, who) {
     if (!text) return '';
-    const me = this.playerChar === 'marisa' ? '魔理沙' : '灵梦';
-    const partner = me === '魔理沙' ? '灵梦' : '魔理沙';
-    const self = who === 'reimu' ? '灵梦' : who === 'marisa' ? '魔理沙' : (CHAR_NAMES[who] || who);
+    // 先取中文键再翻译，避免「灵梦」被译成罗马音后比较失败
+    const meRaw = this.playerChar === 'marisa' ? '魔理沙' : '灵梦';
+    const partnerRaw = meRaw === '魔理沙' ? '灵梦' : '魔理沙';
+    const me = tr(meRaw);
+    const partner = tr(partnerRaw);
+    const selfRaw = who === 'reimu' ? '灵梦' : who === 'marisa' ? '魔理沙' : (CHAR_NAMES[who] || who);
+    const self = tr(selfRaw);
     return text
       .replace(/\{me\}/g, me)
       .replace(/\{partner\}/g, partner)
@@ -266,7 +277,8 @@ export class Dialogue {
     const side = line.side || (who === this.playerChar ? 'left' : 'right');
 
     this.speaker = who;
-    this.fullText = this._subst(line.text || '', who);
+    // 先翻译整句（译文保留 {me}/{partner}/{self} 占位符），再按当前主角替换
+    this.fullText = this._subst(tr(line.text || ''), who);
     this.shown = 0;
     this.charT = 0;
 
@@ -284,7 +296,7 @@ export class Dialogue {
     }
 
     if (this.speakerEl) {
-      this.speakerEl.textContent = isNarrator ? '' : (CHAR_NAMES[who] || who);
+      this.speakerEl.textContent = isNarrator ? '' : tr(CHAR_NAMES[who] || who);
     }
     this._renderText();
     this._renderPortraits();

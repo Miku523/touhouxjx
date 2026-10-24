@@ -24,6 +24,130 @@ const B_RICE = 1;
 const B_BIG = 2;
 const B_STAR = 3;
 
+/* ============================================================
+   逐卡色板（docs/SKIN_MAPPING.md §3）
+   - 每个角色一套主色；卡内用 bright / deep / dark 保留明暗两层，
+     不把整张卡压成单一颜色；
+   - 6 面辉夜八件宝物各一套细节色，统一落在「金 + 玉」的基调里；
+   - 这里只描述颜色，不含任何弹道参数；模板里 p.color 仍然优先。
+   ============================================================ */
+const PAL = {
+  // 1 面 · 露米娅：红 + 暗（暗面弹用深红近黑）
+  rumia: {
+    main: '#ff4d6a',
+    bright: '#ff9aa8',
+    dark: '#3a0a16',
+    moon: '#ffe0e6',
+    // 每张符卡一套 accent（cardPal 按 boss.spellIdx 取）
+    cards: [
+      { main: '#ff4d6a', bright: '#ff9aa8', dark: '#3a0a16', moon: '#ffe0e6' },
+      { main: '#e01b3c', bright: '#ff7d8f', dark: '#2a0611', moon: '#ffd0d8' },
+    ],
+  },
+  // 2 面 · 莉格露：黄绿 + 亮黄萤火
+  wriggle: {
+    main: '#a8ff8f',
+    bright: '#d6ff7a',
+    mid: '#6fbf4a',
+    dark: '#2f5c22',
+    fire: '#fff6a8',
+    // 每张符卡一套 accent（cardPal 按 boss.spellIdx 取）
+    cards: [
+      { main: '#a8ff8f', bright: '#d6ff7a', mid: '#6fbf4a', dark: '#2f5c22', fire: '#fff6a8' },
+      { main: '#7fe06a', bright: '#d6ff7a', mid: '#4fa83a', dark: '#234a1a', fire: '#fff6a8' },
+      { main: '#c8ff6a', bright: '#fff6a8', mid: '#6fbf4a', dark: '#1e3a14', fire: '#fff6a8' },
+    ],
+  },
+  // 3 面 · 琪露诺：冰蓝 + 白
+  cirno: {
+    main: '#bfeaff',
+    bright: '#ffffff',
+    mid: '#8fd8f8',
+    spark: '#e8fbff',
+    // 每张符卡一套 accent（cardPal 按 boss.spellIdx 取）
+    cards: [
+      { main: '#bfeaff', bright: '#ffffff', mid: '#8fd8f8', spark: '#e8fbff' },
+      { main: '#7fd8ff', bright: '#d6f6ff', mid: '#5fc0e8', spark: '#ffffff' },
+      { main: '#ffffff', bright: '#bfeaff', mid: '#d6f6ff', spark: '#e8fbff' },
+      { main: '#e8fbff', bright: '#bfeaff', mid: '#8fd8f8', spark: '#ffffff' },
+    ],
+  },
+  // 4 面 · 射命丸文：枫叶暖橙红
+  aya: {
+    main: '#ff7a3c',
+    bright: '#ffb347',
+    pale: '#ffe6c8',
+    dark: '#7a2410',
+    // 每张符卡一套 accent（cardPal 按 boss.spellIdx 取）
+    cards: [
+      { main: '#ff7a3c', bright: '#ffb347', pale: '#ffe6c8', dark: '#7a2410' },
+      { main: '#ff5a2a', bright: '#ff9a5a', pale: '#ffd0b0', dark: '#6a1a08' },
+      { main: '#ffa040', bright: '#ffd07a', pale: '#ffeecc', dark: '#7a3a10' },
+      { main: '#d9581f', bright: '#ff8a4a', pale: '#ffc9a0', dark: '#5a1a08' },
+      { main: '#ffb347', bright: '#ffe0a0', pale: '#fff2d0', dark: '#7a4a10' },
+    ],
+  },
+  // 5 面 · 西行寺幽幽子：樱粉
+  yuyuko: {
+    main: '#ffe6f4',
+    bright: '#ffa8d8',
+    rose: '#ff8fd0',
+    deep: '#b06a9a',
+    dark: '#8a2352',
+    // 每张符卡一套 accent（cardPal 按 boss.spellIdx 取）
+    cards: [
+      { main: '#ffe6f4', bright: '#ffa8d8', rose: '#ff8fd0', deep: '#b06a9a', dark: '#8a2352' },
+      { main: '#ffa8d8', bright: '#ffc8e8', rose: '#ff8fd0', deep: '#c070b0', dark: '#8a2352' },
+      { main: '#ff8fd0', bright: '#ffb7e6', rose: '#ff6fb0', deep: '#a85a98', dark: '#7a1a48' },
+      { main: '#d96ba8', bright: '#ffa8d8', rose: '#ff8fd0', deep: '#b06a9a', dark: '#8a2352' },
+      { main: '#ffb7e6', bright: '#ffe6f4', rose: '#ff8fd0', deep: '#c86aa8', dark: '#7a2a52' },
+      { main: '#ff6fb0', bright: '#ff9fd0', rose: '#ff8fd0', deep: '#8a2352', dark: '#6a1238' },
+    ],
+  },
+  // 5 面中途 · 魂魄妖梦：薄荷刀光
+  youmu: {
+    main: '#9fe8d0',
+    bright: '#dff4ff',
+    dark: '#1f6a58',
+    // 每张符卡一套 accent（cardPal 按 boss.spellIdx 取）
+    cards: [
+      { main: '#9fe8d0', bright: '#dff4ff', dark: '#1f6a58' },
+      { main: '#7fe0c8', bright: '#c8ffe8', dark: '#1a5a4a' },
+      { main: '#5fd0b8', bright: '#9fe8d0', dark: '#124a3c' },
+    ],
+  },
+  // 6 面 · 蓬莱山辉夜：金 + 玉，八件宝物各一套细节色
+  kaguya: {
+    gold: '#ffe9b0',
+    bright: '#fff8d0',
+    dark: '#7a5a1a',
+    // 6-1 龙颈之玉：五色弹丸
+    jewel: ['#ff9a9a', '#ffd36b', '#8affb0', '#7fd8ff', '#c9a6ff'],
+    // 6-2 耀眼的龙玉
+    dragon: { main: '#ffe080', bright: '#fff8d0', core: '#fff0a0' },
+    // 6-3 佛御石之钵
+    stone: { main: '#c9b98a', deep: '#a89a72' },
+    // 6-4 佛体的金刚石
+    diamond: { main: '#e8fbff', bright: '#ffffff', edge: '#bfeaff' },
+    // 6-5 火鼠的皮衣
+    fire: { main: '#ff9a4d', bright: '#ffd36b', core: '#ffe9b0' },
+    // 6-6 火蜥蜴之盾
+    scale: { main: '#ff7a3d', bright: '#ffb06b' },
+    // 6-7 燕的子安贝
+    swallow: { main: '#bfe4ff', bright: '#eaf7ff' },
+    // 6-8 蓬莱的玉枝
+    branch: { main: '#f2dd8a', flower: '#b8f0a0', leaf: '#8affb0', core: '#fff2c0' },
+  },
+};
+
+/** 取当前符卡色板：共享弹型（萤火/风刃/剑迹…）按 boss.spellIdx 换卡面色，只影响颜色。 */
+function cardPal(base, boss) {
+  const cards = base && base.cards;
+  if (!cards || !cards.length) return base;
+  const idx = Math.max(0, Math.min(cards.length - 1, Number(boss && boss.spellIdx) || 0));
+  return Object.assign({}, base, cards[idx]);
+}
+
 /** 统一取环境：把 Lead 给的 ctx 归一化，缺字段也能安全跑 */
 function env(ctx, boss) {
   const b = ctx.bullets || ctx.bulletsPool || ctx.b;
@@ -106,6 +230,7 @@ export const CUSTOM_PATTERNS = {
   moonHalo(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.rumia, boss);
     const { b, rnd, ringN, varySpeed } = e;
     const dir = e.pat.dir || 1;
     const a0 = (e.pat.angle || 0) + fireT * (p.spin || 0.55) * dir;
@@ -113,7 +238,7 @@ export const CUSTOM_PATTERNS = {
     // 亮面月牙
     b.ring(boss.x, boss.y, n, varySpeed(p.speed || 92), {
       angle: a0,
-      color: p.color || '#c9a6ff',
+      color: p.color || C.bright,
       r: p.r || 5,
       type: B_STAR,
       life: 9,
@@ -124,7 +249,7 @@ export const CUSTOM_PATTERNS = {
     // 暗面月牙：更慢、反向、略小
     b.ring(boss.x, boss.y, Math.max(3, Math.floor(n * 0.5)), varySpeed(p.speed || 92, 0.72), {
       angle: -a0 * 0.8,
-      color: '#6b4bb0',
+      color: C.dark,
       r: Math.max(3, (p.r || 5) - 1),
       type: B_CIRCLE,
       life: 10,
@@ -133,7 +258,7 @@ export const CUSTOM_PATTERNS = {
     // 大月亮：每两拍一颗
     if ((boss.volleys || 0) % 2 === 0) {
       shot(e, boss.x, boss.y, e.aim(), varySpeed(48), {
-        color: '#fff4d6', r: 9, type: B_BIG, life: 12, spin: 0.6,
+        color: C.moon, r: 9, type: B_BIG, life: 12, spin: 0.6,
       });
     }
     void rnd;
@@ -146,6 +271,7 @@ export const CUSTOM_PATTERNS = {
   devour(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e, 0.9)) return;
+    const C = cardPal(PAL.rumia, boss);
     const { rnd, ringN, varySpeed } = e;
     const dir = e.pat.dir || 1;
     const rad = p.radius || 300;
@@ -157,7 +283,7 @@ export const CUSTOM_PATTERNS = {
       const y = boss.y + Math.sin(a) * rad * 0.72;
       // 切向 + 向内：视觉上「被漩涡卷进去」，但不是追踪弹
       shot(e, x, y, a + Math.PI + 0.55 * dir, varySpeed(p.speed || 102), {
-        color: '#2a1a52', r: 5, type: B_CIRCLE, life: 11, turn: 0.3 * dir, scaleIn: 0.2,
+        color: C.dark, r: 5, type: B_CIRCLE, life: 11, turn: 0.3 * dir, scaleIn: 0.2,
       });
     }
     // 顶部的吞噬碎屑（每两拍）
@@ -166,7 +292,7 @@ export const CUSTOM_PATTERNS = {
       for (let i = 0; i < m; i++) {
         const x = boss.x + rnd(-620, 620);
         shot(e, x, boss.y - rnd(80, 200), Math.PI / 2 + rnd(-0.16, 0.16), varySpeed(150, rnd(0.8, 1.25)), {
-          color: '#d9c2ff', r: 4, type: B_STAR, life: 6, spin: 2.2,
+          color: C.bright, r: 4, type: B_STAR, life: 6, spin: 2.2,
         });
       }
     }
@@ -183,6 +309,7 @@ export const CUSTOM_PATTERNS = {
   fireflySwarm(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.wriggle, boss);
     const { rnd, count, varySpeed } = e;
     const n = count(p.n || 6, 3, 14);
     for (let i = 0; i < n; i++) {
@@ -191,7 +318,7 @@ export const CUSTOM_PATTERNS = {
       const x = boss.x + Math.cos(a) * rad;
       const y = boss.y + Math.sin(a) * rad * 0.8;
       shot(e, x, y, a + Math.PI / 2 + rnd(-0.9, 0.9), varySpeed(p.speed || 72, rnd(0.5, 1.6)), {
-        color: rnd(0, 1) > 0.45 ? '#d8ff9a' : '#7ef07a',
+        color: rnd(0, 1) > 0.45 ? C.bright : C.main,
         r: rnd(3, 5),
         type: B_STAR,
         life: 8,
@@ -204,7 +331,7 @@ export const CUSTOM_PATTERNS = {
     // 突然亮起的一只：直的、快的、不讲道理的
     if ((boss.volleys || 0) % 3 === 0) {
       shot(e, boss.x, boss.y, e.aim() + rnd(-0.16, 0.16), varySpeed(220), {
-        color: '#fff2a8', r: 5, type: B_STAR, life: 6, spin: 3,
+        color: C.fire, r: 5, type: B_STAR, life: 6, spin: 3,
       });
     }
     void fireT;
@@ -217,11 +344,12 @@ export const CUSTOM_PATTERNS = {
   bugStorm(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.wriggle, boss);
     const { b, rnd, count, varySpeed } = e;
     const n = count(p.n || 7, 4, 18);
     const base = (e.pat.angle || 0) + Math.sin(fireT * 1.7) * 0.7;
     b.fan(boss.x, boss.y, n, 1.9, base, varySpeed(p.speed || 132), {
-      color: '#b6ff7a',
+      color: C.main,
       r: 3,
       type: B_CIRCLE,
       life: 8,
@@ -229,7 +357,7 @@ export const CUSTOM_PATTERNS = {
       wobbleFreq: rnd(3, 6),
     });
     b.fan(boss.x, boss.y, Math.max(2, Math.floor(n * 0.6)), 2.4, base + Math.PI, varySpeed(p.speed || 132, 0.8), {
-      color: '#6fd85a',
+      color: C.mid,
       r: 3,
       type: B_CIRCLE,
       life: 9,
@@ -242,7 +370,7 @@ export const CUSTOM_PATTERNS = {
       for (let i = 0; i < m; i++) {
         const t = m === 1 ? 0 : (i / (m - 1)) - 0.5;
         shot(e, boss.x, boss.y, a + t * 0.34 + rnd(-0.03, 0.03), varySpeed(250), {
-          color: '#e8ff9a', r: 4, type: B_STAR, life: 6, spin: 2.4,
+          color: C.bright, r: 4, type: B_STAR, life: 6, spin: 2.4,
         });
       }
     }
@@ -256,6 +384,7 @@ export const CUSTOM_PATTERNS = {
   nightFireflies(p, boss, ctx) {
     const e = env(ctx, boss);
     if (!e || !room(e, 0.9)) return;
+    const C = cardPal(PAL.wriggle, boss);
     const { rnd, count, varySpeed } = e;
     // 暗弹：看不见，撞上才知道。密度靠 pressure 自适应收窄。
     const dim = count(p.n || 11, 6, 22);
@@ -263,7 +392,7 @@ export const CUSTOM_PATTERNS = {
       const a = rnd(0, TAU);
       const sp = varySpeed(p.speed || 62, rnd(0.6, 1.35));
       shot(e, boss.x + rnd(-30, 30), boss.y + rnd(-20, 20), a, sp, {
-        color: '#2c3a24', r: 3.5, type: B_CIRCLE, life: 12,
+        color: C.dark, r: 3.5, type: B_CIRCLE, life: 12,
         wobbleAmp: rnd(0, 14), wobbleFreq: rnd(1, 2.5),
       });
     }
@@ -272,7 +401,7 @@ export const CUSTOM_PATTERNS = {
     for (let i = 0; i < lit; i++) {
       const a = e.aim() + rnd(-0.9, 0.9);
       shot(e, boss.x, boss.y, a, varySpeed(p.litSpeed || 88, rnd(0.85, 1.15)), {
-        color: rnd(0, 1) > 0.5 ? '#e8ffb0' : '#c8ff8a',
+        color: rnd(0, 1) > 0.5 ? C.fire : C.bright,
         r: 5,
         type: B_STAR,
         life: 11,
@@ -295,12 +424,13 @@ export const CUSTOM_PATTERNS = {
   icicleFall(p, boss, ctx) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.cirno, boss);
     const { rnd, count, varySpeed } = e;
     const n = count(p.n || 5, 3, 12);
     for (let i = 0; i < n; i++) {
       const x = boss.x + rnd(-1, 1) * 540;
       shot(e, x, boss.y - rnd(60, 190), Math.PI / 2 + rnd(-0.05, 0.05), varySpeed(p.speed || 175, rnd(0.85, 1.25)), {
-        color: rnd(0, 1) > 0.4 ? '#d8f4ff' : '#ffffff',
+        color: rnd(0, 1) > 0.4 ? C.main : C.bright,
         r: 3,
         type: B_RICE,
         rot: Math.PI / 2,
@@ -314,7 +444,7 @@ export const CUSTOM_PATTERNS = {
       for (let i = 0; i < m; i++) {
         const x = boss.x + rnd(-560, 560);
         shot(e, x, boss.y + 460, -Math.PI / 2 + rnd(-0.22, 0.22), varySpeed(120), {
-          color: '#bfeaff', r: 3, type: B_RICE, rot: -Math.PI / 2, life: 5,
+          color: C.spark, r: 3, type: B_RICE, rot: -Math.PI / 2, life: 5,
         });
       }
     }
@@ -327,6 +457,7 @@ export const CUSTOM_PATTERNS = {
   hailSurge(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.cirno, boss);
     const { rnd, count, varySpeed, clamp } = e;
     const gust = clamp(0.7 + 0.6 * Math.abs(Math.sin(fireT * 0.9)), 0.7, 1.3);
     const n = count(p.n || 8, 5, 18);
@@ -334,7 +465,7 @@ export const CUSTOM_PATTERNS = {
     for (let i = 0; i < n; i++) {
       const x = boss.x + rnd(-660, 660);
       shot(e, x, boss.y - rnd(40, 200), Math.PI / 2 + side * 0.42, varySpeed(p.speed || 210) * gust, {
-        color: rnd(0, 1) > 0.5 ? '#cfefff' : '#ffffff',
+        color: rnd(0, 1) > 0.5 ? C.main : C.bright,
         r: rnd(3, 4.5),
         type: B_CIRCLE,
         life: 6,
@@ -352,13 +483,14 @@ export const CUSTOM_PATTERNS = {
   perfectFreeze(p, boss, ctx) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.cirno, boss);
     const { b, rnd, ringN, varySpeed } = e;
     if ((boss.volleys || 0) % 3 !== 0) {
       // 冻结的针：几乎静止，只轻轻飘
       const n = ringN(p.n || 14, 8, 26);
       b.ring(boss.x, boss.y, n, 10, {
         angle: rnd(0, TAU),
-        color: '#bfefff',
+        color: C.main,
         r: 5,
         type: B_STAR,
         life: 2.2,
@@ -369,7 +501,7 @@ export const CUSTOM_PATTERNS = {
     const n = ringN(p.n || 14, 8, 26);
     const snapAt = { x: boss.x, y: boss.y };
     b.ring(snapAt.x, snapAt.y, n, 12, {
-      angle: rnd(0, TAU), color: '#8fd8f8', r: 5, type: B_STAR, life: 1.6, spin: 1.4,
+      angle: rnd(0, TAU), color: C.mid, r: 5, type: B_STAR, life: 1.6, spin: 1.4,
     });
     // 半秒后碎开：延迟队列自动在切卡时清空，不会漏到下一张卡
     try {
@@ -378,13 +510,13 @@ export const CUSTOM_PATTERNS = {
         if (!b2) return;
         if (b2.activeCount > (boss.bulletBudget || 1180) * 0.94) return;
         b2.ring(snapAt.x, snapAt.y, n, varySpeed(p.speed || 190), {
-          angle: 0, color: '#ffffff', r: 4, type: B_RICE, life: 6, rot: Math.PI / 2, spin: 0,
+          angle: 0, color: C.bright, r: 4, type: B_RICE, life: 6, rot: Math.PI / 2, spin: 0,
         });
       });
     } catch (err) {
       /* 没有延迟队列时退化为直接炸开 */
       b.ring(boss.x, boss.y, n, varySpeed(p.speed || 190), {
-        angle: 0, color: '#ffffff', r: 4, type: B_RICE, life: 6,
+        angle: 0, color: C.bright, r: 4, type: B_RICE, life: 6,
       });
     }
   },
@@ -396,6 +528,7 @@ export const CUSTOM_PATTERNS = {
   diamondMatrix(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.cirno, boss);
     const { rnd, clamp, varySpeed } = e;
     const dir = e.pat.dir || 1;
     const arms = clamp(Math.round(p.arms || 4), 3, 8);
@@ -406,7 +539,7 @@ export const CUSTOM_PATTERNS = {
       for (let j = 0; j < rows; j++) {
         const rad = 40 + j * 62;
         shot(e, boss.x + Math.cos(a) * rad, boss.y + Math.sin(a) * rad * 0.9, a, varySpeed(p.speed || 135, 1 + j * 0.14), {
-          color: j === 0 ? '#e8fbff' : '#bfeaff',
+          color: j === 0 ? C.spark : C.main,
           r: 4.5,
           type: B_STAR,
           life: 9,
@@ -420,7 +553,7 @@ export const CUSTOM_PATTERNS = {
       for (let i = 0; i < m; i++) {
         const x = boss.x + rnd(-640, 640);
         shot(e, x, boss.y - rnd(30, 140), Math.PI / 2 + rnd(-0.3, 0.3), varySpeed(90), {
-          color: '#ffffff', r: 2.5, type: B_STAR, life: 7, spin: 3, wobbleAmp: 12, wobbleFreq: 2,
+          color: C.bright, r: 2.5, type: B_STAR, life: 7, spin: 3, wobbleAmp: 12, wobbleFreq: 2,
         });
       }
     }
@@ -437,6 +570,7 @@ export const CUSTOM_PATTERNS = {
   kamaitachi(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.aya, boss);
     const { rnd, count, varySpeed } = e;
     const n = count(p.n || 11, 6, 20);
     const base = (e.pat.angle || Math.PI / 2) + Math.sin(fireT * 0.8) * 0.55;
@@ -445,13 +579,13 @@ export const CUSTOM_PATTERNS = {
       const a = base + t * 1.25 + rnd(-0.02, 0.02);
       const sp = varySpeed(p.speed || 330, 1 - Math.abs(t) * 0.25);
       shot(e, boss.x, boss.y, a, sp, {
-        color: '#ffe6c8', r: 4, type: B_RICE, rot: a - Math.PI / 2, life: 7, spin: 0,
+        color: C.pale, r: 4, type: B_RICE, rot: a - Math.PI / 2, life: 7, spin: 0,
       });
     }
     // 扇轴：一颗慢速的「风眼」，提示扇面的转轴
     if ((boss.volleys || 0) % 2 === 0) {
       shot(e, boss.x, boss.y, base, varySpeed(60), {
-        color: '#ff9a9a', r: 8, type: B_BIG, life: 9, spin: 0.5,
+        color: C.bright, r: 8, type: B_BIG, life: 9, spin: 0.5,
       });
     }
   },
@@ -463,6 +597,7 @@ export const CUSTOM_PATTERNS = {
   windRush(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e, 0.92)) return;
+    const C = cardPal(PAL.aya, boss);
     const { b, rnd, clamp, ringN, count, varySpeed } = e;
     const dir = e.pat.dir || 1;
     const arms = clamp(Math.round(p.arms || 5), 3, 9);
@@ -470,13 +605,13 @@ export const CUSTOM_PATTERNS = {
     for (let k = 0; k < arms; k++) {
       const a = a0 + (k / arms) * TAU + rnd(-0.03, 0.03);
       shot(e, boss.x, boss.y, a, varySpeed(p.speed || 165, rnd(0.94, 1.08)), {
-        color: '#ff8f8f', r: 4, type: B_RICE, rot: a - Math.PI / 2, life: 7,
+        color: C.main, r: 4, type: B_RICE, rot: a - Math.PI / 2, life: 7,
       });
     }
     if ((boss.volleys || 0) % 2 === 0) {
       const n = ringN(p.ring || 13, 8, 22);
       b.ring(boss.x, boss.y, n, varySpeed(p.ringSpeed || 118), {
-        angle: -a0 * 0.7, color: '#ffd0c0', r: 3, type: B_CIRCLE, life: 9,
+        angle: -a0 * 0.7, color: C.pale, r: 3, type: B_CIRCLE, life: 9,
       });
     }
     if ((boss.volleys || 0) % 3 === 0) {
@@ -484,7 +619,7 @@ export const CUSTOM_PATTERNS = {
       const a = e.aim();
       for (let i = 0; i < m; i++) {
         shot(e, boss.x, boss.y, a + rnd(-0.1, 0.1), varySpeed(300), {
-          color: '#ffffff', r: 3, type: B_RICE, rot: a - Math.PI / 2, life: 6,
+          color: C.bright, r: 3, type: B_RICE, rot: a - Math.PI / 2, life: 6,
         });
       }
     }
@@ -497,6 +632,7 @@ export const CUSTOM_PATTERNS = {
   crossroad(p, boss, ctx) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.aya, boss);
     const { b, rnd, ringN, varySpeed } = e;
     const dirs = 8;
     const k = (boss.volleys || 0) % dirs;
@@ -504,7 +640,7 @@ export const CUSTOM_PATTERNS = {
     for (let j = 0; j < 3; j++) {
       const sp = varySpeed(p.speed || 195, 1 + j * 0.16);
       shot(e, boss.x, boss.y, a + (j - 1) * 0.035, sp, {
-        color: j === 1 ? '#ffffff' : '#ffd8b0',
+        color: j === 1 ? C.bright : C.pale,
         r: j === 1 ? 4 : 3,
         type: B_RICE,
         rot: a - Math.PI / 2,
@@ -513,7 +649,7 @@ export const CUSTOM_PATTERNS = {
     }
     if ((boss.volleys || 0) % 2 === 0) {
       b.ring(boss.x, boss.y, ringN(8, 8, 8), varySpeed(58), {
-        angle: a, color: '#ff9a9a', r: 3.5, type: B_CIRCLE, life: 10, turn: 0.12 * (e.pat.dir || 1),
+        angle: a, color: C.main, r: 3.5, type: B_CIRCLE, life: 10, turn: 0.12 * (e.pat.dir || 1),
       });
     }
   },
@@ -525,13 +661,14 @@ export const CUSTOM_PATTERNS = {
   downburst(p, boss, ctx) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.aya, boss);
     const { rnd, count, varySpeed } = e;
     const n = count(p.n || 8, 5, 16);
     for (let i = 0; i < n; i++) {
       const t = n === 1 ? 0 : i / (n - 1) - 0.5;
       const x = boss.x + t * 900 * rnd(0.75, 1.15);
       shot(e, x, boss.y - 240, Math.PI / 2 + t * 0.18, varySpeed(p.speed || 150, rnd(0.9, 1.2)), {
-        color: '#ffb0a0', r: 4, type: B_RICE, rot: Math.PI / 2, life: 6, accel: 260,
+        color: C.bright, r: 4, type: B_RICE, rot: Math.PI / 2, life: 6, accel: 260,
       });
     }
     if ((boss.volleys || 0) % 2 === 0) {
@@ -540,7 +677,7 @@ export const CUSTOM_PATTERNS = {
         for (let i = 0; i < m; i++) {
           const y = boss.y + rnd(60, 420);
           shot(e, boss.x + s * 620, y, s > 0 ? Math.PI : 0, varySpeed(120, rnd(0.8, 1.3)), {
-            color: '#d94a4a', r: 4, type: B_CIRCLE, life: 7, wobbleAmp: 12, wobbleFreq: 2,
+            color: C.main, r: 4, type: B_CIRCLE, life: 7, wobbleAmp: 12, wobbleFreq: 2,
           });
         }
       }
@@ -555,6 +692,7 @@ export const CUSTOM_PATTERNS = {
   fantasyStorm(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e, 0.9)) return;
+    const C = cardPal(PAL.aya, boss);
     const { b, rnd, clamp, ringN, count, varySpeed } = e;
     const dir = e.pat.dir || 1;
     const cycle = p.cycle || 5.5;
@@ -563,10 +701,10 @@ export const CUSTOM_PATTERNS = {
       // 风墙：两层反向的稀疏环，缝隙在动
       const n = ringN(p.ring || 16, 10, 26);
       b.ring(boss.x, boss.y, n, varySpeed(120), {
-        angle: fireT * 0.5 * dir, color: '#ff4d6a', r: 4, type: B_CIRCLE, life: 9,
+        angle: fireT * 0.5 * dir, color: C.main, r: 4, type: B_CIRCLE, life: 9,
       });
       b.ring(boss.x, boss.y, Math.max(8, n - 4), varySpeed(160, 0.9), {
-        angle: -fireT * 0.35 * dir, color: '#ffd8a8', r: 3.5, type: B_CIRCLE, life: 8,
+        angle: -fireT * 0.35 * dir, color: C.pale, r: 3.5, type: B_CIRCLE, life: 8,
       });
     } else if (phase === 1) {
       // 龙卷：双臂 + 螺旋
@@ -575,7 +713,7 @@ export const CUSTOM_PATTERNS = {
       for (let k = 0; k < arms; k++) {
         const a = a0 + (k / arms) * TAU;
         shot(e, boss.x, boss.y, a, varySpeed(210, rnd(0.92, 1.1)), {
-          color: '#ff9a9a', r: 4, type: B_RICE, rot: a - Math.PI / 2, life: 7, turn: 0.45 * dir,
+          color: C.bright, r: 4, type: B_RICE, rot: a - Math.PI / 2, life: 7, turn: 0.45 * dir,
         });
       }
     } else {
@@ -584,7 +722,7 @@ export const CUSTOM_PATTERNS = {
       for (let i = 0; i < n; i++) {
         const x = boss.x + rnd(-660, 660);
         shot(e, x, boss.y - rnd(40, 180), Math.PI / 2 + (dir > 0 ? 0.55 : -0.55), varySpeed(200, rnd(0.85, 1.2)), {
-          color: '#ffffff', r: 3, type: B_CIRCLE, life: 6,
+          color: C.pale, r: 3, type: B_CIRCLE, life: 6,
         });
       }
     }
@@ -601,23 +739,24 @@ export const CUSTOM_PATTERNS = {
   mothLure(p, boss, ctx) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.yuyuko, boss);
     const { b, rnd, ringN, varySpeed } = e;
     // 灯：慢速大光球，朝玩家方向轻推
     shot(e, boss.x, boss.y, e.aim(), varySpeed(p.lampSpeed || 52), {
-      color: '#fff2c0', r: 9, type: B_BIG, life: 13, spin: 0.5,
+      color: C.main, r: 9, type: B_BIG, life: 13, spin: 0.5,
     });
     // 蛾群：同一旋向的环，像绕着灯转
     const dir = e.pat.dir || 1;
     const n = ringN(p.m || 13, 8, 24);
     b.ring(boss.x, boss.y, n, varySpeed(p.speed || 82), {
-      angle: rnd(0, TAU), color: '#ffc2e8', r: 4, type: B_STAR, life: 10, turn: 0.34 * dir, spin: 1.2,
+      angle: rnd(0, TAU), color: C.bright, r: 4, type: B_STAR, life: 10, turn: 0.34 * dir, spin: 1.2,
     });
     // 灯焰的爆点：每隔几拍
     if ((boss.volleys || 0) % 4 === 0) {
       const m = e.count(p.flare || 6, 3, 10);
       for (let i = 0; i < m; i++) {
         shot(e, boss.x, boss.y, rnd(0, TAU), varySpeed(130), {
-          color: '#b48cff', r: 3, type: B_CIRCLE, life: 7,
+          color: C.deep, r: 3, type: B_CIRCLE, life: 7,
         });
       }
     }
@@ -630,6 +769,7 @@ export const CUSTOM_PATTERNS = {
   flowerDance(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.yuyuko, boss);
     const { rnd, clamp, varySpeed } = e;
     const dir = e.pat.dir || 1;
     const petals = clamp(p.petals || 5, 2, 9);
@@ -638,7 +778,7 @@ export const CUSTOM_PATTERNS = {
       const a = a0 + (k / petals) * TAU;
       for (const s of [-1, 1]) {
         shot(e, boss.x, boss.y, a, varySpeed(p.speed || 118, rnd(0.9, 1.12)), {
-          color: s > 0 ? '#ffc2e0' : '#fff0f6',
+          color: s > 0 ? C.bright : C.main,
           r: rnd(3.5, 5),
           type: B_STAR,
           life: 9,
@@ -658,6 +798,7 @@ export const CUSTOM_PATTERNS = {
   butterflyWaltz(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.yuyuko, boss);
     const { rnd, count, varySpeed } = e;
     const dir = e.pat.dir || 1;
     const beat = Math.floor(fireT / (p.beat || 0.42)) % 3;
@@ -667,7 +808,7 @@ export const CUSTOM_PATTERNS = {
       const a = a0 + (k / n) * (TAU / 3);
       for (const s of [-1, 1]) {
         shot(e, boss.x, boss.y, a, varySpeed(p.speed || 128, rnd(0.92, 1.1)), {
-          color: s > 0 ? '#d9a0ff' : '#9fb0ff',
+          color: s > 0 ? C.bright : C.deep,
           r: 5,
           type: B_STAR,
           life: 10,
@@ -680,7 +821,7 @@ export const CUSTOM_PATTERNS = {
     if (beat === 2) {
       const m = e.ringN(p.ring || 10, 8, 18);
       e.b.ring(boss.x, boss.y, m, varySpeed(70), {
-        angle: a0, color: '#ffd8f0', r: 3, type: B_CIRCLE, life: 10,
+        angle: a0, color: C.main, r: 3, type: B_CIRCLE, life: 10,
       });
     }
   },
@@ -692,6 +833,7 @@ export const CUSTOM_PATTERNS = {
   sinfulRealm(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e, 0.88)) return;
+    const C = cardPal(PAL.yuyuko, boss);
     const { b, rnd, clamp, count, varySpeed } = e;
     // 纵列：每列间隔约 120px，列数越少缝越宽
     const cols = clamp(Math.round(p.cols || 7), 5, 10);
@@ -700,7 +842,7 @@ export const CUSTOM_PATTERNS = {
     for (let i = 0; i < cols; i++) {
       const x = boss.x - span / 2 + (i / (cols - 1)) * span + drift;
       shot(e, x, boss.y - rnd(0, 160), Math.PI / 2 + rnd(-0.06, 0.06), varySpeed(p.speed || 96, rnd(0.9, 1.15)), {
-        color: i % 2 === 0 ? '#8f5bb0' : '#b98fd9',
+        color: i % 2 === 0 ? C.dark : C.deep,
         r: 5,
         type: B_CIRCLE,
         life: 11,
@@ -715,7 +857,7 @@ export const CUSTOM_PATTERNS = {
       for (let i = 0; i < m; i++) {
         const x = boss.x - 600 + (i / (m - 1)) * 1200;
         shot(e, x, y, 0, varySpeed(p.chainSpeed || 74), {
-          color: '#d9b0ff', r: 4, type: B_RICE, rot: 0, life: 9,
+          color: C.bright, r: 4, type: B_RICE, rot: 0, life: 9,
         });
       }
     }
@@ -728,13 +870,14 @@ export const CUSTOM_PATTERNS = {
   nightSakura(p, boss, ctx) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.yuyuko, boss);
     const { b, rnd, ringN, count, varySpeed } = e;
     const n = count(p.n || 9, 5, 16);
     for (let i = 0; i < n; i++) {
       const x = boss.x + rnd(-640, 640);
       const y = boss.y - rnd(0, 140);
       shot(e, x, y, Math.PI / 2 + rnd(-0.2, 0.2), varySpeed(p.speed || 118, rnd(0.85, 1.2)), {
-        color: rnd(0, 1) > 0.5 ? '#ffd0e8' : '#ff8fd0',
+        color: rnd(0, 1) > 0.5 ? C.main : C.rose,
         r: rnd(3.5, 5),
         type: B_STAR,
         life: 10,
@@ -745,7 +888,7 @@ export const CUSTOM_PATTERNS = {
     }
     if ((boss.volleys || 0) % 2 === 0) {
       b.ring(boss.x, boss.y, ringN(p.ring || 10, 8, 18), varySpeed(64), {
-        angle: rnd(0, TAU), color: '#ffe6f4', r: 3, type: B_STAR, life: 11, spin: 1.2,
+        angle: rnd(0, TAU), color: C.main, r: 3, type: B_STAR, life: 11, spin: 1.2,
       });
     }
   },
@@ -757,6 +900,7 @@ export const CUSTOM_PATTERNS = {
   resurrectionBloom(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
+    const C = cardPal(PAL.yuyuko, boss);
     const { b, rnd, ringN, varySpeed } = e;
     const dir = e.pat.dir || 1;
     const step = (boss.volleys || 0) % 8;
@@ -765,7 +909,7 @@ export const CUSTOM_PATTERNS = {
     for (let i = 0; i < arms; i++) {
       const a = a0 + (i / arms) * TAU;
       shot(e, boss.x, boss.y, a, varySpeed(p.speed || 96, 1 + step * 0.05), {
-        color: i % 2 === 0 ? '#ffc8ea' : '#e0a0ff',
+        color: i % 2 === 0 ? C.bright : C.deep,
         r: 4.5,
         type: B_STAR,
         life: 10,
@@ -774,7 +918,7 @@ export const CUSTOM_PATTERNS = {
     }
     if (step === 7) {
       b.ring(boss.x, boss.y, ringN(p.ring || 16, 10, 24), varySpeed(120), {
-        angle: rnd(0, TAU), color: '#ffe6f4', r: 3.5, type: B_CIRCLE, life: 9,
+        angle: rnd(0, TAU), color: C.main, r: 3.5, type: B_CIRCLE, life: 9,
       });
     }
   },
@@ -791,7 +935,7 @@ export const CUSTOM_PATTERNS = {
     const e = env(ctx, boss);
     if (!e || !room(e)) return;
     const { rnd, clamp, varySpeed } = e;
-    const colors = p.colors || ['#ff8a8a', '#ffd36b', '#8affb0', '#7fd8ff', '#c9a6ff'];
+    const colors = p.colors || [PAL.kaguya.jewel[0], PAL.kaguya.jewel[1], PAL.kaguya.jewel[2], PAL.kaguya.jewel[3], PAL.kaguya.jewel[4]];
     const ci = (boss.volleys || 0) % colors.length;
     const arms = clamp(Math.round(p.arms || 5), 3, 8);
     const dir = e.pat.dir || 1;
@@ -830,12 +974,12 @@ export const CUSTOM_PATTERNS = {
     for (let k = 0; k < rays; k++) {
       const a = a0 + (k / rays) * TAU;
       shot(e, boss.x, boss.y, a, varySpeed(p.speed || 300), {
-        color: '#fff0a0', r: 4, type: B_RICE, rot: a - Math.PI / 2, life: 6,
+        color: PAL.kaguya.gold, r: 4, type: B_RICE, rot: a - Math.PI / 2, life: 6,
       });
     }
     if ((boss.volleys || 0) % 2 === 0) {
       shot(e, boss.x, boss.y, e.aim() + rnd(-0.2, 0.2), varySpeed(p.orbSpeed || 62), {
-        color: '#ffe080', r: 11, type: B_BIG, life: 14, spin: 0.5,
+        color: PAL.kaguya.dragon.main, r: 11, type: B_BIG, life: 14, spin: 0.5,
       });
     }
   },
@@ -867,7 +1011,7 @@ export const CUSTOM_PATTERNS = {
       const y = e.py + Math.sin(a) * R;
       // 向心：慢速，给反应时间
       shot(e, x, y, a + Math.PI, varySpeed(p.speed || 74), {
-        color: '#d8d0b0', r: 4.5, type: B_CIRCLE, life: 7, spin: 0.6,
+        color: PAL.kaguya.stone.main, r: 4.5, type: B_CIRCLE, life: 7, spin: 0.6,
       });
     }
     // 落石：从上方砸向玩家当前位置
@@ -875,7 +1019,7 @@ export const CUSTOM_PATTERNS = {
       const m = e.count(p.stones || 2, 1, 4);
       for (let i = 0; i < m; i++) {
         shot(e, e.px + rnd(-120, 120), boss.y - rnd(40, 180), Math.PI / 2, varySpeed(p.stoneSpeed || 165, rnd(0.9, 1.2)), {
-          color: '#b0a890', r: 7, type: B_BIG, life: 6, spin: 0.4,
+          color: PAL.kaguya.stone.deep, r: 7, type: B_BIG, life: 6, spin: 0.4,
         });
       }
     }
@@ -897,7 +1041,7 @@ export const CUSTOM_PATTERNS = {
       for (let j = 0; j < 2; j++) {
         const rad = 90 + j * 80;
         shot(e, boss.x + Math.cos(a) * rad, boss.y + Math.sin(a) * rad, a, varySpeed(p.speed || 130, 1 + j * 0.12), {
-          color: j === 0 ? '#e8fbff' : '#ffffff',
+          color: j === 0 ? PAL.kaguya.diamond.main : PAL.kaguya.diamond.bright,
           r: 4.5,
           type: B_STAR,
           life: 9,
@@ -912,7 +1056,7 @@ export const CUSTOM_PATTERNS = {
       for (let k = 0; k < rays; k++) {
         const a = base + (k / rays) * TAU;
         shot(e, boss.x, boss.y, a, varySpeed(p.laserSpeed || 330), {
-          color: '#bfeaff', r: 3, type: B_RICE, rot: a - Math.PI / 2, life: 5,
+          color: PAL.kaguya.diamond.edge, r: 3, type: B_RICE, rot: a - Math.PI / 2, life: 5,
         });
       }
     }
@@ -933,7 +1077,7 @@ export const CUSTOM_PATTERNS = {
     for (let k = 0; k < arms; k++) {
       const a = a0 + (k / arms) * TAU;
       shot(e, boss.x, boss.y, a, varySpeed(p.speed || 78), {
-        color: k % 2 === 0 ? '#ff9a4d' : '#ffd36b',
+        color: k % 2 === 0 ? PAL.kaguya.fire.main : PAL.kaguya.fire.bright,
         r: 5,
         type: B_CIRCLE,
         life: 12,
@@ -946,7 +1090,7 @@ export const CUSTOM_PATTERNS = {
     for (let i = 0; i < m; i++) {
       const x = boss.x + rnd(-520, 520);
       shot(e, x, boss.y + rnd(90, 340), -Math.PI / 2 + rnd(-0.35, 0.35), varySpeed(p.emberSpeed || 118), {
-        color: '#ffd36b', r: 3, type: B_STAR, life: 7, spin: 2.6,
+        color: PAL.kaguya.fire.core, r: 3, type: B_STAR, life: 7, spin: 2.6,
       });
     }
   },
@@ -969,7 +1113,7 @@ export const CUSTOM_PATTERNS = {
         const a = a0 + (j - 1) * 0.13;
         const rad = 110 + j * 26;
         shot(e, boss.x + Math.cos(a) * rad, boss.y + Math.sin(a) * rad, a, varySpeed(p.speed || 145, rnd(0.92, 1.12)), {
-          color: j === 1 ? '#ff7a3d' : '#ffb06b',
+          color: j === 1 ? PAL.kaguya.scale.main : PAL.kaguya.scale.bright,
           r: 4,
           type: B_CIRCLE,
           life: 8,
@@ -994,12 +1138,12 @@ export const CUSTOM_PATTERNS = {
       // 燕尾：两叉
       for (const s of [-1, 1]) {
         shot(e, boss.x, boss.y, a + s * 0.055, sp, {
-          color: '#ffd8a0', r: 3.5, type: B_RICE, rot: a - Math.PI / 2, life: 6,
+          color: PAL.kaguya.swallow.main, r: 3.5, type: B_RICE, rot: a - Math.PI / 2, life: 6,
         });
       }
       // 残影：慢速沿同向，作为「燕迹」
       shot(e, boss.x, boss.y, a, sp * 0.42, {
-        color: '#fff2d0', r: 2.5, type: B_STAR, life: 7, spin: 2.2,
+        color: PAL.kaguya.swallow.bright, r: 2.5, type: B_STAR, life: 7, spin: 2.2,
       });
     }
   },
@@ -1016,7 +1160,7 @@ export const CUSTOM_PATTERNS = {
     const stems = clamp(Math.round(p.stems || 3), 2, 5);
     const base = (e.pat.angle || 0) + fireT * 0.4 * dir;
     const sp0 = varySpeed(p.speed || 92);
-    const colors = p.colors || ['#ffe9b0', '#ffc2e0', '#b0ffd8'];
+    const colors = p.colors || [PAL.kaguya.branch.main, PAL.kaguya.branch.flower, PAL.kaguya.branch.leaf];
     for (let s = 0; s < stems; s++) {
       const aMain = base + (s / stems) * TAU;
       for (let b = -1; b <= 1; b++) {
@@ -1046,7 +1190,7 @@ export const CUSTOM_PATTERNS = {
               x: boss.x, y: boss.y,
               vx: Math.cos(a) * sp0 * 0.8,
               vy: Math.sin(a) * sp0 * 0.8,
-              color: '#fff2c0', r: 3, type: B_STAR, life: 10, spin: 1.6,
+              color: PAL.kaguya.branch.core, r: 3, type: B_STAR, life: 10, spin: 1.6,
             });
           }
         });
@@ -1069,6 +1213,7 @@ export const CUSTOM_PATTERNS = {
   presentSlash(p, boss, ctx) {
     const e = env(ctx, boss);
     if (!e || !room(e, 0.9)) return;
+    const C = cardPal(PAL.youmu, boss);
     const { b, rnd, count, varySpeed, clamp, aim } = e;
     const n = count(p.n || 9, 3, 24);
     const sp = varySpeed(p.speed || 290);
@@ -1076,7 +1221,7 @@ export const CUSTOM_PATTERNS = {
     const a0 = aim();
     // 本体：宽扇斩
     b.fan(boss.x, boss.y, n, spread, a0, sp, {
-      color: p.color || e.color,
+      color: p.color || C.main,
       r: 4, type: B_RICE, life: 6, rot: a0,
       wobbleAmp: 5, wobbleFreq: 6,
     });
@@ -1096,7 +1241,7 @@ export const CUSTOM_PATTERNS = {
     if (ph) {
       const off = rnd(0.45, 0.8) * (rnd(0, 1) < 0.5 ? -1 : 1);
       b.fan(ph.x, ph.y, Math.max(2, Math.round(n * 0.5)), spread * 0.62, a0 + off, sp * 0.78, {
-        color: '#c8ffe8', r: 3.5, type: B_RICE, life: 6, rot: a0 + off,
+        color: C.bright, r: 3.5, type: B_RICE, life: 6, rot: a0 + off,
       });
     }
   },
@@ -1108,13 +1253,14 @@ export const CUSTOM_PATTERNS = {
   eternalSlash(p, boss, ctx) {
     const e = env(ctx, boss);
     if (!e || !room(e, 0.86)) return;
+    const C = cardPal(PAL.youmu, boss);
     const { b, rnd, count, varySpeed, clamp, aim } = e;
     const n = count(p.n || 5, 2, 14);
     const sp = varySpeed(p.speed || 260);
     const a0 = aim();
     // 本体：第一刀，窄而快
     b.fan(boss.x, boss.y, n, clamp((p.spread || 0.62) * e.pat.spreadScale, 0.3, 1.4), a0, sp, {
-      color: p.color || e.color, r: 4, type: B_RICE, life: 5.5, rot: a0,
+      color: p.color || C.main, r: 4, type: B_RICE, life: 5.5, rot: a0,
     });
     // 半灵：三连斩，每拍按玩家「当时」的位置重算方向
     const stages = clamp(Math.round(p.stages || 3), 1, 4);
@@ -1136,7 +1282,7 @@ export const CUSTOM_PATTERNS = {
               x: src.x, y: src.y,
               vx: Math.cos(a) * sp * 1.04,
               vy: Math.sin(a) * sp * 1.04,
-              color: '#c8ffe8', r: 3.5, type: B_RICE, life: 5.5,
+              color: C.bright, r: 3.5, type: B_RICE, life: 5.5,
               rot: ang, scaleIn: 0.1,
             });
           }
@@ -1154,6 +1300,7 @@ export const CUSTOM_PATTERNS = {
   phantomSwordArray(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e, 0.88)) return;
+    const C = cardPal(PAL.youmu, boss);
     const { rnd, ringN, count, varySpeed, clamp } = e;
     const ph = phantomSrc(e);
     const cx = ph ? ph.x : boss.x;
@@ -1178,7 +1325,7 @@ export const CUSTOM_PATTERNS = {
       }
       if (blocked) continue;
       shot(e, cx, cy, a, sp * rnd(0.92, 1.08), {
-        color: p.color || e.color, r: 4, type: B_STAR, life: 7.5,
+        color: p.color || C.main, r: 4, type: B_STAR, life: 7.5,
         spin: 1.3, wobbleAmp: 4, wobbleFreq: 1.4,
       });
     }
@@ -1189,7 +1336,7 @@ export const CUSTOM_PATTERNS = {
       for (let i = 0; i < m; i++) {
         const x = e.px + (i - (m - 1) / 2) * 46 + rnd(-6, 6);
         shot(e, x, topY, Math.PI / 2 + rnd(-0.05, 0.05), sp * 1.25, {
-          color: '#e6fff5', r: 4.5, type: B_RICE, life: 9,
+          color: C.bright, r: 4.5, type: B_RICE, life: 9,
         });
       }
     }
@@ -1202,6 +1349,7 @@ export const CUSTOM_PATTERNS = {
   spiritTrace(p, boss, ctx, fireT) {
     const e = env(ctx, boss);
     if (!e || !room(e, 0.9)) return;
+    const C = cardPal(PAL.youmu, boss);
     const { b, rnd, count, varySpeed } = e;
     const sp = varySpeed(p.speed || 132);
     const ph = phantomSrc(e);
@@ -1209,7 +1357,7 @@ export const CUSTOM_PATTERNS = {
       const n = count(p.n || 8, 3, 22);
       b.ring(ph.x, ph.y, n, sp, {
         angle: (e.pat.angle || 0) + fireT * 1.05 * (e.pat.dir || 1),
-        color: p.color || '#c8ffe8', r: 5, type: B_STAR, life: 8.5,
+        color: p.color || C.bright, r: 5, type: B_STAR, life: 8.5,
         spin: 0.8, wobbleAmp: 12, wobbleFreq: 1.2,
       });
     }
@@ -1218,7 +1366,7 @@ export const CUSTOM_PATTERNS = {
     const a0 = e.aim();
     for (let i = 0; i < m; i++) {
       shot(e, boss.x, boss.y, a0 + (i - (m - 1) / 2) * 0.16 + rnd(-0.04, 0.04), sp * 1.3, {
-        color: p.color || e.color, r: 4, type: B_CIRCLE, life: 7,
+        color: p.color || C.main, r: 4, type: B_CIRCLE, life: 7,
       });
     }
   },

@@ -100,7 +100,8 @@
 | --- | --- | --- |
 | 主回归 | **36 / 36 通过** | `_pt/lead_regression/final_run2.log` |
 | 本轮修复验收 | **11 / 11 通过** | `_pt/lead_accept/report.json`、`final2.log` |
-| 第 5 面妖梦坡道 | 91 通过 0 失败 | `node tools/_verify_stage5_youmu.mjs` |
+| 第 5 面短图改造（取消第一个道中 → 开场准备区 4P+1UP → 妖梦 → 击破掉 1UP → 第二道中 → 幽幽子） | 130 通过 0 失败 | `node tools/_verify_stage5_youmu.mjs` |
+| 第 5 面短图浏览器冒烟（真实走位捡 4P+1UP、击破掉落、检查点、关底触发、1UP 徽章截图） | 全部通过（w=6656 / 208 列） | `node tools/_verify_stage5_short.mjs` |
 | 妖梦实机走位 | 全部通过（moved=3547px、stuckFrames=0） | `node tools/_verify_youmu_live.mjs` |
 | 检查点审计 | 全关卡 0 异常 | `node tools/_audit_checkpoints.mjs` |
 | 暂停重开 | 10 项断言全过 | `_pt/lead_pause_restart.json` |
@@ -109,7 +110,7 @@
 | 真人流程 | 90+ 截图、无 JS 错误 | `_pt/human/report.md` |
 | 代码审计 | P0=0；P1 1 条（已修）；P2 9 条（已处理） | `_pt/audit/report.md`、`bugs.json` |
 
-本轮新增的可复跑脚本：`tools/_lead_accept.mjs`、`_lead_pit.mjs`、`_lead_stage_load.mjs`、`_lead_fgshot.mjs`、`_lead_deathfall.mjs`、`_lead_p2.mjs`、`_lead_pause_restart.mjs`、`_lead_pauseidx.mjs`、`_lead_dpr.mjs`、`_audit_maxhp.mjs`、`_audit_checkpoints.mjs`、`_lead_boss3.sh`。
+本轮新增的可复跑脚本：`tools/_verify_stage5_youmu.mjs`、`tools/_verify_stage5_short.mjs`、`tools/_lead_accept.mjs`、`_lead_pit.mjs`、`_lead_stage_load.mjs`、`_lead_fgshot.mjs`、`_lead_deathfall.mjs`、`_lead_p2.mjs`、`_lead_pause_restart.mjs`、`_lead_pauseidx.mjs`、`_lead_dpr.mjs`、`_audit_maxhp.mjs`、`_audit_checkpoints.mjs`、`_lead_boss3.sh`。
 
 ---
 

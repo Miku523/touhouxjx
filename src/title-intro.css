@@ -1,0 +1,129 @@
+/* ============================================================
+   标题开屏动画（#overlay.title-mode.intro）
+   ------------------------------------------------------------
+   由 src/main.js 的 _playTitleIntro() 在启动幕揭晓 / 从子页回到标题时
+   给 overlay 加 .intro 触发；人物立绘的滑入由 canvas 的
+   _drawTitleCharacter() 负责，本文件负责标题、副标题、选项、
+   角饰、版本号与底部提示的入场 DOM 动画。
+
+   标题曲 150 BPM（一拍 0.4s），这里所有延时都是拍的整数/半整数倍：
+     · 人物：0 拍起，4 拍落位（canvas，见 main.js）
+     · 标题：2 拍起，2 拍落位，同时展开左上金色短线
+     · 选项：4 拍起，每行再迟半拍（8 分音符），一行比一行
+             更靠左、更靠下，形成一条斜向的入场梯度
+   main.js 会算出「离下一拍还有多久」，写进 overlay 的 --lead；
+   CSS 每段延时都加上它，整段动画就压在鼓点上起步。
+
+   .intro 由 main.js 在播完后摘掉；玩家在动画期间按键/点击会立刻
+   摘掉它，元素直接回到静止时的最终姿态。
+   系统开启「减少动态效果」时不做位移，只保留最终版面。
+   ============================================================ */
+
+.title-mode.intro {
+  --lead: 0s; /* main.js 会覆盖成离下一拍的时间 */
+}
+
+.title-mode.intro .logo-block {
+  animation: titleLogoIn .8s cubic-bezier(.16, .84, .22, 1) calc(var(--lead) + .8s) both;
+}
+.title-mode.intro .logo-block::before {
+  transform-origin: left center;
+  animation: titleRuleIn .6s cubic-bezier(.2, .9, .25, 1) calc(var(--lead) + 1.2s) both;
+}
+.title-mode.intro #subtitle {
+  animation: titleSubIn .8s cubic-bezier(.16, .84, .22, 1) calc(var(--lead) + 1s) both;
+}
+.title-mode.intro .btn {
+  animation: titleBtnIn .6s cubic-bezier(.18, .82, .2, 1) both;
+  animation-delay: calc(var(--lead) + 1.6s + var(--ti, 0) * .2s);
+}
+.title-mode.intro .btn::after {
+  transform-origin: left center;
+  animation: titleRuleIn .45s ease-out both;
+  animation-delay: calc(var(--lead) + 1.75s + var(--ti, 0) * .2s);
+}
+.title-mode.intro .title-deco {
+  animation: titleFadeIn .8s ease calc(var(--lead) + 1.6s) both;
+}
+.title-mode.intro .title-ver {
+  animation: titleFadeIn .6s ease calc(var(--lead) + 1.8s) both;
+}
+.title-mode.intro .hint {
+  animation: titleHintIn .6s ease calc(var(--lead) + 2s) both;
+}
+
+/* 选项区的一次斜向扫光：跟着逐行入场从右上扫到左下 */
+.title-mode.intro .menu-block::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--s) * -30px);
+  top: calc(var(--s) * -150px);
+  width: calc(var(--s) * 520px);
+  height: calc(var(--s) * 430px);
+  pointer-events: none;
+  background: linear-gradient(104deg,
+    rgba(255, 224, 176, 0) 36%,
+    rgba(255, 232, 190, .13) 46%,
+    rgba(255, 240, 206, .05) 54%,
+    rgba(255, 224, 176, 0) 64%);
+  filter: blur(calc(var(--s) * 5px));
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: titleMenuSweep 1s cubic-bezier(.3, .6, .3, 1) calc(var(--lead) + 1.2s) both;
+}
+
+@keyframes titleLogoIn {
+  0%   { opacity: 0; translate: calc(var(--s) * -760px) 0; }
+  16%  { opacity: 1; }
+  100% { opacity: 1; translate: 0 0; }
+}
+@keyframes titleSubIn {
+  0%   { opacity: 0; translate: calc(var(--s) * -520px) 0; }
+  26%  { opacity: 1; }
+  100% { opacity: 1; translate: 0 0; }
+}
+@keyframes titleBtnIn {
+  0% {
+    opacity: 0;
+    translate: calc(var(--s) * (-430px - var(--ti, 0) * 46px))
+               calc(var(--s) * (14px + var(--ti, 0) * 8px));
+  }
+  18% { opacity: 1; }
+  100% { opacity: 1; translate: 0 0; }
+}
+@keyframes titleRuleIn {
+  0%   { opacity: 0; transform: scaleX(0); }
+  30%  { opacity: 1; }
+  100% { opacity: 1; transform: scaleX(1); }
+}
+@keyframes titleMenuSweep {
+  0%   { opacity: 0; translate: calc(var(--s) * 140px) calc(var(--s) * -40px); }
+  22%  { opacity: .8; }
+  100% { opacity: 0; translate: calc(var(--s) * -170px) calc(var(--s) * 46px); }
+}
+@keyframes titleHintIn {
+  0%   { opacity: 0; translate: 0 calc(var(--s) * 8px); }
+  100% { opacity: 1; translate: 0 0; }
+}
+@keyframes titleFadeIn {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* 系统开了「减少动态效果」：不出位移，只保留最终版面 */
+@media (prefers-reduced-motion: reduce) {
+  .title-mode.intro .logo-block,
+  .title-mode.intro #subtitle,
+  .title-mode.intro .logo-block::before,
+  .title-mode.intro .btn,
+  .title-mode.intro .btn::after,
+  .title-mode.intro .title-deco,
+  .title-mode.intro .title-ver,
+  .title-mode.intro .hint {
+    animation: none !important;
+    opacity: 1;
+    translate: 0 0;
+    transform: none;
+  }
+  .title-mode.intro .menu-block::before { animation: none !important; opacity: 0; }
+}

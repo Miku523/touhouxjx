@@ -483,7 +483,11 @@ body {
   letter-spacing: .3em;
   color: #fff;
   opacity: 0;
+  /* 先压一层近黑描边：Boss 登场时白字常压在白翼 / 冰闪 / 月光上，
+     只有粉色外发光会糊成一片，看不清名字。 */
   text-shadow:
+    0 1px calc(var(--s) * 3px) rgba(0, 0, 0, .92),
+    0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .75),
     0 0 calc(var(--s) * 22px) rgba(255, 94, 168, .95),
     0 0 calc(var(--s) * 60px) rgba(110, 231, 255, .55);
   transition: opacity .5s;
@@ -496,6 +500,7 @@ body {
   color: var(--gold);
   margin-top: calc(var(--s) * 12px);
   opacity: .9;
+  text-shadow: 0 2px calc(var(--s) * 6px) rgba(0, 0, 0, .9);
 }
 
 /* ---------- 剧情对白 ---------- */
@@ -1062,7 +1067,9 @@ body {
 }
 
 .overlay:not(.title-mode) .panel {
-  max-height: 94vh;
+  /* 用舞台高度而不是视口高度：手机上舞台是 16:9 letterbox，
+     94vh 会超过舞台并被 #ui{overflow:hidden} 裁掉，面板滚不动。 */
+  max-height: 94%;
   overflow-y: auto;
 }
 
@@ -1474,6 +1481,13 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: calc(var(--s) * 12px);
 }
+/* 键盘 Tab 走查时给焦点一个看得见的框：标题菜单原本 outline:none */
+.btn:focus-visible,
+.overlay.screen-mode .set-row:focus-visible {
+  outline: 2px solid rgba(242, 210, 75, .85);
+  outline-offset: 2px;
+}
+
 .overlay.screen-mode .set-foot-btn {
   justify-content: center;
   border: 1px solid rgba(242, 233, 216, .12);
@@ -2094,6 +2108,23 @@ body {
 }
 .overlay.screen-mode .set-grid > .set-group[data-g="display"] { grid-column: 2; grid-row: 1; }
 .overlay.screen-mode .set-grid > .set-group[data-g="game"] { grid-column: 2; grid-row: 2; }
+/* 触屏 / 手柄专属的「操作」组：横跨整行、内部三列。
+   之前没有定位，会被自动塞进第 3 行左列，右列空一大块，
+   底下的「返回」被挤到首屏之外。 */
+.overlay.screen-mode .set-grid > .set-group[data-g="device"] {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  min-height: 0;
+}
+.overlay.screen-mode .set-grid > .set-group[data-g="device"] .set-rows {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: calc(var(--s) * 14px);
+  justify-content: initial;
+}
+.overlay.screen-mode .set-grid > .set-group[data-g="device"] .set-rows > .set-row + .set-row {
+  border-top: 0;
+}
 /* 行高按列均分，长短卡都不会在底部留一截空 */
 .overlay.screen-mode .set-grid .set-rows {
   flex: 1 1 auto;
@@ -2798,37 +2829,36 @@ body {
 }
 
 /* ============================================================
-   首屏启动幕
+   首屏启动幕（开屏）
    标题插画 + 立绘 decode 完成前盖住整屏；揭幕时菜单与人物同一帧出现，
    避免弱网下「先看到菜单面板，过一会儿才看到人物」。
+
+   构图（自上而下）：
+     夜空（月晕 / 星点 / 落樱）
+     短金线 → 東方新紀行（逐字入场）→ ～ Chronicle of Gensokyo ～
+     细线 → 进度条（LOADING · 轨道 · 百分比）→ 少女祈祷中…
+
+   进度条宽度由 bootScreen.js 写进 --boot-p（0~100%）；脚本没起来时
+   （纯 CSS 阶段）条子停在 8%，靠 .bm-scan 的扫描光带表示「还在动」。
    ============================================================ */
 #boot {
   position: absolute;
   inset: 0;
   z-index: 120;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: calc(var(--s) * 20px);
+  /* 视觉重心上移：Logo 的分量在顶部，正中心居中会显得整体偏下 */
+  padding-bottom: calc(var(--s) * 26px);
+  overflow: hidden;
   pointer-events: auto;
+  isolation: isolate;
   background:
-    radial-gradient(ellipse 58% 48% at 50% 42%, rgba(58, 34, 96, .55) 0%, rgba(14, 8, 26, .94) 52%, #05030a 100%),
+    radial-gradient(ellipse 88% 80% at 50% 46%, rgba(0, 0, 0, 0) 36%, rgba(0, 0, 0, .58) 100%),
+    radial-gradient(ellipse 74% 64% at 50% 36%, rgba(86, 46, 132, .50) 0%, rgba(32, 16, 58, .86) 46%, rgba(5, 3, 12, .98) 78%),
+    radial-gradient(ellipse 120% 62% at 50% 104%, rgba(126, 34, 54, .20) 0%, rgba(5, 3, 12, 0) 62%),
     #05030a;
   transition: opacity .55s ease, visibility .55s ease;
-}
-#boot::before {
-  content: "";
-  position: absolute;
-  top: 16%;
-  left: 50%;
-  width: calc(var(--s) * 210px);
-  height: calc(var(--s) * 210px);
-  transform: translateX(-50%);
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 236, 206, .10) 0%, rgba(255, 180, 200, .05) 42%, rgba(255, 160, 190, 0) 70%);
-  animation: bootMoon 3.4s ease-in-out infinite;
-  pointer-events: none;
 }
 #boot.done {
   opacity: 0;
@@ -2836,58 +2866,325 @@ body {
   pointer-events: none;
 }
 
-.boot-mark {
-  position: relative;
-  font-size: calc(var(--s) * 46px);
-  font-weight: 600;
-  letter-spacing: calc(var(--s) * 9px);
-  padding-left: calc(var(--s) * 9px); /* 抵掉最后一个字的字距，保持视觉居中 */
-  color: #fff6e6;
-  text-shadow:
-    0 0 calc(var(--s) * 2px) rgba(255, 246, 236, .5),
-    0 0 calc(var(--s) * 24px) rgba(232, 54, 79, .65),
-    0 0 calc(var(--s) * 56px) rgba(255, 94, 168, .38);
+/* ---------- 夜空：全部装饰层，别挡点击 ---------- */
+.boot-sky {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
+
+/* 月晕：大半圆压在 Logo 身后，慢呼吸 */
+.boot-glow {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  width: calc(var(--s) * 560px);
+  height: calc(var(--s) * 560px);
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    circle,
+    rgba(255, 246, 232, .13) 0%,
+    rgba(255, 186, 214, .07) 34%,
+    rgba(150, 90, 200, .05) 52%,
+    rgba(0, 0, 0, 0) 72%
+  );
+  animation: bootBreath 7.5s ease-in-out infinite;
+}
+
+/* 星点：十几个 1~2px 的点，用多背景画，闪烁靠整体透明度 */
+.boot-stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1.6px 1.6px at 11% 21%, rgba(255, 246, 232, .80), rgba(255, 246, 232, 0) 100%),
+    radial-gradient(1.2px 1.2px at 24% 13%, rgba(255, 246, 232, .62), rgba(255, 246, 232, 0) 100%),
+    radial-gradient(1.8px 1.8px at 37% 29%, rgba(255, 236, 244, .72), rgba(255, 236, 244, 0) 100%),
+    radial-gradient(1.2px 1.2px at 52% 16%, rgba(255, 246, 232, .55), rgba(255, 246, 232, 0) 100%),
+    radial-gradient(1.6px 1.6px at 67% 24%, rgba(255, 236, 226, .70), rgba(255, 236, 226, 0) 100%),
+    radial-gradient(1.2px 1.2px at 81% 15%, rgba(255, 246, 232, .58), rgba(255, 246, 232, 0) 100%),
+    radial-gradient(1.8px 1.8px at 91% 33%, rgba(255, 240, 214, .66), rgba(255, 240, 214, 0) 100%),
+    radial-gradient(1.2px 1.2px at 7% 43%, rgba(255, 246, 232, .50), rgba(255, 246, 232, 0) 100%),
+    radial-gradient(1.4px 1.4px at 19% 57%, rgba(255, 236, 244, .60), rgba(255, 236, 244, 0) 100%),
+    radial-gradient(1.2px 1.2px at 45% 48%, rgba(255, 246, 232, .46), rgba(255, 246, 232, 0) 100%),
+    radial-gradient(1.6px 1.6px at 61% 55%, rgba(255, 240, 222, .56), rgba(255, 240, 222, 0) 100%),
+    radial-gradient(1.2px 1.2px at 78% 47%, rgba(255, 246, 232, .44), rgba(255, 246, 232, 0) 100%),
+    radial-gradient(1.4px 1.4px at 88% 63%, rgba(255, 236, 244, .52), rgba(255, 236, 244, 0) 100%),
+    radial-gradient(1.2px 1.2px at 16% 74%, rgba(255, 246, 232, .40), rgba(255, 246, 232, 0) 100%),
+    radial-gradient(1.4px 1.4px at 34% 69%, rgba(255, 240, 222, .46), rgba(255, 240, 222, 0) 100%),
+    radial-gradient(1.2px 1.2px at 69% 77%, rgba(255, 246, 232, .38), rgba(255, 246, 232, 0) 100%);
+  animation: bootTwinkle 6.4s ease-in-out infinite;
+}
+
+/* 落樱：7 片，纯 CSS 定时；负延迟让首帧就已经在半空，不然前几秒是空屏 */
+.boot-petals {
+  position: absolute;
+  inset: 0;
+}
+.boot-petals i {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(var(--s) * 12px);
+  height: calc(var(--s) * 9px);
+  border-radius: 62% 38% 58% 42% / 58% 62% 38% 42%;
+  background: linear-gradient(140deg, rgba(255, 228, 240, .96), rgba(255, 138, 190, .40));
+  box-shadow: 0 0 calc(var(--s) * 5px) rgba(255, 150, 200, .22);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: bootPetal 18s linear infinite;
+}
+/* 用独立的 scale 属性做远近层次（不和 transform 动画打架） */
+.boot-petals i:nth-child(3n) { scale: .66; }
+.boot-petals i:nth-child(3n + 2) { scale: 1.22; }
+.boot-petals i:nth-child(1) { left: 5%;  animation-duration: 21s; animation-delay: -3s; }
+.boot-petals i:nth-child(2) { left: 21%; animation-duration: 17s; animation-delay: -11s; }
+.boot-petals i:nth-child(3) { left: 38%; animation-duration: 24s; animation-delay: -7s; }
+.boot-petals i:nth-child(4) { left: 56%; animation-duration: 19s; animation-delay: -15s; }
+.boot-petals i:nth-child(5) { left: 71%; animation-duration: 23s; animation-delay: -1s; }
+.boot-petals i:nth-child(6) { left: 85%; animation-duration: 16s; animation-delay: -9s; }
+.boot-petals i:nth-child(7) { left: 95%; animation-duration: 20s; animation-delay: -18s; }
+
+/* ---------- 中央一列：金字 / 副标 / 进度条 / 祈祷 ---------- */
+.boot-center {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* Logo 上方的短金线：和标题页 logo-block 的 ::before 同一语言 */
+.boot-rule-top {
+  width: calc(var(--s) * 38px);
+  height: calc(var(--s) * 2px);
+  margin-bottom: calc(var(--s) * 18px);
+  background: linear-gradient(90deg, rgba(232, 54, 79, 0), var(--reimu) 22%, var(--gold) 78%, rgba(242, 210, 75, 0));
+  box-shadow: 0 0 calc(var(--s) * 8px) rgba(232, 54, 79, .45);
+  animation: bootIn .8s ease both;
+  animation-delay: .06s;
+}
+
+/* 金字：每个字各自一段竖直金色渐变，逐字入场 */
+.boot-logo {
+  display: flex;
+  align-items: baseline;
+  font-size: calc(var(--s) * 62px);
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;
+  filter:
+    drop-shadow(0 calc(var(--s) * 2px) 0 rgba(62, 6, 26, .85))
+    drop-shadow(0 calc(var(--s) * 7px) calc(var(--s) * 14px) rgba(14, 2, 8, .72))
+    drop-shadow(0 0 calc(var(--s) * 28px) rgba(255, 104, 148, .40));
+}
+.boot-logo .bl-ch {
+  display: inline-block;
+  padding: 0 calc(var(--s) * 10px); /* 字距用内边距撑，渐变不会被 letter-spacing 拉断 */
+  background: linear-gradient(178deg, #fffdf7 0%, #ffefd0 30%, #ffd98f 52%, #f0b355 66%, #ffe8b8 88%, #fffdf4 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: bootCh .78s cubic-bezier(.2, .7, .3, 1) both;
+}
+.boot-logo .bl-ch:nth-child(2) { animation-delay: .06s; }
+.boot-logo .bl-ch:nth-child(3) { animation-delay: .12s; }
+.boot-logo .bl-ch:nth-child(4) { animation-delay: .18s; }
+.boot-logo .bl-ch:nth-child(5) { animation-delay: .24s; }
 
 .boot-sub {
-  position: relative;
-  font-size: calc(var(--s) * 13px);
-  letter-spacing: calc(var(--s) * 4px);
-  color: #ffd8a6;
-  opacity: .88;
-}
-
-.boot-line {
-  position: relative;
-  width: calc(var(--s) * 230px);
-  height: calc(var(--s) * 2px);
-  overflow: hidden;
-  background: rgba(255, 220, 160, .12);
-}
-.boot-line::after {
-  content: "";
-  display: block;
-  width: 38%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, #f2d24b, #ff9ecb, transparent);
-  animation: bootSweep 1.15s ease-in-out infinite;
-}
-
-.boot-tip {
-  position: relative;
+  margin-top: calc(var(--s) * 16px);
   font-size: calc(var(--s) * 12px);
-  letter-spacing: .26em;
-  color: #a89e8e;
-  opacity: .85;
+  letter-spacing: calc(var(--s) * 3.4px);
+  padding-left: calc(var(--s) * 3.4px); /* 抵掉字距，保持视觉居中 */
+  color: rgba(255, 216, 166, .82);
+  animation: bootIn .9s ease both;
+  animation-delay: .34s;
 }
 
-@keyframes bootSweep {
-  from { transform: translateX(-110%); }
-  to { transform: translateX(300%); }
+.boot-rule {
+  width: calc(var(--s) * 132px);
+  height: 1px;
+  margin-top: calc(var(--s) * 20px);
+  background: linear-gradient(90deg, rgba(255, 224, 170, 0), rgba(255, 224, 170, .42), rgba(255, 224, 170, 0));
+  animation: bootIn .9s ease both;
+  animation-delay: .4s;
 }
-@keyframes bootMoon {
-  0%, 100% { opacity: .55; transform: translateX(-50%) scale(.96); }
-  50% { opacity: 1; transform: translateX(-50%) scale(1.04); }
+
+/* 进度条一行：LOADING · 轨道 · 百分比 */
+.boot-meter {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--s) * 14px);
+  width: calc(var(--s) * 460px);
+  margin-top: calc(var(--s) * 40px);
+  animation: bootIn .9s ease both;
+  animation-delay: .46s;
+}
+.bm-load {
+  flex: none;
+  font-size: calc(var(--s) * 9px);
+  letter-spacing: calc(var(--s) * 2.6px);
+  color: rgba(242, 233, 216, .52);
+  animation: bootLoad 2.4s ease-in-out infinite;
+}
+.bm-track {
+  position: relative;
+  flex: 1;
+  height: calc(var(--s) * 3px);
+  border-radius: calc(var(--s) * 2px);
+  background: rgba(255, 226, 178, .10);
+  box-shadow: inset 0 0 0 1px rgba(255, 226, 178, .10);
+}
+/* 内层裁切：扫描光带跑到头不会溢到右边的百分比上 */
+.bm-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.bm-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--boot-p, 0%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(232, 54, 79, .72) 0%, #f2d24b 58%, #fff6da 100%);
+  box-shadow:
+    0 0 calc(var(--s) * 6px) rgba(242, 210, 75, .55),
+    0 0 calc(var(--s) * 18px) rgba(232, 54, 79, .28);
+}
+.bm-scan {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 32%;
+  background: linear-gradient(90deg, rgba(255, 246, 220, 0), rgba(255, 246, 220, .38), rgba(255, 246, 220, 0));
+  animation: bootScan 1.9s linear infinite;
+}
+/* 纯 CSS 阶段还不知道进度：只留扫描光带，菱形头等 JS 接管后再出现 */
+#boot:not(.js) .bm-head { opacity: 0; }
+/* 条子满 100% 时：扫描光带收掉，头部亮点换成暖白色 */
+.boot-meter.full .bm-scan { opacity: 0; transition: opacity .25s ease; }
+.boot-meter.full .bm-head {
+  background: #fffdf4;
+  box-shadow:
+    0 0 calc(var(--s) * 10px) rgba(255, 250, 226, .95),
+    0 0 calc(var(--s) * 26px) rgba(242, 210, 75, .65);
+}
+/* 进度头的菱形亮点：clamp 让它不会在 0% / 100% 探出轨道 */
+.bm-head {
+  position: absolute;
+  top: 50%;
+  left: clamp(calc(var(--s) * 4px), var(--boot-p, 0%), calc(100% - calc(var(--s) * 4px)));
+  width: calc(var(--s) * 8px);
+  height: calc(var(--s) * 8px);
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: #fff8e2;
+  box-shadow:
+    0 0 calc(var(--s) * 8px) rgba(255, 238, 190, .95),
+    0 0 calc(var(--s) * 20px) rgba(242, 210, 75, .55);
+}
+.bm-pct {
+  flex: none;
+  min-width: calc(var(--s) * 34px);
+  text-align: right;
+  font-size: calc(var(--s) * 12px);
+  letter-spacing: .12em;
+  color: #ffd8a6;
+  font-variant-numeric: tabular-nums;
+}
+.bm-pct b { font-weight: 500; }
+.bm-pct i {
+  font-style: normal;
+  margin-left: calc(var(--s) * 1px);
+  font-size: calc(var(--s) * 8px);
+  opacity: .6;
+}
+
+.boot-pray {
+  margin-top: calc(var(--s) * 34px);
+  font-size: calc(var(--s) * 13px);
+  letter-spacing: calc(var(--s) * 3px);
+  padding-left: calc(var(--s) * 3px);
+  color: rgba(242, 233, 216, .66);
+  text-shadow: 0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .65);
+  animation: bootIn 1s ease both;
+  animation-delay: .54s;
+}
+/* 三个点依次亮起（不是整句闪），像在真的默念 */
+.bp-dots { display: inline-block; }
+.bp-dots i {
+  font-style: normal;
+  opacity: .12;
+  animation: bootDot 1.6s ease-in-out infinite;
+}
+.bp-dots i:nth-child(2) { animation-delay: .22s; }
+.bp-dots i:nth-child(3) { animation-delay: .44s; }
+
+/* 内框与角饰：和标题页 .title-mode .title-deco 用同一套几何（inset 13px、26px 角），
+   开屏淡出后边框留在原位，落到标题页时不会有任何位移。 */
+.boot-frame {
+  --bc: rgba(255, 224, 176, .55);
+  position: absolute;
+  inset: calc(var(--s) * 13px);
+  z-index: 2;
+  pointer-events: none;
+  border: 1px solid rgba(255, 214, 160, .15);
+  background:
+    linear-gradient(var(--bc), var(--bc)) left top / calc(var(--s) * 26px) 1px no-repeat,
+    linear-gradient(var(--bc), var(--bc)) left top / 1px calc(var(--s) * 26px) no-repeat,
+    linear-gradient(var(--bc), var(--bc)) right top / calc(var(--s) * 26px) 1px no-repeat,
+    linear-gradient(var(--bc), var(--bc)) right top / 1px calc(var(--s) * 26px) no-repeat,
+    linear-gradient(var(--bc), var(--bc)) left bottom / calc(var(--s) * 26px) 1px no-repeat,
+    linear-gradient(var(--bc), var(--bc)) left bottom / 1px calc(var(--s) * 26px) no-repeat,
+    linear-gradient(var(--bc), var(--bc)) right bottom / calc(var(--s) * 26px) 1px no-repeat,
+    linear-gradient(var(--bc), var(--bc)) right bottom / 1px calc(var(--s) * 26px) no-repeat;
+  animation: bootFade 1.4s ease both;
+  animation-delay: .3s;
+}
+
+@keyframes bootFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes bootBreath {
+  0%, 100% { opacity: .7; transform: translate(-50%, -50%) scale(.96); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+}
+@keyframes bootTwinkle {
+  0%, 100% { opacity: .55; }
+  50% { opacity: .95; }
+}
+@keyframes bootPetal {
+  0% { transform: translate3d(0, -6vh, 0) rotate(0deg); opacity: 0; }
+  9% { opacity: .9; }
+  82% { opacity: .55; }
+  100% { transform: translate3d(calc(var(--s) * 96px), 108vh, 0) rotate(300deg); opacity: 0; }
+}
+@keyframes bootScan {
+  from { transform: translateX(-105%); }
+  to { transform: translateX(430%); }
+}
+@keyframes bootIn {
+  from { opacity: 0; transform: translateY(calc(var(--s) * 6px)); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bootCh {
+  from { opacity: 0; transform: translateY(calc(var(--s) * 16px)) scale(.94); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bootLoad {
+  0%, 100% { opacity: .42; }
+  50% { opacity: 1; }
+}
+@keyframes bootDot {
+  0%, 100% { opacity: .12; }
+  30%, 55% { opacity: 1; }
 }
 
 /* ============================================================
@@ -3305,8 +3602,20 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #boot::before,
-  .boot-line::after { animation: none; }
+  /* 启动幕：入场、呼吸、落樱、闪烁、扫描全停，但字和进度条必须还在（别留空屏） */
+  #boot .boot-glow,
+  #boot .boot-stars,
+  #boot .boot-petals i,
+  #boot .boot-rule-top,
+  #boot .boot-logo .bl-ch,
+  #boot .boot-sub,
+  #boot .boot-rule,
+  #boot .boot-meter,
+  #boot .bm-load,
+  #boot .boot-pray,
+  #boot .bp-dots i { animation: none; }
+  #boot .bm-scan { display: none; }
+  #boot .bp-dots i { opacity: 1; }
   .spell-cutin.show .sc-rays,
   .spell-cutin.show .sc-speed,
   .spell-cutin.show .sc-rings i,
@@ -4067,4 +4376,100 @@ body {
   .mr-row.is-playing .mr-row-title::after { animation: none; }
 }
 
+/* ===== i18n（四语言）：按语言的字体栈 + 语言切换控件 ===== */
 
+/* 正文宋体栈跟着 <html lang> 走：繁中用 TC 字体，日文用明朝，英文保留 Optima，
+   汉字再回落到对应宋体——避免「英文模式标题汉字掉进缺字方框」。 */
+html[lang="zh-Hant"] { --serif: "Songti TC", "儷宋 Pro", "PMingLiU", "Noto Serif CJK TC", "Source Han Serif TC", serif; }
+html[lang="ja"] { --serif: "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif CJK JP", "MS PMincho", "Songti SC", serif; }
+html[lang="en"] { --serif: "Optima", "Palatino Linotype", "Songti SC", "SimSun", serif; }
+
+/* ---- 设置页：语言行（四语分段控件） ---- */
+.overlay.screen-mode .set-row-lang .seg { gap: calc(var(--s) * 2px); }
+.overlay.screen-mode .set-row-lang .seg b {
+  min-width: calc(var(--s) * 33px);
+  padding-inline: calc(var(--s) * 4px);
+  cursor: pointer;
+}
+html[lang="en"] .overlay.screen-mode .set-row-lang .seg b {
+  min-width: calc(var(--s) * 30px);
+  letter-spacing: .03em;
+}
+
+/* ============================================================
+   短视口（手机横屏 ≈390 高 / 小窗）：设置页底部操作条吸底
+   背景：舞台只有 366 高的面板，设置组多于三张卡时「返回」会被
+   滚到面板可视区之外；吸底后无论滚到哪都留得住返回与重开。
+   ============================================================ */
+@media (max-height: 560px) {
+  .overlay.screen-mode .set-grid > .set-group[data-g$="foot"] {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
+    padding-top: calc(var(--s) * 8px);
+    background: linear-gradient(180deg,
+      rgba(8, 5, 15, 0) 0%,
+      rgba(8, 5, 15, .90) 42%,
+      rgba(8, 5, 15, .97) 100%);
+  }
+  /* 触屏上的按钮不能只有 20px 高：给足可点面积 */
+  .overlay.screen-mode .set-foot-btn {
+    min-height: 34px;
+    font-size: max(12px, calc(var(--s) * 13px));
+  }
+  /* 「操作」组（触屏/手柄专属）横跨整行、内部排两列，
+     横屏下少占一半高度，返回条不用滚太远 */
+  .overlay.screen-mode .set-grid > .set-group[data-g="device"] {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    min-height: 0;
+  }
+  .overlay.screen-mode .set-grid > .set-group[data-g="device"] .set-rows {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: calc(var(--s) * 18px);
+  }
+}
+
+
+/* ---------- 短屏（<=820px 高）紧凑设置页：手柄组出现时不把底栏挤出首屏 ---------- */
+@media (max-height: 820px) {
+  .overlay.screen-mode .panel {
+    padding-top: calc(var(--s) * 18px);
+    padding-bottom: calc(var(--s) * 12px);
+  }
+  .overlay.screen-mode .set-grid { gap: calc(var(--s) * 8px) calc(var(--s) * 12px); }
+  .overlay.screen-mode .set-grid > .set-group { min-height: 0; }
+  .overlay.screen-mode .set-group { padding: calc(var(--s) * 10px) calc(var(--s) * 12px) calc(var(--s) * 8px); }
+  .overlay.screen-mode .set-group-title { margin-bottom: calc(var(--s) * 8px); }
+  .overlay.screen-mode .set-row { padding-top: calc(var(--s) * 6px); padding-bottom: calc(var(--s) * 6px); }
+  /* 平板也要把「操作」组摊成两列，否则 iPad 横屏 7 行会把底栏顶出首屏 */
+  .overlay.screen-mode .set-grid > .set-group[data-g="device"] {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    min-height: 0;
+  }
+  .overlay.screen-mode .set-grid > .set-group[data-g="device"] .set-rows {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: calc(var(--s) * 18px);
+  }
+}
+
+/* ---------- 平板/触屏且短屏（<=820px 高）：底栏同样吸底，避免 iPad 横屏首屏看不到返回 ---------- */
+@media (max-height: 820px) {
+  html.touch .overlay.screen-mode .set-grid > .set-group[data-g$="foot"] {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
+    padding-top: calc(var(--s) * 8px);
+    background: linear-gradient(180deg,
+      rgba(8, 5, 15, 0) 0%,
+      rgba(8, 5, 15, .90) 42%,
+      rgba(8, 5, 15, .97) 100%);
+  }
+  html.touch .overlay.screen-mode .set-foot-btn {
+    min-height: 34px;
+    font-size: max(12px, calc(var(--s) * 13px));
+  }
+}

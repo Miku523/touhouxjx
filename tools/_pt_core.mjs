@@ -51,7 +51,7 @@ export async function launch(opts = {}) {
     '--window-size=' + W + ',' + H,
   ];
   if (opts.forceDeviceScale) args.push('--force-device-scale-factor=' + opts.forceDeviceScale);
-  args.push(`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, 'about:blank');
+  args.push(`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, opts.url || 'about:blank');
   const logPath = join(profile, 'browser.log');
   const errFd = openSync(logPath, 'a');
   const proc = spawn(EDGE, args, { stdio: ['ignore', 'ignore', errFd] });
@@ -66,7 +66,13 @@ export async function launch(opts = {}) {
     for (let i = 0; i < 100; i++) {
       try {
         const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-        const p = list.find((t) => t.type === 'page');
+        // Edge 首次启动/系统扩展会先塞进 hoxx VPN、Sync 提示等页面，
+        // 直接取第一个 page 会把 CDP 会话绑到那些页面上（T.eval 里 __game 永远 undefined）。
+        // 优先 about:blank（launch 自带的标签），其次本机 127.0.0.1 页面，最后才退回第一个。
+        const pages = list.filter((t) => t.type === 'page');
+        const p = pages.find((t) => /^about:blank/i.test(t.url || '')) ||
+          pages.find((t) => /^https?:\/\/(127\.0\.0\.1|localhost)(:|\/)/.test(t.url || '')) ||
+          pages[0];
         if (p) return p;
       } catch {}
       await sleep(200);
@@ -74,6 +80,9 @@ export async function launch(opts = {}) {
     throw new Error('no devtools target on ' + port);
   }
 
+  // 启动时可直接把游戏 URL 作为初始标签（opts.url），避免 Edge 的系统扩展/首次启动页
+  // （hoxx VPN、edge://sync-confirmation-dialog）抢在列表第一位；target() 本身也优先
+  // 选 about:blank / 本机 127.0.0.1 页面。
   const page = await target();
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });

@@ -32,11 +32,13 @@ node tools/_gpu_diag.mjs 9462
 `_mapdump.mjs`（关卡生成/检查点分布）、`_diag_cp6*.mjs`（stage6 尾段地形）、
 `_probe_balance.mjs`（难度梯度）、`_boss_rand_probe.mjs`（Boss 弹幕随机性/可复现性）、
 `_nan_probe.mjs`（非法坐标）、`_perf_count.mjs` / `_draw_ops.mjs`（每帧 Canvas2D 调用数）、
-`qa_audio.mjs`（BGM 调度）、`validate_songs.mjs`（曲库数据）、`_verify_levels.mjs`。
+`qa_audio.mjs`（BGM 调度）、`validate_songs.mjs`（曲库数据）、`_verify_levels.mjs`、
+`_verify_stage5_youmu.mjs`（第 5 面短图：配置 / 生成 / 触发门控 / 整局模拟 / 对白契约）。
 
 ### B. headless Edge + CDP（默认软件光栅）
 
 `_pt_*`、`_sim*.mjs`、`_playtest.mjs`、`_verify_*`、`_shot_*`、`_boss_shot*.mjs`、`_deploy_check.mjs`……
+`_verify_stage5_short.mjs`（第 5 面短图：真实走位捡 4P+1UP、击破掉落、检查点、关底触发，顺带出截图）。
 
 这些脚本自己 spawn 独立 headless Edge（临时 profile、指定调试端口），通过 CDP
 发**真实键盘/鼠标事件**、读 `window.__game` 状态、收集 console 错误和 4xx，最后打印 JSON 结论。
@@ -95,6 +97,33 @@ node tools/_bloom_bench.mjs --variant pair       # 同一同步循环里交替�
 教训：**判断后期成本不要只看「整帧 vs 小图」的直觉，要按真实 rAF 循环 A/B**。同步循环里
 测出的提交耗时会被命令队列状态放大/扭曲（同一份实现在不同页面能差 3 倍），不能当依据。
 截图 / 读回会污染 canvas 加速路径，见上一节两个坑。
+
+## 四语 i18n 回归
+
+语言运行时在 `src/i18n/`，语言包 `src/i18n/packs/{en,ja,zh-hant}.js` 由
+`tools/_i18n_build_packs.mjs` 生成（译者稿在 `_i18n_work/`，手写 UI 文案补在
+`_i18n_work/ui-extra-local.json`，繁中走 OpenCC）。改完翻译后跑：
+
+```bash
+python tools/serve_nocache.py 8139
+export PT_BASE=http://127.0.0.1:8139
+
+node tools/i18n_extract.mjs          # tr() 键 344/344 ×3；裸中文=数据层（剧情/结局/曲目）
+node tools/i18n_data_coverage.mjs    # 剧情节拍 + 结局字幕 + 曲目档案 1591/1591 ×3
+node tools/_pt_i18n_smoke.mjs        # 设置页四语切换 / 持久化 / ?lang= 30 项
+node tools/_pt_p1_ui.mjs             # 标题→选人→难度→操作说明 14 项
+node tools/_pt_p1b_music_ui.mjs      # 音乐回忆室三语 14 项
+node tools/_pt_story_ui.mjs          # 开场剧情三语 10 项（取样 __game.dialogue.fullText）
+node tools/_pt_ending_ui.mjs         # good ending 字幕三语 7 项
+
+node tools/i18n_gate.mjs             # 门禁：tr 键 strict + 数据层覆盖，任一有缺即退出码 1
+node tools/_pt_i18n_matrix.mjs       # 四语 × 9 屏截图（_pt/i18n-matrix/<screen>-<lang>.png）
+python tools/_i18n_matrix_sheet.py   # 拼 2×2 对照图 sheet-<screen>.png
+```
+
+注意：启动幕退场前按键会被有意吞掉（防盲选），脚本要等 `__game._bootDone === true`
+再按 Enter。语言包 URL 带 `?v=`（入口脚本版本号），发版时只递增 `index.html` 的
+`?v=` 就能同时踢掉包缓存。
 
 ## 视觉对比
 

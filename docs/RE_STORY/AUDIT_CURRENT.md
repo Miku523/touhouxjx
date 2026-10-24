@@ -22,7 +22,7 @@
 | 2 | `stage2` | 魔法森林 · 萤火夜雾（`forest`） | 平台 | `wriggle` 莉格露 | — | 3:30 | 755 | `src/assets/levels.js:67-79` | `src/game/story.js:213` |
 | 3 | `stage3` | 雾之湖 · 冰蓝晨曦（`lake`） | 平台 | `cirno` 琪露诺 | — | 4:00 | 871 | `src/assets/levels.js:80-92` | `src/game/story.js:359` |
 | 4 | `stage4` | 妖怪之山 · 瀑布溪谷（`mountain`） | 飞行（`stg`） | `aya` 射命丸文 | — | 4:30 | 497 | `src/assets/levels.js:93-105` | `src/game/story.js:534` |
-| 5 | `stage5` | 白玉楼 · 冥界花海（`nether`） | 平台 | `yuyuko` 西行寺幽幽子 | **`youmu` 魂魄妖梦** | 5:00 | 1170 | `src/assets/levels.js:106-125` | `src/game/story.js:680` |
+| 5 | `stage5` | 白玉楼 · 冥界花海（`nether`） | 平台 | `yuyuko` 西行寺幽幽子 | **`youmu` 魂魄妖梦** | 0:25（开场准备区 → 妖梦 → 第二道中；第一个道中已取消） | 208 | `src/assets/levels.js:109-131` | `src/game/story.js:680` |
 | 6 | `stage6` | 月都 · 永远亭（`moon`） | 平台 | `kaguya` 蓬莱山辉夜 | — | 5:30 | 1324 | `src/assets/levels.js:126-138` | `src/game/story.js:909` |
 | EX | `extra` | 红魔馆地下 · 血月水晶（`mansion`） | 飞行（`stg`） | `flandre` 芙兰朵露 | **`remilia` 雷米莉亚（3:00）** | 6:00 道中 + 中途战 | 1900 | `src/assets/levels.js:139-157` | `src/game/story.js:1056` |
 
