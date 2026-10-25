@@ -1,6 +1,6 @@
 # BOSS 符卡限时 · 验收报告（含 2026-10-21 血量重标复验）
 
-> ⚠️ **2026-10-25 起本文的「满火力 / 0.76×limit」口径已作废**：血量重定标改为「三挡火力（Lv3 = power 48）下 bot 0.72×limit、EXTRA 0.85×limit」，
+> ⚠️ **2026-10-25 起本文的「满火力 / 0.76×limit」口径已作废**：血量重定标改为「三挡火力（Lv3 = power 48）下 bot 0.655×limit、EXTRA 0.77×limit」，
 > 当前数值与实测见 `docs/BOSS_TIMING_TABLE.md` v5 §4、口径见 `docs/BOSS_TIMING_SPEC.md` §2.9。本文保留为 2026-10-21 那一轮的验收记录。
 
 

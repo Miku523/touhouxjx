@@ -35,9 +35,10 @@
  *
  * 2026-10-25 三挡重定标（用户口述）：「1 面到 EX 面血量都偏低，适当往上调高，保证三挡火力
  * 打完还能剩 5~6 秒（60 秒卡）」；EXTRA 再硬 15~20%（用户要求 1:1.15~1.2）。
- *  - 主线：每卡 dps 换成当前构建 Lv3 实测 DPS，锚点 CARD_LV3_SHARE = 0.72（bot 口径占限时 72%，
- *    真人折算 0.87~0.97 → 60 秒卡剩 5~6 秒）。
- *  - EXTRA：11 张击破 / 双条件卡显式 hp = round(CARD_EX_SHARE × limit × 实测dps)，CARD_EX_SHARE = 0.85 = 0.72 × 1.18。
+ *  - 主线：每卡 dps 换成当前构建 Lv3 实测 DPS，锚点 CARD_LV3_SHARE = 0.655（bot 口径占限时 65.5%，
+ *    真人折算 0.79~0.88 → 60 秒卡剩 7~13 秒，典型 9~10 秒）。
+ *    （2026-10-25 下午用户再要求「都下调一些血量，中下程度」：锚点 0.72 → 0.655，妖梦 3 张再降 10%。）
+ *  - EXTRA：11 张击破 / 双条件卡显式 hp = round(CARD_EX_SHARE × limit × 实测dps)，CARD_EX_SHARE = 0.77 = 0.655 × 1.18。
 
  * 暂不写入的可选字段：patterns（覆盖该卡 pattern 数组）。
  */
@@ -66,15 +67,16 @@ export const CARD_TIER_MUL = Object.freeze({
  *    （CDP 无头 Edge + tools/sim_bot.js，god + 不放炸弹；主线 3 seeds、EXTRA 8 seeds 取中位）。
  *    旧口径的 dps 是「2026-10-21 攻击力上调前的满火力实测 ×0.76」，靠 CARD_HP_ANCHOR 补偿；
  *    现在 dps 直接换成当前构建的 Lv3 实测值，锚点只表示「目标占比」，不再需要 ×PLAYER_ATK_SCALE。
- *  - CARD_LV3_SHARE = 0.72：bot 口径占限时 72%。真人对同一张卡通常比 bot 慢 1.2~1.35×
- *    （bot 开 god 敢贴脸输出），折算约 0.87~0.97 → 60 秒卡打完剩 5~6 秒，符合用户目标。
+ *  - CARD_LV3_SHARE = 0.655：bot 口径占限时 65.5%。真人对同一张卡通常比 bot 慢 1.2~1.35×
+ *    （bot 开 god 敢贴脸输出），折算约 0.79~0.88 → 60 秒卡打完剩 7~13 秒（典型 9~10 秒）。
+ *    2026-10-25 下午用户觉得上一版（0.72）偏紧，要求整体再下调一档、并把妖梦降得更多。
  *  - 想整体更紧/更松只改这一个常量：血量与它线性相关，改完复跑
- *    `node tools/_verify_bosscards.mjs --plan "N:1-6" --power 48 --lockPower 48 --targetRatio 0.72`。
+ *    `node tools/_verify_bosscards.mjs --plan "N:1-6" --power 48 --lockPower 48 --targetRatio 0.655`。
  */
-export const CARD_LV3_SHARE = 0.72;
+export const CARD_LV3_SHARE = 0.655;
 export const CARD_HP_ANCHOR = CARD_LV3_SHARE;
 /** EXTRA 单独口径：在主线目标占比之上再 ×1.18（用户要求 EX 比正常比例再硬 15~20%）。 */
-export const CARD_EX_SHARE = 0.85;
+export const CARD_EX_SHARE = 0.77;
 /**
  * 旧锚点（火力 Lv2 口径，2026-10-24 用，已废弃）：0.884 = 0.4 × 2.6 × 0.85。
  * 保留导出仅为文档 / 旧脚本引用，运行期不再使用。
@@ -283,22 +285,24 @@ export const BOSS_CARD_TUNING = {
   // 中途 Boss：血量按限时 × dps × CARD_HP_ANCHOR 走，单卡比关底短。
   // system/phantom（半灵实体 + 断灵槽）写在 boss.js 的 BOSS_DEFS.youmu 里，
   // 本表只管「限时 / HUD / 卡特效」；不写 hpMul（中途 Boss 靠 dps × limit 定量）。
+  // 2026-10-25 下午：用户要求「魂魄妖梦适当下调血量」→ 3 张改成显式 hp，比主线锚点再松 10%
+  // （hp = round(limit × dps × CARD_LV3_SHARE × 0.90)），dps 仍保留三挡实测值供复算。
   youmu: {
     cards: [
       {
         name: '人符「现世斩」', note: '中途 Boss；2026-10-24 用户改为 30s（原 34）',
         limit: 30, mode: 'damage', tier: 3, fx: 'fairyDust', accent: '#9fe8d0',
-        effect: 'none', dps: 282.9,
+        effect: 'none', dps: 282.9, hp: 5003,
       },
       {
         name: '人鬼「未来永劫斩」', note: '中途 Boss；2026-10-24 用户改为 30s（原 38）',
         limit: 30, mode: 'damage', tier: 3, fx: 'petals', accent: '#7fe0c8',
-        effect: 'none', dps: 236.3,
+        effect: 'none', dps: 236.3, hp: 4179,
       },
       {
         name: '断灵「剑楼阁」', note: '中途 Boss 终盘；2026-10-24 用户改为 45s（原 46）',
         limit: 45, mode: 'damage', tier: 4, fx: 'night', accent: '#c8ffe8',
-        effect: 'none', dps: 247.2,
+        effect: 'none', dps: 247.2, hp: 6558,
       },
     ],
   },
@@ -306,7 +310,8 @@ export const BOSS_CARD_TUNING = {
   // ── EXTRA · 中途 Boss · 蕾米莉亚·斯卡雷特（2 张）─────────────────────
   // 2026-10-24 首次接入逐卡限时：此前 EXTRA 完全不在本表 → 不限时、无卡面 fx、无结算奖励。
   // 血量标定（2026-10-25 三挡重定标）：EXTRA 12 张一律显式 hp
-  // = round(CARD_EX_SHARE × limit × 三挡实测dps)，CARD_EX_SHARE = 0.85 = 主线 0.72 × 1.18。
+  // = round(CARD_EX_SHARE × limit × 三挡实测dps)，CARD_EX_SHARE = 0.77 = 主线 0.655 × 1.18。
+  // 2026-10-25 下午整体下调：11 张 hp 一并 ×(0.77/0.85) ≈ ×0.906。
   // 下面的 dps = 当前构建三挡火力（Lv3）实测有效 DPS（8 seeds 中位），供复算 / 对照。
   remilia: {
     cards: [
@@ -314,13 +319,13 @@ export const BOSS_CARD_TUNING = {
         name: '咒诅「弗拉德·特佩斯」',
         note: 'EXTRA #1（中途）；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 13601（10-seed 实测时的血量）× 42.0 / 中位耗时 58.45s',
         limit: 60, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 246.3, hp: 11299,
+        effect: 'none', dps: 246.3, hp: 10236,
       },
       {
         name: '天罚「大卫之星」',
         note: 'EXTRA #2（中途）；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 6105（10-seed 实测时的血量）× 42.0 / 中位耗时 20.95s',
         limit: 60, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 216.3, hp: 9342,
+        effect: 'none', dps: 216.3, hp: 8463,
       },
     ],
   },
@@ -332,19 +337,19 @@ export const BOSS_CARD_TUNING = {
         name: '禁忌「蔓越莓陷阱」',
         note: 'EXTRA #1；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 9741（10-seed 实测时的血量）× 42.0 / 中位耗时 40.73s',
         limit: 60, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 241.9, hp: 12057,
+        effect: 'none', dps: 241.9, hp: 10922,
       },
       {
         name: '禁忌「雷瓦汀」',
         note: 'EXTRA #2；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 17164（10-seed 实测时的血量）× 42.0 / 中位耗时 56.88s',
         limit: 60, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 315.4, hp: 15858,
+        effect: 'none', dps: 315.4, hp: 14365,
       },
       {
         name: '禁忌「四重存在」',
         note: 'EXTRA #3；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 9384（10-seed 实测时的血量）× 42.0 / 中位耗时 38.22s',
         limit: 60, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 218.6, hp: 11846,
+        effect: 'none', dps: 218.6, hp: 10731,
       },
       {
         name: '秘弹「然后就一个人都不剩了？」',
@@ -356,37 +361,37 @@ export const BOSS_CARD_TUNING = {
         name: '禁弹「星弧破碎」',
         note: 'EXTRA #5；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 38.3s → hp = 8760（10-seed 实测时的血量）× 38.3 / 中位耗时 34.82s',
         limit: 45, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 203.1, hp: 6280,
+        effect: 'none', dps: 203.1, hp: 5689,
       },
       {
         name: '禁弹「折反射」',
         note: 'EXTRA #6；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 10810（10-seed 实测时的血量）× 42.0 / 中位耗时 36.85s',
         limit: 60, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 259.8, hp: 12791,
+        effect: 'none', dps: 259.8, hp: 11587,
       },
       {
         name: 'QED「495年的波纹」',
         note: 'EXTRA #7；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 7686（10-seed 实测时的血量）× 42.0 / 中位耗时 53.37s',
         limit: 90, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 156.3, hp: 11397,
+        effect: 'none', dps: 156.3, hp: 10324,
       },
       {
         name: '禁忌「吸血鬼之宴」',
         note: 'EXTRA #8；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 34.0s → hp = 2617（10-seed 实测时的血量）× 34.0 / 中位耗时 14.62s',
         limit: 40, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 199.5, hp: 8289,
+        effect: 'none', dps: 199.5, hp: 7509,
       },
       {
         name: '禁忌「破坏之瞳」',
         note: 'EXTRA #9；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 25.5s → hp = 2485（10-seed 实测时的血量）× 25.5 / 中位耗时 7.88s',
         limit: 30, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 247.9, hp: 6263,
+        effect: 'none', dps: 247.9, hp: 5674,
       },
       {
         name: '未明「长夜不醒之约」',
         note: 'EXTRA #10 双条件卡：限时 120s（用户口述），血量按用户口述在上一版 6778 的基础上翻一倍 = 13556（全 EXTRA 最高）；撑满 120s 或打空血条都算过关，5-seed 实测打空约 61–78s。',
         limit: 120, mode: 'both', tier: 5, fx: 'redMist', accent: '#ff4d6a',
-        effect: 'none', dps: 206.9, hp: 18897,
+        effect: 'none', dps: 206.9, hp: 17118,
       },
     ],
   },
