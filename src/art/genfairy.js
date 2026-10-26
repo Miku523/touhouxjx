@@ -117,6 +117,11 @@ export function drawGenFairy(ctx, o) {
   return true;
 }
 
+/** 是否已有任意一张妖精图可画（只读，不触发下载） */
 export function genFairyReady() {
-  return ready();
+  for (const k of COLOR_KEYS) {
+    const im = IMGS[k];
+    if (im && im.naturalWidth) return true;
+  }
+  return !!(FALLBACK && FALLBACK.naturalWidth);
 }
