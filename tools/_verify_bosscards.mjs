@@ -183,9 +183,9 @@ const SPEC_CARDS = {
     { name: '幽雅「死出诱蛾灯」', mode: 'damage', limit: 30, fx: 'night' },
     { name: '蝶符「花之舞」', mode: 'damage', limit: 45, fx: 'petals' },
     { name: '蝶符「死蝶之华尔兹」', mode: 'damage', limit: 90, fx: 'petals' },
-    { name: '亡乡「亡我乡 -宿罪-」', mode: 'survival', limit: 60, fx: 'night' },
+    { name: '亡乡「亡我乡 -宿罪-」', mode: 'damage', limit: 60, fx: 'night' },
     { name: '冥符「常夜樱」', mode: 'damage', limit: 90, fx: 'petals' },
-    { name: '反魂蝶「八分咲」', mode: 'damage', limit: 100, fx: 'petals' },
+    { name: '反魂蝶「八分咲」', mode: 'survival', limit: 66, fx: 'petals' },
   ],
   6: [
     { name: '难题「龙颈之玉 -五色的弹丸-」', mode: 'damage', limit: 40, fx: 'moon' },

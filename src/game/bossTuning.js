@@ -91,6 +91,8 @@ export const CARD_HP_ANCHOR_LEGACY = CARD_LV2_SHARE * PLAYER_ATK_SCALE * CARD_DP
  *  - 「将全BOSS血量上调5%左右」→ 主线 7 个 Boss（含 5 面中途妖梦）统一 ×1.05；
  *  - 「蕾米莉亚上调8%」→ EXTRA 中途战雷米莉亚的总血量 ×1.08（是覆盖值，不是 5% 再叠 8%）；
  *  - 「芙兰朵路上调10%」→ EXTRA 关底芙兰朵露的总血量 ×1.10（同上，覆盖值）。
+ *  - 同日第二轮：「魂魄妖梦再加3%」→ 1.0815（= 1.05 × 1.03，覆盖值）；
+ *    「西行寺幽幽子加3.8%」→ 1.0899（= 1.05 × 1.038，按伤害卡合计 +3.8% 标定）。
  * 口径：这是「单场 Boss 总血量」的倍率，逐卡四舍五入后相加；存活卡（survival）的血条只是
  * 拖时间的底、不影响判定，也一起加厚。以后想再整体调松紧只改这里，不用逐张改 hp。
  */
@@ -99,6 +101,8 @@ export const BOSS_FINAL_HP_MUL = 1.05;
 export const BOSS_FINAL_HP_MUL_OVERRIDE = {
   remilia: 1.08,
   flandre: 1.10,
+  youmu: 1.0815,   // 2026-10-26「再加 3%」= 1.05 × 1.03
+  yuyuko: 1.0899,  // 2026-10-26「加 3.8%」= 1.05 × 1.038
 };
 /** 取某个 Boss 的终局血量倍率；未登记的 Boss 用全局值。 */
 export function finalHpMulFor(key) {
@@ -214,7 +218,7 @@ export const BOSS_CARD_TUNING = {
     ],
   },
 
-  // 5 面 · 西行寺幽幽子（6 张）#4 为 survival 卡
+  // 5 面 · 西行寺幽幽子（6 张）#6 为 survival 卡（2026-10-26 起；原 #4 是生存卡）
   yuyuko: {
     hpMul: 5.79,
     cards: [
@@ -235,9 +239,9 @@ export const BOSS_CARD_TUNING = {
       },
       {
         name: '亡乡「亡我乡 -宿罪-」',
-        note: '2026-10-24 用户改为 60s（原 44s）；罪业压身、身体半透明',
-        limit: 60, mode: 'survival', tier: 4, fx: 'night', accent: '#ffa8d8',
-        effect: 'sinGravity', dps: null,
+        note: '2026-10-26 用户把原生存符改为可被攻击的击破卡（60s 不变）；罪业压身、身体半透明。显式 hp 按「反魂蝶退出伤害池后伤害合计 +3.8%」反推（≈ 359 dps 等效）',
+        limit: 60, mode: 'damage', tier: 4, fx: 'night', accent: '#ffa8d8',
+        effect: 'sinGravity', dps: 359, hp: 14109,
       },
       {
         name: '冥符「常夜樱」', note: '2026-10-24 用户改为 90s（原 120）；夜樱花瓣氛围',
@@ -245,9 +249,10 @@ export const BOSS_CARD_TUNING = {
         effect: 'none', dps: 191.5,
       },
       {
-        name: '反魂蝶「八分咲」', note: '2026-10-24 用户改为 100s（原 180）；花开八分、节奏被带快',
-        limit: 100, mode: 'damage', tier: 5, fx: 'petals', accent: '#ffa8d8',
-        effect: 'bloomGrace', dps: 215.4,
+        name: '反魂蝶「八分咲」',
+        note: '2026-10-26 用户改为 66s 的生存卡（原 100s 击破卡）；花开八分、撑满 66 秒即过关',
+        limit: 66, mode: 'survival', tier: 5, fx: 'petals', accent: '#ffa8d8',
+        effect: 'bloomGrace', dps: null,
       },
     ],
   },
@@ -308,6 +313,8 @@ export const BOSS_CARD_TUNING = {
   // 本表只管「限时 / HUD / 卡特效」；不写 hpMul（中途 Boss 靠 dps × limit 定量）。
   // 2026-10-25 下午：用户要求「魂魄妖梦适当下调血量」→ 3 张改成显式 hp，比主线锚点再松 10%
   // （hp = round(limit × dps × CARD_LV3_SHARE × 0.90)），dps 仍保留三挡实测值供复算。
+  // 2026-10-26：用户「魂魄妖梦再加 3%」→ 走 BOSS_FINAL_HP_MUL_OVERRIDE.youmu = 1.0815
+  // （= 1.05 × 1.03），显式 hp 不动；终局血量 5,411 / 4,520 / 7,092 = 17,023。
   youmu: {
     cards: [
       {
