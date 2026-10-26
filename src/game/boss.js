@@ -28,6 +28,8 @@ import { cardTuningFor, tierMultipliers, CARD_HP_ANCHOR, finalHpMulFor } from '.
 import { patternsFor } from './bossPatternDesigns.js';
 import { CUSTOM_PATTERNS } from './bossBullets.js';
 import { skinMapper, cardSkin } from './bulletArt/cardSkins.js';
+// 咲夜专有弹型：七色飞刀（设计稿 _sakuya_design/DESIGN.md §2）
+import { B_KNIFE } from './bulletArt/types.js';
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -56,6 +58,21 @@ const EX_TINT = {
     [-34, 8, 0.02],   // 明けない夜の約束：血红偏紫的夜
   ],
 };
+
+/* ============================================================
+   咲夜的七色飞刀色板（_sakuya_design/DESIGN.md §二「七色飞刀」）
+   —— 七色同时是「时间刻度」和弹幕分组：同一拍的七把刀互不重色，
+      玩家可以拿颜色读节奏。只给 sakuya 的 pattern 用，其它 Boss 不引用。
+   ============================================================ */
+const SAKUYA_KNIFE_COLORS = [
+  '#ff3b4e', // I   绯红：直冲扇形快刃
+  '#ff8a3d', // II  琥珀：延迟弹
+  '#ffd24a', // III 鎏金：追踪刃
+  '#35e08c', // IV  翡翠：减速带
+  '#3fd8ff', // V   青：环形散射
+  '#4c7bff', // VI  湛蓝：激光式直刃
+  '#a86bff', // VII 紫罗兰：时停静止弹
+];
 
 function hexToRgbArr(hex) {
   let h = String(hex).replace('#', '');
@@ -664,6 +681,167 @@ function firePattern(p, boss, api, fireT) {
       }
     }
   }
+
+  if (p.typeName === 'sakuyaClock') {
+    // 咲夜专有：七色飞刀「钟面刻度」—— 按 12 个钟点（每 30°）成组射出，
+    // 颜色按 I–XII 轮转 SAKUYA_KNIFE_COLORS；多环时外环错开半格、略慢，
+    // 内环先到、外环后压，读起来像表盘在走。
+    // 整环随时间旋转（turn 正 = 顺时针），玩家必须逆时针穿行才找得到缝。
+    // 只出现在 sakuya 的卡里；其它 Boss 不会用到这个 typeName。
+    const n = ringN(p.n || 12, 4, 24);
+    const rings = clamp(Math.round((p.rings || 1) * pat.ringScale), 1, 4);
+    const spin = (p.turn != null ? p.turn : 0.22) * pat.dir;
+    const a0 = pat.angle + fireT * spin;
+    for (let k = 0; k < rings; k++) {
+      const base = a0 + (k * TAU) / (n * 2);
+      const sp = varySpeed(p.speed || 150, 1 - k * 0.08);
+      for (let i = 0; i < n; i++) {
+        const a = base + (i / n) * TAU;
+        b.spawn({
+          x: boss.x, y: boss.y,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          color: SAKUYA_KNIFE_COLORS[(i + k) % SAKUYA_KNIFE_COLORS.length],
+          r, type, life, rot: a,
+          turn: (p.curve || 0) * pat.dir,
+        });
+      }
+    }
+  }
+  /* ---------- 咲夜四条卡专属（_sakuya_design/DESIGN.md §2 七色飞刀） ---------- */
+
+  if (p.typeName === 'sakuyaFan') {
+    // 银符主招：五连扇形银刃（设计稿 §2-1，±14° 的窄扇）。
+    // 刀尖朝速度方向（autoSpin），一排刀推出去像一手牌甩开。
+    const n = count(p.n || 5, 3, 9);
+    const spread = clamp(p.spread || 0.49, 0.2, 1.2) * pat.spreadScale;
+    const base = pat.angle + (p.aimed ? aim() : 0);
+    for (let i = 0; i < n; i++) {
+      const a = base + (i - (n - 1) / 2) * (spread / (n - 1));
+      const sp = varySpeed(p.speed || 300);
+      b.spawn({
+        x: boss.x, y: boss.y,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        color: p.color || '#eef2ff', r, type, life, rot: a,
+      });
+    }
+  }
+
+  if (p.typeName === 'sakuyaSeven') {
+    // 七色环：12 个钟点各射一把刀，颜色按刻度轮转；**每种颜色一种弹道**——
+    // 绯红快直 / 琥珀越飞越快 / 鎏金追踪 / 翡翠减速 / 青绕圈 / 湛蓝激光直刃 / 紫罗兰时停。
+    // 设计稿的核心玩法就是「拿颜色读弹道」，所以同名不同色绝对不共用参数。
+    const n = ringN(p.n || 12, 6, 24);
+    const rings = clamp(Math.round((p.rings || 1) * pat.ringScale), 1, 3);
+    const spin = (p.turn != null ? p.turn : 0.1) * pat.dir;
+    const a0 = pat.angle + fireT * spin;
+    const baseSp = p.speed || 150;
+    for (let k = 0; k < rings; k++) {
+      const off = (k * TAU) / (n * 2);
+      for (let i = 0; i < n; i++) {
+        const idx = (i + k * 3) % SAKUYA_KNIFE_COLORS.length;
+        const col = SAKUYA_KNIFE_COLORS[idx];
+        const a = a0 + off + (i / n) * TAU;
+        let sp = baseSp * (1 - k * 0.1);
+        let lf = life;
+        let turn = p.curve || 0;
+        let accel = 0;
+        let homing = 0;
+        let hold = 0;
+        switch (idx) {
+          case 0: sp *= 1.9; break;                        // I   绯红：直冲快刃
+          case 1: sp *= 0.55; accel = 150; break;          // II  琥珀：延迟弹（越飞越快）
+          case 2: homing = 1.1; break;                     // III 鎏金：追踪刃
+          case 3: sp *= 0.5; lf += 1.6; break;             // IV  翡翠：减速带
+          case 4: turn = 1.1 * pat.dir; break;             // V   青：环形散射（原地兜圈）
+          case 5: sp *= 2.6; lf = Math.min(lf, 2.4); break; // VI  湛蓝：激光式直刃
+          default: hold = clamp(p.stop || 1.2, 0.6, 2.0); break; // VII 紫罗兰：时停静止弹
+        }
+        b.spawn({
+          x: boss.x, y: boss.y,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          color: col, r, type, life: lf, rot: a,
+          turn, accel, homing, holdT: hold,
+        });
+      }
+    }
+  }
+
+  if (p.typeName === 'sakuyaStop') {
+    // 时符「Private Square」：把场上所有弹幕定住 freeze 秒，同时凝出一圈紫罗兰静止刃；
+    // 领域一结束，凝滞的刀和补发的刀同一拍一起飞出来（设计稿 §2-2 的「停 → 补」）。
+    const freeze = clamp(p.freeze || 1.2, 0.6, 2.0);
+    b.freezeAll(freeze);
+    const n = ringN(p.n || 14, 8, 26);
+    for (let i = 0; i < n; i++) {
+      const a = pat.angle + (i / n) * TAU + boss.rnd(-0.01, 0.01);
+      const sp = varySpeed(p.speed || 175);
+      b.spawn({
+        x: boss.x, y: boss.y,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        color: SAKUYA_KNIFE_COLORS[6], r, type, life, rot: a, holdT: freeze,
+      });
+    }
+  }
+
+  if (p.typeName === 'sakuyaParadox') {
+    // 奇术「Time Paradox」：四个「残影站位」按十个字排开（上/右/下/左），
+    // 每拍换一个位置、换一色出手 —— 引擎没有克隆体，用站位+换色演「四个我同时在打」。
+    const slot = boss._paradoxSlot = ((boss._paradoxSlot || 0) + 1) % 4;
+    const dist = p.dist || 150;
+    const spots = [[0, -dist], [dist, 0], [0, dist], [-dist, 0]];
+    const sx = boss.x + spots[slot][0];
+    const sy = boss.y + spots[slot][1];
+    const col = SAKUYA_KNIFE_COLORS[(slot * 2 + 1) % SAKUYA_KNIFE_COLORS.length];
+    const n = count(p.n || 4, 2, 7);
+    const base = Math.atan2(py - sy, px - sx) + boss.rnd(-aimJitter, aimJitter);
+    const spread = clamp(p.spread || 0.5, 0.2, 1.2) * pat.spreadScale;
+    for (let i = 0; i < n; i++) {
+      const a = base + (i - (n - 1) / 2) * (spread / Math.max(1, n - 1));
+      const sp = varySpeed(p.speed || 240);
+      b.spawn({
+        x: sx, y: sy,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        color: col, r, type, life, rot: a,
+      });
+    }
+  }
+
+  if (p.typeName === 'sakuyaChronos') {
+    // 终符「Chronos Rule」：12 组钟面刻度、七色同心刀环，整环顺时针走针；
+    // 每 3 拍补一圈白刃放射，压住外圈缝隙（设计稿 §2-4）。
+    const n = ringN(p.n || 12, 8, 24);
+    const rings = clamp(Math.round((p.rings || 3) * pat.ringScale), 1, 4);
+    const spin = (p.turn != null ? p.turn : 0.42) * pat.dir;
+    const a0 = pat.angle + fireT * spin;
+    const baseSp = p.speed || 145;
+    for (let k = 0; k < rings; k++) {
+      const off = (k * TAU) / (n * 2);
+      const sp = baseSp * (1 - k * 0.1);
+      for (let i = 0; i < n; i++) {
+        const a = a0 + off + (i / n) * TAU;
+        const col = SAKUYA_KNIFE_COLORS[(i + k * 2) % SAKUYA_KNIFE_COLORS.length];
+        b.spawn({
+          x: boss.x, y: boss.y,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          color: col, r, type, life, rot: a,
+          turn: (p.curve || 0.16) * pat.dir,
+        });
+      }
+    }
+    if (((boss._chronosBeat = (boss._chronosBeat || 0) + 1) % 3) === 0) {
+      const m = clamp(Math.round((p.radial || 10) * boss.pressure), 6, 14);
+      for (let i = 0; i < m; i++) {
+        const a = a0 * 0.5 + (i / m) * TAU + boss.rnd(-0.02, 0.02);
+        const sp = Math.min(boss.speedCap, (p.radialSpeed || 220) * pat.speedScale);
+        b.spawn({
+          x: boss.x, y: boss.y,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          color: '#eef2ff', r, type, life: Math.min(2.6, life), rot: a,
+        });
+      }
+    }
+  }
+
   } finally {
     b.skinMap = null;
   }
@@ -1072,10 +1250,13 @@ export const BOSS_DEFS = {
         ],
       },
       {
+        // 2026-10-26 用户反馈「这张根本过不去」：只减密度（弹数 / 环数 / 脉冲频率），
+        // 弹速与颜色不动。满火力口径下同时出现的环弹从 126 发降到 80 发（−37%），
+        // 整体每秒弹数约 −30%（bossTuning.js 里这张卡的档位同时由 5 降到 4，再 −11.5%）。
         name: 'QED「495年的波纹」', hp: 2940, patterns: [
-          { typeName: 'ring', n: 36, speed: 140, color: '#ff4d6a', rate: 1.0, r: 7, rings: 2, spinAngle: -0.4 },
-          { typeName: 'ring', n: 18, speed: 80, color: '#ff8fa8', rate: 1.2, r: 11, type: 2, rings: 3, weight: 0.9 },
-          { typeName: 'spiralPulse', arms: 3, speed: 200, rate: 0.07, spin: 3.4, pulse: 2.2, color: '#ffd0d8', r: 5, type: 1, weight: 0.9 },
+          { typeName: 'ring', n: 26, speed: 140, color: '#ff4d6a', rate: 1.0, r: 7, rings: 2, spinAngle: -0.4 },
+          { typeName: 'ring', n: 14, speed: 80, color: '#ff8fa8', rate: 1.2, r: 11, type: 2, rings: 2, weight: 0.9 },
+          { typeName: 'spiralPulse', arms: 3, speed: 200, rate: 0.085, spin: 3.4, pulse: 2.2, color: '#ffd0d8', r: 5, type: 1, weight: 0.9 },
         ],
       },
       {
@@ -1106,6 +1287,71 @@ export const BOSS_DEFS = {
       },
     ],
   },
+
+  /**
+   * EXTRA 连环 Boss Rush 的另一位主角：十六夜咲夜。
+   * 四张卡只建一次（key = sakuya），由 Boss 构造器的 opts.cardFrom / opts.cardCount 切片成两场：
+   *   cardFrom 0 / 2 张 → 银符「Perfect Maid」+ 时符「Private Square」（开场，打完让路给雷米）
+   *   cardFrom 2 / 2 张 → 奇术「Time Paradox」+ 终符「Chronos Rule」（关底芙兰前的压轴）
+   * 弹幕母题照抄设计稿 _sakuya_design/DESIGN.md 的「七色飞刀」：
+   *   绯红 #ff3b4e 直冲快刃 / 琥珀 #ff8a3d 延迟弹 / 鎏金 #ffd24a 追踪 /
+   *   翡翠 #35e08c 减速 / 青 #3fd8ff 环形散射 / 湛蓝 #4c7bff 直刃 / 紫罗兰 #a86bff 时停弹；
+   *   刀型是专属弹型 B_KNIFE（bulletArt/knife.js：钢刀身 + 同色发光刃口），
+   *   朝向 = 速度方向（autoSpin），拖尾走 bullets 的加法层、天然同色。
+   *   四张卡的血量在 bossTuning.js 里显式给定
+   *   （0.77 × 45s × dps），这里的 hp 只是「调参表没登记时」的兜底值。
+   */
+  sakuya: {
+    name: '十六夜咲夜', title: '完美而潇洒的从者', hp: 36746, accent: '#c9d8ff',
+    phases: [
+      {
+        // 第一张：银符「Perfect Maid」
+        //   主招 sakuyaFan = 五连扇形银刃（±14° 窄扇，刀尖朝速度方向）；
+        //   每 30° 一圈的 sakuyaSeven 七色环负责把「颜色 = 弹道」的规矩立起来。
+        name: '银符「Perfect Maid」', hp: 2300, patterns: [
+          { typeName: 'sakuyaFan', n: 5, spread: 0.49, speed: 300, color: '#eef2ff', rate: 0.85, r: 7, type: B_KNIFE, aimed: true },
+          { typeName: 'sakuyaSeven', n: 12, speed: 150, rate: 1.5, r: 7, type: B_KNIFE, turn: 0.24, rings: 1, weight: 1.0 },
+          { typeName: 'sakuyaFan', n: 5, spread: 0.9, speed: 215, color: '#ffd24a', rate: 1.5, r: 7, type: B_KNIFE, weight: 0.85 },
+          { typeName: 'ring', n: 16, speed: 120, color: '#4c7bff', rate: 1.4, r: 7, type: B_KNIFE, rings: 1, spinAngle: 0.35, weight: 0.72 },
+        ],
+      },
+      {
+        // 第二张：时符「Private Square」
+        //   sakuyaStop 把场上所有弹幕真的定住 1.2s（bullets.freezeAll / b.holdT），
+        //   同时凝出一圈紫罗兰静止刃，领域结束一起飞出来；
+        //   灰色球形领域用 cage 围出球面，慢速七色环是「停住的那一层」。
+        name: '时符「Private Square」', hp: 2350, patterns: [
+          { typeName: 'sakuyaStop', n: 14, speed: 175, freeze: 1.2, rate: 2.0, r: 7, type: B_KNIFE },
+          { typeName: 'sakuyaSeven', n: 12, speed: 118, rate: 1.6, r: 7, type: B_KNIFE, turn: 0.14, rings: 1, stop: 1.2, weight: 0.95 },
+          { typeName: 'cage', n: 22, gaps: 2, radius: 250, speed: 92, rate: 1.9, color: '#4c7bff', r: 4, type: B_KNIFE, weight: 0.85 },
+          { typeName: 'ring', n: 18, speed: 96, color: '#a86bff', rate: 1.5, r: 7, type: B_KNIFE, rings: 2, spinAngle: 0.4, weight: 0.8 },
+        ],
+      },
+      {
+        // 第三张：奇术「Time Paradox」
+        //   四个残影站位（上/右/下/左）轮流换色齐射 = 四个咲夜；
+        //   反向七色环（turn 为负）负责让方向感失效。
+        name: '奇术「Time Paradox」', hp: 2400, patterns: [
+          { typeName: 'sakuyaParadox', n: 4, speed: 240, spread: 0.5, rate: 0.8, r: 7, type: B_KNIFE },
+          { typeName: 'sakuyaSeven', n: 12, speed: 165, rate: 1.7, r: 7, type: B_KNIFE, turn: -0.3, rings: 1, weight: 0.9 },
+          { typeName: 'sakuyaParadox', n: 3, speed: 300, spread: 0.62, rate: 1.3, r: 4, type: B_KNIFE, weight: 0.8 },
+          { typeName: 'arc', arcs: 2, n: 4, gap: 0.5, speed: 160, color: '#35e08c', rate: 1.3, r: 7, type: B_KNIFE, weight: 0.7 },
+        ],
+      },
+      {
+        // 第四张：终符「Chronos Rule」
+        //   12 组钟面刻度（每 30°）七色同心环 + 每 3 拍白刃放射，整环顺时针走针，
+        //   玩家只能逆时针穿行才找得到缝；外圈慢环是「被走到的那一格」。
+        name: '终符「Chronos Rule」', hp: 2450, patterns: [
+          { typeName: 'sakuyaChronos', n: 12, rings: 3, speed: 145, rate: 1.1, r: 7, type: B_KNIFE, turn: 0.42, radial: 10 },
+          { typeName: 'ring', n: 24, speed: 62, color: '#4c7bff', rate: 1.0, r: 7, type: B_KNIFE, rings: 2, spinAngle: 0.6, weight: 0.9 },
+          { typeName: 'sakuyaSeven', n: 12, speed: 175, rate: 1.6, r: 7, type: B_KNIFE, turn: 0.3, rings: 1, weight: 0.95 },
+          { typeName: 'spiralPulse', arms: 3, speed: 195, rate: 0.06, spin: 2.8, pulse: 2.0, color: '#ffd24a', r: 4, type: B_KNIFE, weight: 0.9 },
+          { typeName: 'ring', n: 30, speed: 105, color: '#ff8a3d', rate: 1.6, r: 7, type: B_KNIFE, rings: 2, spinAngle: -0.5, weight: 0.85 },
+        ],
+      },
+    ],
+  },
 };
 
 /* ============================================================
@@ -1117,8 +1363,10 @@ export class Boss {
    * @param {string} key BOSS_DEFS 的键
    * @param {number} x 世界坐标（脚底中心）
    * @param {number} y
-   * @param {{seed?:number, difficulty?:string, stageNumber?:number}} [opts]
-   *   可选：固定随机种子（测试 / 复现用）；难度与 1 起关卡号（用于裁剪难符卡 / 倍率）
+   * @param {{seed?:number, difficulty?:string, stageNumber?:number, cardFrom?:number, cardCount?:number}} [opts]
+   *   可选：固定随机种子（测试 / 复现用）；难度与 1 起关卡号（用于裁剪难符卡 / 倍率）；
+   *   cardFrom / cardCount：只打这个 Boss 卡表里的一段（EX 连环 Boss Rush 用同一份
+   *   咲夜四卡数据切两场），不传就是全部卡，行为与旧版一致。
    */
   constructor(key, x, y, opts = {}) {
     const def = BOSS_DEFS[key] || BOSS_DEFS.rumia;
@@ -1202,6 +1450,23 @@ export class Boss {
     if (this.finalHpMul !== 1) {
       this.phases = this.phases.map((p) => ({ ...p, hp: Math.max(1, Math.round(p.hp * this.finalHpMul)) }));
     }
+
+    /* ---------- 卡片切片：一个 key 建 N 张，由关卡按「场次」切一段来打 ----------
+     * EX 的连环 Boss Rush 用同一份 sakuya 四卡数据切两场：
+     *   new Boss('sakuya', x, y, { cardFrom: 0, cardCount: 2 }) → 银符 + 时符
+     *   new Boss('sakuya', x, y, { cardFrom: 2, cardCount: 2 }) → 奇术 + 终符
+     * 切片放在逐卡调参 + 终局倍率之后、总血量汇总之前：调参始终按「完整卡表」的下标
+     * 对齐（bossTuning.js 的四张卡不用拆），而 maxHp / spellCount / phaseCount /
+     * _advanceSpell 的「最后一张」判断全部基于切完的 this.phases，天然自洽。
+     * 不传 cardFrom 时 from = 0、cnt = 原张数且跳过切片，血量 / 张数与旧版完全一致。
+     */
+    const cardLen = this.phases.length;
+    const from = Math.min(Math.max(0, opts.cardFrom | 0), Math.max(0, cardLen - 1));
+    const want = opts.cardCount == null ? cardLen - from : Math.max(1, opts.cardCount | 0);
+    const cnt = Math.min(want, cardLen - from);
+    if (from !== 0 || cnt !== cardLen) this.phases = this.phases.slice(from, from + cnt);
+    /** 本场第一张卡在完整卡表里的下标（_cardResultSnapshot 的 globalIndex 用它还原全场序号） */
+    this.cardGlobalFrom = from;
 
     // 总血量 = 实际（可能被难度裁掉难符卡后的）各符卡血量之和，避免与独立的
     // def.hp 倍率算出 ±1 的误差，也让 E/N 裁卡后 maxHp 与实际要打的血量一致。
@@ -1739,6 +2004,8 @@ export class Boss {
     if (this.mode !== 'survival' && !this.cardDual && limit != null) ok = this.cardElapsed <= limit + 1e-6;
     return {
       index: this.spellIdx,
+      // 切片后的本场序号 + 本场起点 = 完整卡表里的序号（EX 咲夜两场共用一份四卡数据）
+      globalIndex: this.spellIdx + (this.cardGlobalFrom || 0),
       name: this.spellName,
       mode: this.mode,
       ok,
@@ -3030,6 +3297,49 @@ export class Boss {
 
     ctx.restore();
   }
+}
+
+/**
+ * 小头目血量（docs/ENEMY_VARIETY_SPEC.md §6-D1）：该 Boss「半张符卡」的血量。
+ *
+ * 口径与 Boss 构造器逐卡血量完全一致（boss.js 里的 tuneCards 循环）：
+ *   - 显式 t.hp > 0：用它；
+ *   - survival 卡：跳过（不承伤，不是血量）；
+ *   - 其余伤害卡 / 双条件卡：limit × dps × CARD_HP_ANCHOR；
+ * 逐卡乘 finalHpMulFor(key) 并四舍五入（与构造器 :1204-1207 同一步），
+ * 再取所有伤害卡的平均值 × 0.5（半张卡）四舍五入。
+ *
+ * 因此它天然跟着 CARD_HP_ANCHOR / BOSS_FINAL_HP_MUL 一起变，道中小头目永远
+ * 是「该面 Boss 一张卡的一半肉」，不需要另立一张数值表。
+ *
+ * @param {string} key BOSS_DEFS 的键（'rumia' | 'wriggle' | 'cirno' | 'yuyuko' | 'kaguya' …）
+ * @returns {number} 血量（整数，至少 1）
+ */
+export function bossHalfCardHp(key) {
+  const tune = cardTuningFor(key);
+  const cards = tune && Array.isArray(tune.cards) ? tune.cards : null;
+  if (!cards || !cards.length) return 1;
+  const mul = finalHpMulFor(key);
+  const hps = [];
+  for (const t of cards) {
+    if (!t) continue;
+    const mode = t.mode === 'survival' ? 'survival' : (t.mode === 'both' ? 'both' : 'damage');
+    if (mode === 'survival') continue;
+    const hpOverride = Number(t.hp);
+    const dps = Number(t.dps);
+    const limit = Number(t.limit);
+    let hp = 0;
+    if (Number.isFinite(hpOverride) && hpOverride > 0) {
+      hp = Math.max(1, Math.round(hpOverride));
+    } else if (Number.isFinite(dps) && dps > 0 && Number.isFinite(limit) && limit > 0) {
+      hp = Math.max(1, Math.round(limit * dps * CARD_HP_ANCHOR));
+    }
+    if (hp <= 0) continue;
+    hps.push(Math.max(1, Math.round(hp * mul)));
+  }
+  if (!hps.length) return 1;
+  const avg = hps.reduce((a, b) => a + b, 0) / hps.length;
+  return Math.max(1, Math.round(avg * 0.5));
 }
 
 /**

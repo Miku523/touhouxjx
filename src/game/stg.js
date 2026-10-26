@@ -329,6 +329,16 @@ const ENEMY_KINDS = {
   turret: { hp: 39, w: 40, h: 44, color: '#9fe6a0', aura: 'green', speed: 108, rate: 2.1 },
 };
 
+/* 进场方式（C1）：不再一律从右侧涌入。
+ *   权重：edgeR 40% / top 20% / bottom 15% / chase 15% / corner 10%
+ *   ENTRY_REL_X 是「汇合点」的屏幕相对 x：非 edgeR 的敌机从这里附近的编队位收拢，
+ *   所以整段进场动画都落在画面右三分之一里，玩家看得见（不会在屏外白演一遍）。 */
+const ENTRY_REL_X = 1210;
+const ENTRY_EDGE = 90;
+
+/** 进场汇合点的 y 夹在画面内（距上下边 90px），跟「进场前 y 别贴边」的约定一致 */
+const clampEntryY = (v, h) => Math.max(90, Math.min((h || 720) - 90, v));
+
 class StgEnemy {
   constructor(kind, x, y, aura) {
     const k = ENEMY_KINDS[kind];
@@ -354,30 +364,167 @@ class StgEnemy {
     this.shotAlt = 0;
     this.enterT = kind === 'turret' ? 1.7 : 0;
     this.size = Math.max(k.w, k.h) * 1.25;
+
+    // —— 进场状态（C1）：进场期间不发射、不参与 shots.hitRect 碰撞 ——
+    this.entry = 'edgeR';       // edgeR / top / bottom / chase / corner
+    this.entering = false;      // 进场动画未结束
+    this.entryT = 0;            // 进场剩余时间
+    this.entryDur = 0;
+    this.entryFromRelX = 0;     // 起点（屏幕相对 x；世界层每帧按 scroll 换算）
+    this.entryFromY = 0;
+    this.entryRelX = 0;         // 汇合点（屏幕相对 x）
+    this.entryToY = y;
+    this.entryTrackY = null;    // wallGap：相对玩家 y 的缺口偏移，进场时跟着玩家走
+    this.chaseSpeed = 0;
+    this._chaseSeen = false;
+    this.noFireT = 0;           // 进场结束 / chase 入画后的禁火时间
+    // 延迟弹（连发点射 / 第二波补射）：和齐射冷却解耦，各自带计时器排队
+    this.pending = [];
+    this.stageH = 720;          // 由 StgStage 在生成时写入，进场插值要用画面高度
+    // 螺旋转向/换向周期：从已有随机量派生，**不额外消耗 Math.random**——
+    // 否则整条全局随机流会被推移，Boss 的弹幕序列也跟着变（基线不可比）。
+    this.spinDir = this.phase < Math.PI ? 1 : -1;
+    this.spinT = 2.6 + (this.ringA % 1.6);
+    this.spreadA = 0;           // gunner 的摆动扇面：每轮偏一点，像扫射
+  }
+
+  /** 排队一发延迟弹：与齐射冷却解耦（3 连点射 / 第二波补射都用它） */
+  _later(delay, fn) {
+    if (this.pending.length >= 4) return;
+    this.pending.push({ t: delay, fn });
+  }
+
+  /** 推进延迟弹队列；预算不够就丢弃，绝不顶穿 mods.budget */
+  _tickPending(dt, bullets, budget) {
+    if (!this.pending.length) return;
+    for (let i = this.pending.length - 1; i >= 0; i--) {
+      const p = this.pending[i];
+      p.t -= dt;
+      if (p.t > 0) continue;
+      this.pending.splice(i, 1);
+      if (bullets && bullets.count() < budget) p.fn(bullets);
+    }
+  }
+
+  /** 浮动幅度（按兵种） */
+  get wobbleAmp() {
+    switch (this.kind) {
+      case 'spinner': return 34;
+      case 'sniper': return 26;
+      case 'bomber': return 16;
+      case 'turret': return 6;
+      default: return 22;
+    }
+  }
+
+  /** 浮动频率（按兵种） */
+  get wobbleHz() {
+    switch (this.kind) {
+      case 'spinner': return 1.7;
+      case 'sniper': return 1.5;
+      case 'bomber': return 1.4;
+      case 'turret': return 1.1;
+      default: return 2.2;
+    }
+  }
+
+  /** 指定进场方式：起点在屏外对应边，用 0.7~1.6s 的缓入曲线汇入编队位 */
+  _beginEntry(scroll, dur, fromRelX, fromY, toRelX, toY) {
+    this.entering = true;
+    this.entryDur = dur;
+    this.entryT = dur;
+    this.entryFromRelX = fromRelX;
+    this.entryFromY = fromY;
+    this.entryRelX = toRelX;
+    this.entryToY = toY;
+    this.x = scroll + fromRelX;
+    this.y = fromY;
+    this.baseY = toY;
+  }
+
+  /** chase：从玩家背后（左侧屏外）以 vx>0 追上，越过玩家后交回常规左移 */
+  _beginChase(scroll, fromRelX, toY, dur) {
+    this.entering = true;
+    this.entryDur = dur;
+    this.entryT = dur;
+    this.entryRelX = fromRelX;
+    this.entryToY = toY;
+    this.x = scroll + fromRelX;
+    this.y = toY;
+    this.baseY = toY;
+    this.chaseSpeed = Math.max(420, this.k.speed * 2.4);
+  }
+
+  /** 进场收尾：位置对齐汇合点，交回 vx=-speed 的常规逻辑 */
+  _finishEntry(scroll, finalY) {
+    this.entering = false;
+    this.entryT = 0;
+    this.vx = -this.k.speed;
+    this.baseY = finalY;
+    this.y = finalY;
+    this.x = scroll + this.entryRelX;
+    // 浮动曲线从 0 相位接上，避免进场结束瞬间跳一下
+    this.phase = -this.t * this.wobbleHz;
+  }
+
+  /** chase 收尾：就地从当前 x 交回常规左移（不能弹回 entryRelX，那会瞬移回屏外） */
+  _finishChase() {
+    this.entering = false;
+    this.entryT = 0;
+    this.chaseSpeed = 0;
+    this.vx = -this.k.speed;
+    this.baseY = this.y;
+    this.phase = -this.t * this.wobbleHz;
+    this.noFireT = Math.max(this.noFireT, 0.25);
+  }
+
+  /** 进场推进：位置全部按「屏幕相对 x」插值，相机推进时不会把敌机甩到屏外 */
+  _moveEntry(dt, scroll, px, py) {
+    if (this.entry === 'chase') {
+      this.entryT -= dt;
+      this.x += this.chaseSpeed * dt;
+      // 侧向也朝目标高度收，进场期间能看出「一路爬升 / 压低」地追上来
+      const ty = this.entryTrackY == null ? this.entryToY : clampEntryY(py + this.entryTrackY, this.stageH);
+      this.y += (ty - this.y) * Math.min(1, dt * 3);
+      if (!this._chaseSeen && this.x > scroll + 40) {
+        this._chaseSeen = true;
+        this.noFireT = Math.max(this.noFireT, 0.6);   // 入画 0.6s 后才允许开火
+      }
+      // 越过玩家（或超时兜底）→ 交回常规左移
+      if (this.x > px + 150 || this.entryT <= 0) this._finishChase();
+      return;
+    }
+    this.entryT -= dt;
+    const d = this.entryDur > 0 ? this.entryDur : 1;
+    const u = 1 - Math.max(0, this.entryT) / d;
+    const k = u * u * (3 - 2 * u);                   // smoothstep：起步快、落位稳
+    const toY = this.entryTrackY == null ? this.entryToY : clampEntryY(py + this.entryTrackY, this.stageH);
+    this.x = scroll + this.entryFromRelX + (this.entryRelX - this.entryFromRelX) * k;
+    this.y = this.entryFromY + (toY - this.entryFromY) * k;
+    this.entryToY = toY;
+    if (this.entryT <= 0) this._finishEntry(scroll, toY);
   }
 
   /** 各兵种轨迹：统一向左推进，但速度 / 悬浮幅度不同；大妖精进场后定点 */
-  _move(dt) {
+  _move(dt, scroll = 0, px = 0, py = 0) {
+    if (this.entering) { this._moveEntry(dt, scroll, px, py); return; }
     const k = this.k;
     if (this.kind === 'turret') {
       this.enterT -= dt;
       if (this.enterT <= 0) this.vx = 0;
     }
     this.x += this.vx * dt;
-
-    let amp = 22;
-    let hz = 2.2;
-    if (this.kind === 'spinner') { amp = 34; hz = 1.7; }
-    else if (this.kind === 'sniper') { amp = 26; hz = 1.5; }
-    else if (this.kind === 'bomber') { amp = 16; hz = 1.4; }
-    else if (this.kind === 'turret') { amp = 6; hz = 1.1; }
-    this.y = this.baseY + Math.sin(this.t * hz + this.phase) * amp;
+    this.y = this.baseY + Math.sin(this.t * this.wobbleHz + this.phase) * this.wobbleAmp;
   }
 
-  update(dt, bullets, px, py, mods = null) {
+  update(dt, bullets, px, py, mods = null, scroll = 0) {
     this.t += dt;
     this.hitFlash = Math.max(0, this.hitFlash - dt);
-    this._move(dt);
+    this._move(dt, scroll, px, py);
+
+    // 进场期间不发射：不消耗齐射冷却、也不排队延迟弹（落位后 fireT 从原值继续算）
+    if (this.entering) { this.pending.length = 0; return; }
+    if (this.noFireT > 0) { this.noFireT -= dt; return; }
 
     const speedMul = mods ? mods.speed : 1;
     const fireMul = mods ? mods.fire : 1;
@@ -396,17 +543,24 @@ class StgEnemy {
       return Math.min(cap, sp * m);
     };
 
+    // 上一轮排下的延迟弹（3 连点射 / 第二波补射）：和齐射冷却互不占用
+    this._tickPending(dt, bullets, budget);
+
     // 魔法妖精：持续螺旋（不占齐射冷却；弹幕池有软上限）
     if (this.kind === 'spinner') {
-      this.spinA += 2.3 * dt;
+      // 摆动螺旋：转速方向每隔几秒翻一次，再叠快慢分档 → 同一只妖精画出「收/放」的螺线
+      this.spinT -= dt;
+      if (this.spinT <= 0) { this.spinDir *= -1; this.spinT = 2.8 + ((this.t * 0.37) % 1.6); }
+      this.spinA += 2.3 * this.spinDir * dt;
       this.fireT -= dt;
       if (this.fireT > 0 || !bullets) return;
       this.fireT = Math.max(0.1, rate(this.k.rate));
       if (bullets.count() >= budget) return;
       const arms = mods && mods.scout >= 4 ? 3 : mods && mods.scout > 2 ? 2 : 1;
+      const flip = (this.shotAlt = (this.shotAlt + 1) & 3);
       for (let k = 0; k < arms; k++) {
         // 每条螺旋臂吃一档速度：EX 三臂 = 快 / 中 / 慢三条不同转速的螺线叠在一起
-        bullets.spiral(this.x, this.y, this.spinA + (k / arms) * Math.PI, banded(shotSpeed(155), k), {
+        bullets.spiral(this.x, this.y, this.spinA + (k / arms) * Math.PI, banded(shotSpeed(155), k + (flip >= 2 ? 1 : 0)), {
           color: this.k.color, r: 5, life: 5, type: 0,
         });
       }
@@ -418,76 +572,157 @@ class StgEnemy {
 
     const n = mods ? mods.gunner : 3;
     const nScout = mods ? mods.scout : 1;
+    // 每个兵种在两次齐射之间轮换两套发射方式（alt 奇偶），外观不再是重复的同一招
+    const alt = (this.shotAlt = (this.shotAlt + 1) & 3);
+    const odd = (alt & 1) === 1;
+    const R = rate(this.k.rate);
     switch (this.kind) {
       case 'sniper': {
-        // 交叉双线（新弹幕样式）：左右两个发射点各射一束瞄准米弹，两股流线在玩家附近交叉；
-        // 每束里快慢弹交替，两条交叉线的「到达时间」不再整齐划一。
-        this.fireT = rate(this.k.rate);
-        const streams = Math.max(1, nScout);
-        for (const side of [-1, 1]) {
-          const bx = this.x + side * 24;
-          const by = this.y + side * 6;
-          const aa = Math.atan2(py - by, px - bx);
-          bullets.fan(bx, by, streams, 0.05, aa, shotSpeed(320), {
-            color: this.k.color, r: 5, life: 5, type: 1, ...(mix || {}),
+        this.fireT = R;
+        if (!odd) {
+          // 交叉双线（新弹幕样式）：左右两个发射点各射一束瞄准米弹，两股流线在玩家附近交叉；
+          // 每束里快慢弹交替，两条交叉线的「到达时间」不再整齐划一。
+          const streams = Math.max(1, nScout);
+          for (const side of [-1, 1]) {
+            const bx = this.x + side * 24;
+            const by = this.y + side * 6;
+            const aa = Math.atan2(py - by, px - bx);
+            bullets.fan(bx, by, streams, 0.05, aa, shotSpeed(320), {
+              color: this.k.color, r: 5, life: 5, type: 1, ...(mix || {}),
+            });
+          }
+        } else {
+          // 第二式「延迟补射」：先一发快弹，0.22s 后再补一发慢弹（两段式点射，逼玩家二次位移）
+          const a1 = Math.atan2(py - this.y, px - this.x);
+          bullets.spawn({
+            x: this.x, y: this.y, vx: Math.cos(a1) * banded(shotSpeed(330), 0), vy: Math.sin(a1) * banded(shotSpeed(330), 0),
+            color: this.k.color, r: 5, life: 5, type: 1,
+          });
+          this._later(0.22, (bs) => {
+            const a2 = a1 + (this.shotAlt & 2 ? 0.09 : -0.09);
+            bs.spawn({
+              x: this.x, y: this.y, vx: Math.cos(a2) * banded(shotSpeed(250), 1), vy: Math.sin(a2) * banded(shotSpeed(250), 1),
+              color: this.k.aura === 'blue' ? '#bfe6ff' : this.k.color, r: 5, life: 5, type: 1,
+            });
           });
         }
         break;
       }
       case 'turret': {
-        // 大妖精定点：主环 + 每两轮追加一圈反向慢速环（新弹幕样式：对向双环）
-        this.fireT = rate(this.k.rate);
+        // 大妖精定点：主环 + 每两轮追加一圈反向慢速环（对向双环）；另一式是「缺口环」
+        this.fireT = R;
         const count = 6 + Math.min(2, Math.max(0, n - 3));
-        bullets.ring(this.x, this.y, count, shotSpeed(145), {
-          angle: this.ringA, color: this.k.color, r: 6, life: 5, type: 0, ...(mix || {}),
-        });
-        if ((this.shotAlt = (this.shotAlt || 0) + 1) % 2 === 0) {
-          // 反向慢环整体再压一档，和主环拉开明显的「慢一截」
-          bullets.ring(this.x, this.y, Math.max(4, count - 2), shotSpeed(92) * (bands ? bands[bands.length - 1] : 1), {
-            angle: -this.ringA * 1.4, color: this.k.aura === 'green' ? '#bfffc0' : this.k.color,
-            r: 5, life: 5.5, type: 0,
+        if (!odd) {
+          bullets.ring(this.x, this.y, count, shotSpeed(145), {
+            angle: this.ringA, color: this.k.color, r: 6, life: 5, type: 0, ...(mix || {}),
           });
+          if (this.shotAlt >= 2) {
+            // 反向慢环整体再压一档，和主环拉开明显的「慢一截」
+            bullets.ring(this.x, this.y, Math.max(4, count - 2), shotSpeed(92) * (bands ? bands[bands.length - 1] : 1), {
+              angle: -this.ringA * 1.4, color: this.k.aura === 'green' ? '#bfffc0' : this.k.color,
+              r: 5, life: 5.5, type: 0,
+            });
+          }
+        } else {
+          // 缺口环：整环缺两发，缺口正对玩家 → 要主动位移去钻，而不是站着看
+          const gapA = Math.atan2(py - this.y, px - this.x);
+          for (let i = 0; i < count - 2; i++) {
+            const a = (i / (count - 2)) * Math.PI * 2 + this.ringA;
+            if (Math.abs(Math.atan2(Math.sin(a - gapA), Math.cos(a - gapA))) < 0.55) continue;
+            bullets.spawn({
+              x: this.x, y: this.y, vx: Math.cos(a) * banded(shotSpeed(135), i), vy: Math.sin(a) * banded(shotSpeed(135), i),
+              color: this.k.color, r: 6, life: 5, type: 0,
+            });
+          }
         }
         this.ringA += Math.PI / count;
         break;
       }
       case 'bomber': {
-        // 抛物延迟雨：下坠加速，落地前有时间闪避；
-        // 奇偶两档初速/加速度 → 同一串雨里有的快落、有的慢慢飘下来
-        this.fireT = rate(this.k.rate);
+        // 抛物延迟雨：下坠加速，落地前有时间闪避；奇偶两档初速/加速度 → 有的快落、有的慢慢飘
+        this.fireT = R;
         const count = Math.max(2, Math.round(n * 0.7));
-        for (let k = 0; k < count; k++) {
-          const bx = this.x + (k - (count - 1) / 2) * 22;
-          const heavy = k % 2 === 1;
-          bullets.spawn({
-            x: bx, y: this.y + 12, vx: -18, vy: heavy ? 58 : 20,
-            accel: heavy ? 300 : 130,
-            color: this.k.color, r: 6, life: 6, type: 1,
-          });
+        if (!odd) {
+          for (let k = 0; k < count; k++) {
+            const bx = this.x + (k - (count - 1) / 2) * 22;
+            const heavy = k % 2 === 1;
+            bullets.spawn({
+              x: bx, y: this.y + 12, vx: -18, vy: heavy ? 58 : 20,
+              accel: heavy ? 300 : 130,
+              color: this.k.color, r: 6, life: 6, type: 1,
+            });
+          }
+        } else {
+          // 第二式「摆动横移雨」：弹数不变，但横向 vx 逐渐收窄 → 一片会拐弯的雨
+          for (let k = 0; k < count; k++) {
+            const spread = (k - (count - 1) / 2) * 30;
+            bullets.spawn({
+              x: this.x, y: this.y + 12, vx: -70 + spread * 0.9, vy: 34 + k * 6,
+              accel: 120, wobbleAmp: 16, wobbleFreq: 2.6,
+              color: this.k.aura === 'yellow' ? '#ffd9a0' : this.k.color, r: 6, life: 6, type: 1,
+            });
+          }
         }
         break;
       }
       case 'gunner': {
-        this.fireT = rate(this.k.rate);
-        bullets.fan(this.x, this.y, n, 0.5, Math.PI * 0.86, shotSpeed(190), {
-          color: this.k.color, r: 6, life: 5, ...(mix || {}),
-        });
-        break;
-      }
-      default: {
-        // scout / diver：单发瞄准，高难度变成小扇
-        this.fireT = rate(this.k.rate);
-        const a = Math.atan2(py - this.y, px - this.x);
-        if (nScout > 1) {
-          bullets.fan(this.x, this.y, nScout, 0.2, a, shotSpeed(230), {
+        this.fireT = R;
+        // 摆动扇：每轮基角左右偏 0.12rad，连起来像在扫射；另一式是延迟第二波（同发数，先半后补）
+        this.spreadA += (alt & 2 ? 0.12 : -0.12);
+        if (!odd) {
+          bullets.fan(this.x, this.y, n, 0.5, Math.PI * 0.86 + this.spreadA, shotSpeed(190), {
             color: this.k.color, r: 6, life: 5, ...(mix || {}),
           });
         } else {
+          const half = Math.max(1, Math.ceil(n / 2));
+          bullets.fan(this.x, this.y, half, 0.5, Math.PI * 0.86 + this.spreadA, shotSpeed(190), {
+            color: this.k.color, r: 6, life: 5, ...(mix || {}),
+          });
+          this._later(0.26, (bs) => {
+            bs.fan(this.x, this.y, Math.max(1, n - half), 0.34, Math.PI * 0.86 - this.spreadA * 0.6, shotSpeed(165), {
+              color: this.k.color, r: 6, life: 5,
+            });
+          });
+        }
+        break;
+      }
+      default: {
+        // scout / diver：单发瞄准 / 小扇；另一式「点射补枪」——先一发，0.18s 后斜向补一发
+        this.fireT = R;
+        const a = Math.atan2(py - this.y, px - this.x);
+        const isDiver = this.kind === 'diver';
+        if (nScout > 1) {
+          if (!odd) {
+            bullets.fan(this.x, this.y, nScout, 0.2, a, shotSpeed(230), {
+              color: this.k.color, r: 6, life: 5, ...(mix || {}),
+            });
+          } else {
+            const half = Math.max(1, Math.ceil(nScout / 2));
+            bullets.fan(this.x, this.y, half, 0.2, a, shotSpeed(230), {
+              color: this.k.color, r: 6, life: 5, ...(mix || {}),
+            });
+            this._later(0.18, (bs) => {
+              bs.fan(this.x, this.y, Math.max(1, nScout - half), 0.2, a + (isDiver ? 0.12 : 0), shotSpeed(206), {
+                color: this.k.color, r: 6, life: 5,
+              });
+            });
+          }
+        } else if (!odd) {
           bullets.spawn({
             x: this.x, y: this.y,
-            vx: Math.cos(a) * shotSpeed(230),
-            vy: Math.sin(a) * shotSpeed(230),
+            vx: Math.cos(a) * shotSpeed(isDiver ? 300 : 230),
+            vy: Math.sin(a) * shotSpeed(isDiver ? 300 : 230),
             color: this.k.color, r: 6, life: 5,
+          });
+        } else {
+          // diver 的补枪更快更陡（俯冲点射）；scout 的是慢半拍的斜补
+          this._later(isDiver ? 0.12 : 0.18, (bs) => {
+            const a2 = a + (isDiver ? -0.1 : 0.14);
+            const sp = banded(shotSpeed(isDiver ? 300 : 230), 1);
+            bs.spawn({
+              x: this.x, y: this.y, vx: Math.cos(a2) * sp, vy: Math.sin(a2) * sp,
+              color: this.k.color, r: 6, life: 5,
+            });
           });
         }
         break;
@@ -772,6 +1007,12 @@ export class StgStage {
       };
     }
 
+    // 进场方式抽签状态：确定性 rng（同一关每次一致，回放/验收可比），
+    // _entryAnchorX 是整波编队位的锚点（按阵型宽度左移，保证落在画面内）。
+    this._entryA = (hashSeed(`${(level.def && level.def.id) || 'stg'}:entry`) ^ 0x2545f491) >>> 0;
+    this._entryN = 0;
+    this._entryAnchorX = ENTRY_REL_X;
+
     this._buildWaves();
   }
 
@@ -782,7 +1023,9 @@ export class StgStage {
     const step = 400;
     let n = 0;
     for (let s = 400; s < usable; s += step) {
-      const roll = n % 9;
+      // 12 拍一循环：原来 9 拍 + 3 组新阵型（diamond / trail / wallGap），
+      // at 间距与总数完全沿用原节奏，只换队形外观。
+      const roll = n % 12;
       if (roll === 0) {
         // V 字：两翼张开，中间留缝
         this.waves.push({ at: s, kind: 'scout', count: 6, gapY: 0, form: 'v' });
@@ -806,25 +1049,124 @@ export class StgStage {
       } else if (roll === 7) {
         this.waves.push({ at: s, kind: 'scout', count: 5, gapY: -150, form: 'v' });
         this.waves.push({ at: s + 160, kind: 'gunner', count: 2, gapY: 160, form: 'column' });
-      } else {
+      } else if (roll === 8) {
         this.waves.push({ at: s, kind: 'diver', count: 5, gapY: 60, form: 'cross' });
         this.waves.push({ at: s + 240, kind: 'sniper', count: 1, gapY: 210, form: 'line' });
+      } else if (roll === 9) {
+        // 菱形阵：一圈俯冲兵围成菱形，从上下两向收拢
+        this.waves.push({ at: s, kind: 'diver', count: 6, gapY: 0, form: 'diamond' });
+      } else if (roll === 10) {
+        // 尾迹阵：一列斜线跟进，像候鸟排队切入
+        this.waves.push({ at: s, kind: 'scout', count: 6, gapY: -40, form: 'trail' });
+      } else {
+        // 缺口墙：竖排一排枪手，缺口对准玩家当前高度，要靠位移钻过去
+        this.waves.push({ at: s, kind: 'gunner', count: 6, gapY: 0, form: 'wallGap' });
       }
       n++;
     }
   }
 
+  /** 进场方式抽签：确定性 rng，同一关每次一致（复现 / 验收可比） */
+  _entryRng() {
+    this._entryA = (this._entryA + 0x6d2b79f5) | 0;
+    let t = Math.imul(this._entryA ^ (this._entryA >>> 15), 1 | this._entryA);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  /** 按权重抽一种进场方式：edgeR 40% / top 20% / bottom 15% / chase 15% / corner 10% */
+  _nextEntryMode() {
+    const r = this._entryRng();
+    if (r < 0.40) return 'edgeR';
+    if (r < 0.60) return 'top';
+    if (r < 0.75) return 'bottom';
+    if (r < 0.90) return 'chase';
+    return 'corner';
+  }
+
+  /** 把一波敌机放上各自的进场轨迹：起点在画外对应边，target 是编队位（可见） */
+  _applyEntry(e, mode, dur, dx, y, player) {
+    const scroll = this.scroll;
+    const H = this.level.h;
+    const relTo = this._entryAnchorX + (dx || 0);
+    const jitter = (this._entryRng() - 0.5) * 80;
+    switch (mode) {
+      case 'top':
+        e.entry = 'top';
+        e._beginEntry(scroll, dur, relTo + jitter * 0.35, -ENTRY_EDGE, relTo, y);
+        break;
+      case 'bottom':
+        e.entry = 'bottom';
+        e._beginEntry(scroll, dur, relTo + jitter * 0.35, H + ENTRY_EDGE, relTo, y);
+        break;
+      case 'corner': {
+        // 斜角：右上 / 右下交替切入，落位前明显带着水平位移
+        const up = (this._entryN++ % 2) === 0;
+        e.entry = 'corner';
+        e._beginEntry(scroll, dur, relTo + 240, up ? -ENTRY_EDGE : H + ENTRY_EDGE, relTo, y);
+        break;
+      }
+      case 'chase':
+        // 背后追上：从画面左侧外以 vx>0 冲上来，越过玩家后才交回左移
+        e.entry = 'chase';
+        e._beginChase(scroll, -170 - (this._entryN++ % 3) * 46, y, 4.0);
+        break;
+      default:
+        // edgeR：从右侧画外滑进来（原来唯一的进场方式）
+        e.entry = 'edgeR';
+        e._beginEntry(scroll, dur, 1400 + (dx || 0), y + jitter, relTo, y);
+        break;
+    }
+  }
+
   /** 按编队形状计算第 i 架敌机的相对位置 */
-  _spawnWave(w) {
+  _spawnWave(w, player = null) {
     const n = Math.max(1, w.count | 0);
     const form = w.form || 'line';
     const gapY = w.gapY || 0;
+    const H = this.level.h;
+
+    // 整波统一一种进场方式（同队才不会散），时长 0.7~1.6s（确定性抽取）
+    const mode = this._nextEntryMode();
+    const dur = 0.7 + this._entryRng() * 0.9;
+
+    if (form === 'wallGap') {
+      // 缺口墙：以玩家当前高度为缺口中心，上下两侧往外排；超出画面的行直接不生成
+      // （比硬夹到边上自然），所以实际架数 ≤ w.count，数量不会增加。
+      const gc = Math.max(200, Math.min(H - 200, player ? player.worldY : H * 0.5));
+      const rowStep = Math.max(74, Math.min(98, (H - 200) / (n + 1)));
+      this._entryAnchorX = 1210;
+      for (let i = 0; i < n; i++) {
+        const row = Math.floor(i / 2) + 1;
+        const dir = (i % 2) ? 1 : -1;
+        const y = gc + dir * (112 + (row - 1) * rowStep);
+        if (y < 70 || y > H - 70) continue;
+        const e = new StgEnemy(w.kind, this.scroll + this._entryAnchorX, y, this.auras[w.kind]);
+        e.stageH = H;
+        this._applyEntry(e, mode, dur, 0, y, player);
+        this.enemies.push(e);
+      }
+      return;
+    }
+
+    // 编队最右成员也要落在画面内（否则进场动画在屏外白演）：
+    // 先算出整波的 dx 极值，再把锚点左移，队形整体落在画面右三分之一。
+    let maxDx = 0;
+    const offs = [];
     for (let i = 0; i < n; i++) {
       const off = waveOffsets(form, i, n);
-      const x = this.scroll + 1400 + off.dx;
-      let y = 200 + gapY + off.dy;
-      y = Math.max(90, Math.min(this.level.h - 90, y));
-      this.enemies.push(new StgEnemy(w.kind, x, y, this.auras[w.kind]));
+      offs.push(off);
+      if (off.dx > maxDx) maxDx = off.dx;
+    }
+    this._entryAnchorX = Math.max(700, Math.min(1210, 1240 - maxDx));
+
+    for (let i = 0; i < n; i++) {
+      const off = offs[i];
+      const y = clampEntryY(200 + gapY + off.dy, H);
+      const e = new StgEnemy(w.kind, this.scroll + this._entryAnchorX + off.dx, y, this.auras[w.kind]);
+      e.stageH = H;
+      this._applyEntry(e, mode, dur, off.dx, y, player);
+      this.enemies.push(e);
     }
   }
 
@@ -850,7 +1192,8 @@ export class StgStage {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
     const kinds = ['sniper', 'spinner', 'bomber', 'turret'];
-    const forms = ['v', 'column', 'pincer', 'cross', 'arc', 'wall'];
+    // 只往池子里加阵型（多样性），不动波数/架数的任何计算 → EX 总数量与基线一致
+    const forms = ['v', 'column', 'pincer', 'cross', 'arc', 'wall', 'diamond', 'trail'];
     const usable = this.level.w - 1280 - 200;
     for (let i = 0; i < this.waves.length; i++) {
       const w = this.waves[i];
@@ -905,7 +1248,7 @@ export class StgStage {
     // 波次生成
     while (!this.spawnPaused && this.waveIdx < this.waves.length && this.waves[this.waveIdx].at <= this.scroll + 1400) {
       const w = this.waves[this.waveIdx++];
-      this._spawnWave(w);
+      this._spawnWave(w, player);
     }
 
     // 敌人更新
@@ -913,10 +1256,13 @@ export class StgStage {
     const py = player.worldY;
     for (const e of this.enemies) {
       if (!e.alive) continue;
-      e.update(dt, bullets, px, py, this.enemyMods);
-      if (e.x < this.scroll - 200) e.alive = false;
+      e.update(dt, bullets, px, py, this.enemyMods, this.scroll);
+      // 进场中的敌机可能在画面左侧外（chase 从背后冲上来），别被当成出屏清掉
+      if (!e.entering && e.x < this.scroll - 200) e.alive = false;
 
-      // 玩家子弹命中（传 e 作为 targetRef，穿透弹对同一敌人只结算一次）
+      // 玩家子弹命中（传 e 作为 targetRef，穿透弹对同一敌人只结算一次）；
+      // 进场动画期间无碰撞判定：不在屏边「半实体」地挨打。
+      if (e.entering) continue;
       shots?.hitRect(e.x - e.w / 2, e.y - e.h / 2, e.w, e.h, (dmg, hx, hy) => {
         e.hp -= dmg;
         e.hitFlash = 0.1;
@@ -989,6 +1335,27 @@ function waveOffsets(form, i, n) {
       // 弧线：两翼沿抛物线向后收，整队像一张向右张开的弓
       const u = n <= 1 ? 0 : (i / (n - 1)) * 2 - 1;
       return { dx: u * u * 150 + Math.abs(u) * 30, dy: u * (110 + n * 8) };
+    }
+    case 'diamond': {
+      // 菱形环：n 架沿菱形四边均匀分布（锚点 = 左侧顶点），整队是一个斜着收拢的菱形
+      const R = Math.max(70, 46 + n * 12);
+      const u = (i / Math.max(1, n)) * 4;
+      const seg = Math.floor(u) % 4;
+      const f = u - Math.floor(u);
+      const C = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+      const A = C[seg];
+      const B = C[(seg + 1) % 4];
+      const dx = A[0] + (B[0] - A[0]) * f;
+      const dy = A[1] + (B[1] - A[1]) * f;
+      return { dx: (dx + 1) * R, dy: dy * R * 0.9 };
+    }
+    case 'trail': {
+      // 尾迹：一列斜线，越往后越靠右靠上，像排队切入的雁阵
+      return { dx: i * 58, dy: -i * 26 };
+    }
+    case 'wallGap': {
+      // 缺口墙的实际排布在 _spawnWave 里按玩家高度算；这里只留一个兜底
+      return { dx: 0, dy: (i - mid) * 90 };
     }
     case 'wall': {
       // 横墙：同一列上下排开，整队像一堵墙一起平推

@@ -95,5 +95,15 @@ tools/build/_old_layer.js
 
 # 移动端 QA 截图/录屏（本地留存，不入库）
 _shots_*/
+
+# 咲夜 EX 美术候选图/生成脚本（设计稿已入库 docs/SAKUYA_EX_DESIGN.md）
+_sakuya_design/
+# image-gen 工作台输出
+dsh-image-gen/
+# 新曲《红月下追逐不止的女仆》制作中间产物（试听 wav、分析 json、裁剪片段等）
+tools/build/_exsr*/
+tools/build/_aya_stage4_prev.js
+# 原作 MIDI 参考素材（版权原因不入库，本地重跑工具用）
+tools/build/midi/
 # 剧情重制过程截图（本地留存，不入库）
 docs/RE_STORY/artifacts/

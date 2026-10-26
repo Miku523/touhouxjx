@@ -39,6 +39,8 @@ node tools/_gpu_diag.mjs 9462
 
 `_pt_*`、`_sim*.mjs`、`_playtest.mjs`、`_verify_*`、`_shot_*`、`_boss_shot*.mjs`、`_deploy_check.mjs`……
 `_verify_stage5_short.mjs`（第 5 面短图：真实走位捡 4P+1UP、击破掉落、检查点、关底触发，顺带出截图）。
+`_verify_boss_arena.mjs`（1–6 面 Boss 结界：平台关左右锁区、出界回拉、复活/读档检查点同步、
+妖梦舞台击破后放开、4 面滚动条冻结；画面证据落 `_pt/boss_arena/`）。
 
 这些脚本自己 spawn 独立 headless Edge（临时 profile、指定调试端口），通过 CDP
 发**真实键盘/鼠标事件**、读 `window.__game` 状态、收集 console 错误和 4xx，最后打印 JSON 结论。

@@ -13,7 +13,7 @@
 import { preloadWhenIdle, setPriority } from '../engine/lazy_preload.js';
 
 const BASE = new URL('./gen/boss/', import.meta.url);
-const KEYS = ['rumia', 'wriggle', 'cirno', 'aya', 'yuyuko', 'kaguya', 'flandre', 'remilia', 'youmu'];
+const KEYS = ['rumia', 'wriggle', 'cirno', 'aya', 'yuyuko', 'kaguya', 'flandre', 'remilia', 'youmu', 'sakuya'];
 /** 游戏内显示高度（旧版占位框为 240，AI 立绘略高） */
 const DRAW_H = 236;
 /** 逐角色视觉身高微调：身形偏窄的（妖精系）放大一点，长裙系保持原样，避免同屏看起来大小不一致 */
@@ -30,6 +30,8 @@ const BOSS_H = {
   remilia: 236,
   // 中途 Boss 魂魄妖梦：比关底略矮，双刀举过头时也不顶血条
   youmu: 238,
+  // 连环 Rush 的咲夜：比雷米再矮一点点，双场都能和血条拉开距离
+  sakuya: 232,
 };
 /* 立绘一律走 AI 素材（src/art/gen/boss/<key>.png）；缺图由调用方铺柔光占位，不画矢量小人。 */
 /** 暗贴纸放大倍率 / 光晕模糊半径 */

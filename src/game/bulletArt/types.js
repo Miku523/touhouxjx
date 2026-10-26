@@ -45,6 +45,9 @@ export const B_SPEAR = 25;     // 血枪（高速穿刺的猩红长枪）
 export const B_CRYSTAL = 26;   // 血水晶（晶簇：一主两副的棱面晶体）
 export const B_LAVA = 27;      // 熔岩（暗红岩浆球 + 裂纹 + 飞溅）
 
+/* ---------- EXTRA · 十六夜咲夜：飞刀 ---------- */
+export const B_KNIFE = 28;     // 飞刀（细长短刃：钢刀身 + 同色发光刃口，朝向 = 速度方向）
+
 /** 全部专属弹型编号（预览页 / 预热 / 自检用） */
 export const SKIN_IDS = [
   B_CRESCENT, B_DARKORB,
@@ -55,6 +58,7 @@ export const SKIN_IDS = [
   B_FIVEJEWEL, B_DRAGONORB, B_STONE, B_DIAMOND, B_FLAME, B_SCALE, B_SWALLOW, B_BRANCH,
   B_BLADE, B_SLASHARC, B_SPIRIT,
   B_BAT, B_SPEAR, B_CRYSTAL, B_LAVA,
+  B_KNIFE,
 ];
 
 /** 编号 → 中文名（调试 / 预览页标签） */
@@ -82,4 +86,5 @@ export const SKIN_NAMES = {
   [B_SPEAR]: '血枪',
   [B_CRYSTAL]: '血水晶',
   [B_LAVA]: '熔岩',
+  [B_KNIFE]: '飞刀',
 };

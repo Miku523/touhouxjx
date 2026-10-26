@@ -12,7 +12,7 @@ import { Loop } from './engine/loop.js';
 import { setPriority, preloadWhenIdle } from './engine/lazy_preload.js';
 import { AudioEngine } from './engine/audio.js';
 import { LEVELS } from './assets/levels.js';
-import { Stage, EXTRA_TIMELINE, prefetchStageBg } from './game/stage.js';
+import { Stage, EXTRA_CHAIN, prefetchStageBg } from './game/stage.js';
 import { prewarmSpriteCache } from './game/bullets.js';
 import { Hud } from './game/hud.js';
 import { SpellCutin } from './game/spellCutin.js';
@@ -26,7 +26,6 @@ import {
   openingFor,
   stageStoryFor,
   extraIntroFor,
-  extraPreFor,
   extraPostFor,
   midbossPreFor,
   midbossPostFor,
@@ -1359,6 +1358,10 @@ class Game {
   _startExtraStage(opts = {}) {
     const def = EXTRA_STAGE();
     if (!def) { this.showTitle(); return; }
+    // 连环战从第几场开始：新挑战 = 0（咲夜一阶段），失败接关 = 当前场次
+    this._extraChainIdx = opts.chainFrom == null
+      ? 0
+      : Math.max(0, Math.min(EXTRA_CHAIN.length - 1, opts.chainFrom | 0));
     this._createStage(def, 0, true, opts);
   }
 
@@ -1476,7 +1479,9 @@ class Game {
     // 自机动作帧高优先级预载（幂等）：进关前抢带宽，避免开局只有柔光
     ensureCharArt((isExtra && this.extraChar) ? this.extraChar : this.char);
     const _partner = this.char === 'marisa' ? 'reimu' : 'marisa';
-    this.dialogue?.preparePortraits?.([this.char, _partner, def.boss, def.midboss?.key].filter(Boolean));
+    // EXTRA 还会出场：咲夜（Boss 立绘 + 对话立绘）。美术文件另开对话补，这里先把路径排进预载。
+    const _extraCast = isExtra ? ['sakuya', 'remilia'] : [];
+    this.dialogue?.preparePortraits?.([this.char, _partner, def.boss, def.midboss?.key, ..._extraCast].filter(Boolean));
     // 道中剧情节点：重来 / 再战 / EXTRA 不再重复播放
     this._midShown = [false, false, false];
     this._skipBeats = !!(isExtra || opts.skipIntro || opts.resumeBoss);
@@ -1487,19 +1492,15 @@ class Game {
       this.stage.player.power = this.carryPower;
     }
 
-    // EXTRA 的「再战」：把时间轴直接拨到中途 / 终盘 Boss 前，跳过整段道中
-    if (isExtra && (opts.resumeFrom === 'midboss' || opts.resumeFrom === 'final')) {
-      const from = opts.resumeFrom;
-      this.stage.resumeExtra(from);
+    // EXTRA 的「再战」：从第 chainFrom 场直接接上（前面的场次算已清），不再有道中要跑
+    if (isExtra && opts.chainFrom != null) {
+      const from = Math.max(0, Math.min(EXTRA_CHAIN.length - 1, opts.chainFrom | 0));
+      this._extraChainIdx = from;
+      this.stage.resumeExtraChain(from);
       const rp = this.stage.player;
       if (rp) { rp.invuln = Math.max(rp.invuln || 0, 1.5); rp.vx = 0; rp.vy = 0; }
-      // 中途再战要指定雷米莉亚：时间轴还没来得及写 pendingBossKey，
-      // 直接调 beginBoss() 会退回关底配置（芙兰）。
-      if (from === 'midboss') {
-        this.stage.beginBoss(EXTRA_TIMELINE.midbossKey, { midboss: true });
-      } else {
-        this.stage.beginBoss();
-      }
+      // pendingBossKey 已由 resumeExtraChain 设成本场 Boss，直接开打（战前对白跳过）
+      this.stage.beginBoss();
     }
 
     // 重挑战回 Boss：把玩家放回 Boss 前的检查点，Boss 直接登场，
@@ -1673,6 +1674,11 @@ class Game {
       case 'bossStart':
         seedReset?.(); // 从开战这一帧把随机序列拨回起点，弹幕才有复现意义
         this.hud.banner(tr(data.name || ''), tr(data.title || ''), 2.0);
+        // EXTRA 连环战：咲夜首次登场放一次全屏 cut-in（tag = BOSS，立绘 sakuya_title.png，
+        // 无符阵圆环）。第二场（chainIndex 2）她是「再战」，不再重复登场演出。
+        if (data && data.chain && data.key === 'sakuya' && (data.chainIndex | 0) === 0) {
+          this.cutin.showBoss('sakuya');
+        }
         this.audio.play?.('menu');
         // 道中曲 → Boss 曲：只有配了 musicPre 的关卡这么切，其余保持原样。
         // 中途 Boss 若配了 musicMid 就用它：EXTRA 的雷米莉亚（三段式），以及 STAGE5 的妖梦
@@ -1682,7 +1688,16 @@ class Game {
         // （resumeBoss 会同步走到这里）。
         {
           const lm = this._levelMusic;
-          if (lm && lm.mid && data.midboss) {
+          if (this.inExtra && data.chain) {
+            // 连环战：每场按 EXTRA_CHAIN.music 选曲（咲夜 ex_pre / 蕾米 ex_mid / 芙兰 extra）
+            this._extraChainIdx = data.chainIndex | 0;
+            const slot = data.music === 'mid' ? 'mid' : data.music === 'boss' ? 'boss' : 'pre';
+            const wanted = (lm && lm[slot]) || (lm && lm.pre) || (lm && lm.boss);
+            if (wanted) {
+              this._bossMusicSwitched = true;
+              this.audio.playMusic?.(wanted);
+            }
+          } else if (lm && lm.mid && data.midboss) {
             this._bossMusicSwitched = true;
             this.audio.playMusic?.(lm.mid);
           } else if (lm && lm.pre && lm.boss && !this._bossMusicSwitched && !data.midboss) {
@@ -1698,12 +1713,9 @@ class Game {
       case 'midbossClear':
         this.hud.banner('MID BOSS CLEAR', '', 1.4);
         this.audio.play?.('win');
-        // EXTRA：姐姐认输 → 回道中曲（血月编），并放开 _bossMusicSwitched，
-        // 3:00 芙兰朵露登场时 ensure 还能切到 Boss 曲。
-        if (this.inExtra && this._levelMusic && this._levelMusic.pre) {
-          this._bossMusicSwitched = false;
-          this.audio.playMusic?.(this._levelMusic.pre);
-        } else if (this._levelMusic && this._levelMusic.midOnce) {
+        // EXTRA 的连环战不走这里（链调度另发 chainClear）；
+        // STAGE5：妖梦击破 → 让妖梦战曲自己把这一轮放完，再 5 秒渐出收尾。
+        if (this._levelMusic && this._levelMusic.midOnce) {
           // STAGE5：妖梦击破 → 让妖梦战曲自己把这一轮放完，再用 5 秒渐出收尾（不硬切、不循环），
           // 呼吸区安静下来；幽幽子登场时 bossStart 再切 Boss 曲。
           this._bossMusicSwitched = false;
@@ -1713,9 +1725,7 @@ class Game {
         // 的兜底键。脚本为空就什么都不排：横幅照播，道中照走，state 不动。
         {
           const st = this.stage;
-          const script = this.inExtra
-            ? (STORY.extra.midBossOut || [])
-            : this._midbossStory('post');
+          const script = this._midbossStory('post');
           if (st && !st.skipBossDialogue && script.length) {
             this._after(1.8, () => {
               if (this.stage !== st || this.state !== 'play') return;
@@ -1725,6 +1735,34 @@ class Game {
             });
           }
         }
+        break;
+      case 'chainClear': {
+        // 连环战打完一场（还不是最后一场）：横幅 → 播战后台词 → 放下一场
+        const st = this.stage;
+        const idx = data.chainIndex | 0;
+        this.hud.banner('MID BOSS CLEAR', '', 1.4);
+        this.audio.play?.('win');
+        this._sfx('checkpoint');
+        const script = (st && !st.skipBossDialogue) ? this._extraChainScript('chainPost', idx) : [];
+        const next = () => {
+          if (!st || this.stage !== st) return;
+          this.state = 'play';
+          st.advanceChain();
+        };
+        if (script.length) {
+          this._after(1.4, () => {
+            if (!st || this.stage !== st || this.state !== 'play') return;
+            this._playDialogue(script, next);
+          });
+        } else {
+          this._after(1.2, next);
+        }
+        break;
+      }
+      case 'chainTimeout':
+        // 限时到点：咲夜收手退场，剧情照常进下一场（没打完的卡不算击破、不给奖励）
+        this.hud.banner(tr('时间到'), tr('她收手了'), 1.6);
+        this._sfx('spell');
         break;
       case 'clear':
         this._haptic('clear');
@@ -1740,17 +1778,27 @@ class Game {
     }
   }
 
+  /**
+   * 取连环 Boss Rush 的剧本：STORY.extra.chainPre / chainPost 是 [{reimu,marisa}, …]，
+   * 按自机分路取；取不到就返回空数组（安全跳过对白，流程照走）。
+   */
+  _extraChainScript(which, i) {
+    const arr = STORY.extra ? STORY.extra[which] : null;
+    const item = Array.isArray(arr) ? arr[i | 0] : null;
+    if (!item) return [];
+    return item[this.char] || item.reimu || [];
+  }
+
   _onBossTrigger(data) {
     if (!this.stage) return;
     this.state = 'dialogue';
     const stage = this.stage;
     let script;
     if (this.inExtra) {
-      // 中途 Boss（雷米莉亚）有自己的登场对话；终盘芙兰的战前对话走 extra.preBoss。
-      // 再战（resumeExtra）时整段跳过，别把看过的台词重复一遍。
+      // 连环战：每一场都有自己的战前对白（STORY.extra.chainPre[i]，按自机分路）。
+      // 再战（resumeExtraChain）时整段跳过，别把看过的台词重复一遍。
       if (stage.skipBossDialogue) script = [];
-      else if (data && data.midboss) script = STORY.extra.midBoss || [];
-      else script = extraPreFor(this.char);
+      else script = this._extraChainScript('chainPre', (data && data.chain) ? (data.chainIndex | 0) : 0);
     } else {
       // STAGE5 现在有两场 Boss：道中妖梦（midboss）有自己的登场对话，幽幽子仍走 preBoss。
       // 对话键路径由 story.js 决定，这里按候选顺序兜底，取不到就安全跳过（见 _midbossStory）。
@@ -1902,19 +1950,19 @@ class Game {
     // 否则玩家看到「重新挑战本关」却直接从 2:00 雷米莉亚战开始，文案与行为不符。
     // 文案保持精简（检查点细节放在脚注），避免长标签在 960 宽下压到右侧 ENTER 键帽。
     const s = this.stage;
-    const extraResume = this.inExtra
-      ? ((s && s.midbossDone) ? 'final' : (s && s.bossStarted) ? 'midboss' : null)
-      : null;
+    // EXTRA 没有道中检查点：失败就从「当前这一场」重新开始（前面的场次保持已清）
+    const extraIdx = this.inExtra
+      ? Math.max(0, Math.min(EXTRA_CHAIN.length - 1, (this._extraChainIdx ?? s?.chainIdx ?? 0) | 0))
+      : 0;
+    const extraName = this.inExtra
+      ? ({ sakuya: tr('十六夜咲夜'), remilia: tr('雷米莉亚'), flandre: tr('芙兰朵露') }[EXTRA_CHAIN[extraIdx].key] || '')
+      : '';
     const retryLabel = this.inExtra
-      ? (extraResume === 'final' ? tr('从芙兰战继续')
-        : extraResume === 'midboss' ? tr('从雷米莉亚战继续')
-          : tr('重新挑战本关'))
+      ? tr('从第 {n} 战继续', { n: extraIdx + 1 })
       : (midFight ? tr('再战 Boss') : atBoss ? tr('从中途继续') : tr('重新挑战本关'));
-    const extraFoot = extraResume === 'final'
-      ? tr('将从 3:00 芙兰战的检查点继续')
-      : extraResume === 'midboss'
-        ? tr('将从 2:00 雷米莉亚战的检查点继续')
-        : tr('整理好状态，再挑战一次');
+    const extraFoot = this.inExtra
+      ? tr('将从第 {n} 战（{name}）重新开始', { n: extraIdx + 1, name: extraName })
+      : '';
     const canTrue = !this.inExtra && getDifficulty(this.difficulty).unlockExtra;
     const sub = this.inExtra
       ? tr('残机用尽 · EXTRA STAGE')
@@ -1958,11 +2006,11 @@ class Game {
     this.runLives = null;
     this.carryExtend = 0;
     if (this.inExtra) {
-      // EXTRA 失败：打到中途 Boss 之后就从 2:00 接上，打到芙兰就从终盘接上，
-      // 不用把三分钟道中重跑一遍（火力用 retryPower 兜底，不从零开始）。
+      // EXTRA 失败：从当前这一场重新开始（前面的场次算已清），
+      // 不用把已经打过的 Boss 再打一遍（火力用 retryPower 兜底，不从零开始）。
       const s = this.stage;
-      const from = (s && s.midbossDone) ? 'final' : (s && s.bossStarted) ? 'midboss' : null;
-      this._startExtraStage(from ? { resumeFrom: from } : {});
+      const idx = Math.max(0, Math.min(EXTRA_CHAIN.length - 1, (this._extraChainIdx ?? s?.chainIdx ?? 0) | 0));
+      this._startExtraStage({ chainFrom: idx });
       return;
     }
     // 重挑战是「续命重来」，不是重开一局：跳过已看过的开场对白，直接回到操作

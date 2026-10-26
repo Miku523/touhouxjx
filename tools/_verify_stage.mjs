@@ -343,7 +343,9 @@ try {
   }
   // 开局
   if (EXTRA) {
-    await evaluate('window.__game.startExtra()');
+    // EXTRA 进场有一段开场对白；对白不推进就永远进不了 Stage。
+    // 这里先正常 startExtra()，若对白卡住则直接 skipIntro 建 Stage（等价于玩家按掉对白）。
+    await evaluate(`(() => { const g = window.__game; g.unlockedExtra = true; g.extraChar = '${CHAR}'; g.startExtra('${CHAR}'); if (!g.stage) { try { g.dialogue?.stop?.(); } catch {} g._startExtraStage({ skipIntro: true }); } return { state: g.state, stage: !!(g.stage) }; })()`);
   } else {
     await evaluate(`window.__game.carryPower = ${argv.power || 128}; window.__game.levelIndex = ${STAGE - 1}; window.__game.startStage(${STAGE - 1})`);
   }

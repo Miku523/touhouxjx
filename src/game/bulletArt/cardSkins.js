@@ -43,6 +43,7 @@ import {
   B_SPEAR,
   B_CRYSTAL,
   B_LAVA,
+  B_KNIFE,
 } from './types.js';
 
 /** 激光：默认保留（不做图案替换） */
@@ -141,6 +142,16 @@ export const CARD_SKINS = {
     card(B_LAVA),
     /* 9 未明「明けない夜の約束」：血月 + 螺旋/花瓣/涡(type 3)是蝙蝠 */
     card(B_CRESCENT, { 3: B_BAT }),
+  ],
+
+  /* ---------------- EXTRA 中途 · 十六夜咲夜：七色飞刀 ---------------- */
+  // 设计稿 _sakuya_design/DESIGN.md §2：整卡 0–3 号弹全部是「飞刀」，
+  // 七色身份由每一发的 b.color 决定（同一种刀型，只换刃口发光色）。
+  sakuya: [
+    /* 1 银符「Perfect Maid」   */ card(B_KNIFE),
+    /* 2 时符「Private Square」 */ card(B_KNIFE),
+    /* 3 奇术「Time Paradox」   */ card(B_KNIFE),
+    /* 4 终符「Chronos Rule」   */ card(B_KNIFE),
   ],
 };
 

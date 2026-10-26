@@ -92,7 +92,10 @@ export const CARD_HP_ANCHOR_LEGACY = CARD_LV2_SHARE * PLAYER_ATK_SCALE * CARD_DP
  *  - 「蕾米莉亚上调8%」→ EXTRA 中途战雷米莉亚的总血量 ×1.08（是覆盖值，不是 5% 再叠 8%）；
  *  - 「芙兰朵路上调10%」→ EXTRA 关底芙兰朵露的总血量 ×1.10（同上，覆盖值）。
  *  - 同日第二轮：「魂魄妖梦再加3%」→ 1.0815（= 1.05 × 1.03，覆盖值）；
- *    「西行寺幽幽子加3.8%」→ 1.0899（= 1.05 × 1.038，按伤害卡合计 +3.8% 标定）。
+ *    「西行寺幽幽子加3.8%」→ 1.0899（= 1.05 × 1.038，按伤害卡合计 +3.8% 标定）；
+ *    第三轮又「妖梦降 0.5%」「幽幽子降 1%」→ 1.0761 / 1.079。
+ *  - 同日第四轮（1–4 面）：射命丸文 +2.8%、琪露诺 +2.6%、莉格露 +1.3%、露米娅 +1.8%，
+ *    对应倍率 = 1.05 × 各自增量（见下表四个新键）。
  * 口径：这是「单场 Boss 总血量」的倍率，逐卡四舍五入后相加；存活卡（survival）的血条只是
  * 拖时间的底、不影响判定，也一起加厚。以后想再整体调松紧只改这里，不用逐张改 hp。
  */
@@ -101,8 +104,12 @@ export const BOSS_FINAL_HP_MUL = 1.05;
 export const BOSS_FINAL_HP_MUL_OVERRIDE = {
   remilia: 1.08,
   flandre: 1.10,
-  youmu: 1.0815,   // 2026-10-26「再加 3%」= 1.05 × 1.03
-  yuyuko: 1.0899,  // 2026-10-26「加 3.8%」= 1.05 × 1.038
+  youmu: 1.0761,   // 2026-10-26「再加 3%」后「降 0.5%」= 1.05 × 1.03 × 0.995
+  yuyuko: 1.079,   // 2026-10-26「加 3.8%」后「降 1%」= 1.05 × 1.038 × 0.99
+  aya: 1.0794,     // 2026-10-26 第四轮「射命丸文血量提高 2.8%」= 1.05 × 1.028
+  cirno: 1.0773,   // 2026-10-26 第四轮「琪露诺提高 2.6%」= 1.05 × 1.026
+  wriggle: 1.06365, // 2026-10-26 第四轮「莉格露提高 1.3%」= 1.05 × 1.013
+  rumia: 1.0689,   // 2026-10-26 第四轮「露米娅提高 1.8%」= 1.05 × 1.018
 };
 /** 取某个 Boss 的终局血量倍率；未登记的 Boss 用全局值。 */
 export function finalHpMulFor(key) {
@@ -218,7 +225,7 @@ export const BOSS_CARD_TUNING = {
     ],
   },
 
-  // 5 面 · 西行寺幽幽子（6 张）#6 为 survival 卡（2026-10-26 起；原 #4 是生存卡）
+  // 5 面 · 西行寺幽幽子（6 张）#5 为 survival 卡（2026-10-26 二次对调：常夜樱变生存、反魂蝶回攻击）
   yuyuko: {
     hpMul: 5.79,
     cards: [
@@ -239,20 +246,21 @@ export const BOSS_CARD_TUNING = {
       },
       {
         name: '亡乡「亡我乡 -宿罪-」',
-        note: '2026-10-26 用户把原生存符改为可被攻击的击破卡（60s 不变）；罪业压身、身体半透明。显式 hp 按「反魂蝶退出伤害池后伤害合计 +3.8%」反推（≈ 359 dps 等效）',
+        note: '2026-10-26 用户把原生存符改为可被攻击的击破卡（60s 不变）；罪业压身、身体半透明。显式 hp 按「常夜樱转生存、反魂蝶回伤害池后伤害合计 51,964（-1%）」反推',
         limit: 60, mode: 'damage', tier: 4, fx: 'night', accent: '#ffa8d8',
-        effect: 'sinGravity', dps: 359, hp: 14109,
+        effect: 'sinGravity', dps: 359, hp: 14108,
       },
       {
-        name: '冥符「常夜樱」', note: '2026-10-24 用户改为 90s（原 120）；夜樱花瓣氛围',
-        limit: 90, mode: 'damage', tier: 4, fx: 'petals', accent: '#ff8fd0',
-        effect: 'none', dps: 191.5,
+        name: '冥符「常夜樱」',
+        note: '2026-10-26 用户改为生存卡（原 90s 击破卡，限时不变）；夜樱花瓣氛围，撑满 90 秒即过关',
+        limit: 90, mode: 'survival', tier: 4, fx: 'petals', accent: '#ff8fd0',
+        effect: 'none', dps: null,
       },
       {
         name: '反魂蝶「八分咲」',
-        note: '2026-10-26 用户改为 66s 的生存卡（原 100s 击破卡）；花开八分、撑满 66 秒即过关',
-        limit: 66, mode: 'survival', tier: 5, fx: 'petals', accent: '#ffa8d8',
-        effect: 'bloomGrace', dps: null,
+        note: '2026-10-26 用户改回攻击卡（100s 击破 → 66s 生存 → 66s 击破）；不写死 hp，按 0.655 锚点（66 × 215.4 × 0.655 ≈ 9,317 → 终局 10,053，与其他卡同为 −1%）',
+        limit: 66, mode: 'damage', tier: 5, fx: 'petals', accent: '#ffa8d8',
+        effect: 'bloomGrace', dps: 215.4,
       },
     ],
   },
@@ -399,8 +407,8 @@ export const BOSS_CARD_TUNING = {
       },
       {
         name: 'QED「495年的波纹」',
-        note: 'EXTRA #7；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 7686（10-seed 实测时的血量）× 42.0 / 中位耗时 53.37s',
-        limit: 90, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
+        note: 'EXTRA #7；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 7686（10-seed 实测时的血量）× 42.0 / 中位耗时 53.37s。2026-10-26 深夜：用户反馈「这张根本过不去」，只降弹幕密度 —— 档 5→4（弹数 ×1.30→×1.15、弹速 ×1.12→×1.06），另外 boss.js 里把环弹 n 36→26、内环 18→14 且环数 3→2、脉冲间隔 0.07→0.085s，同屏环弹 126→80 发（−37%）；限时 90s 与血量不动。',
+        limit: 90, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: 156.3, hp: 10324,
       },
       {
@@ -420,6 +428,47 @@ export const BOSS_CARD_TUNING = {
         note: 'EXTRA #10 双条件卡：限时 120s（用户口述），血量按用户口述在上一版 6778 的基础上翻一倍 = 13556（全 EXTRA 最高）；撑满 120s 或打空血条都算过关，5-seed 实测打空约 61–78s。',
         limit: 120, mode: 'both', tier: 5, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: 206.9, hp: 17118,
+      },
+    ],
+  },
+
+  // ── EXTRA · 连环 Boss Rush · 十六夜咲夜（4 张；由 boss.js 的 cardFrom 切片成两场）──
+  // 2026-10-27 用户口述：EX 面改成连环 Rush —— 咲夜(第 1/2 卡) → 蕾米莉亚(2 张) →
+  // 咲夜(第 3/4 卡) → 芙兰。四张卡只建一次（key = sakuya），stage.js 用
+  // new Boss('sakuya', x, y, { cardFrom, cardCount }) 切两场；切片发生在逐卡调参之后，
+  // 所以这里的下标永远对「完整四卡」成立，不需要把表拆成两段。
+  // 限时：四张都 45s（用户口述「90s 总限时压两卡合计」，单卡 45s 只是节奏参考；
+  //   damage 卡超时不结束战斗，只失去限时奖励）。
+  // 血量口径：EX 同款显式 hp = round(0.77 × limit × dps)，逐卡再乘终局倍率 1.05
+  //   （sakuya 未登记 BOSS_FINAL_HP_MUL_OVERRIDE → 走全局 1.05）：
+  //   终局 8913 / 9096 / 9278 / 9459，合计 36746 = BOSS_DEFS.sakuya 的 maxHp。
+  // fx / accent：七色飞刀配色四卡各取一色（绯红 → 青 → 紫罗兰 → 琥珀）；
+  //   effect 一律 'none'（同 remilia：卡面特效不再额外改玩家手感）。
+  sakuya: {
+    cards: [
+      {
+        name: '银符「Perfect Maid」',
+        note: 'EX 连环 Rush 第 1 卡（咲夜前半场）；五连扇形银刃 + 七色钟面环。极限 45s，dps 245 → hp = round(0.77 × 45 × 245) = 8489',
+        limit: 45, mode: 'damage', tier: 4, fx: 'fairyDust', accent: '#ff6b8a',
+        effect: 'none', dps: 245, hp: 8489,
+      },
+      {
+        name: '时符「Private Square」',
+        note: 'EX 连环 Rush 第 2 卡（咲夜前半场）；时停是真的时停：bullets.freezeAll(1.2) 让场上所有弹幕原地凝滞（b.holdT），同时凝出一圈紫罗兰静止刃，领域结束同一拍补发。dps 250 → hp = round(0.77 × 45 × 250) = 8663',
+        limit: 45, mode: 'damage', tier: 4, fx: 'freeze', accent: '#7fd8ff',
+        effect: 'none', dps: 250, hp: 8663,
+      },
+      {
+        name: '奇术「Time Paradox」',
+        note: 'EX 连环 Rush 第 3 卡（咲夜后半场）；四个残影站位（上/右/下/左）轮流换色齐射 + 反向七色环。dps 255 → hp = round(0.77 × 45 × 255) = 8836',
+        limit: 45, mode: 'damage', tier: 5, fx: 'voidFlame', accent: '#b48cff',
+        effect: 'none', dps: 255, hp: 8836,
+      },
+      {
+        name: '终符「Chronos Rule」',
+        note: 'EX 连环 Rush 第 4 卡（咲夜后半场，压轴给芙兰）；12 组钟面刻度 × 七色同心刀环，整环顺时针转、玩家逆时针穿行。dps 260 → hp = round(0.77 × 45 × 260) = 9009',
+        limit: 45, mode: 'damage', tier: 5, fx: 'night', accent: '#ffb347',
+        effect: 'none', dps: 260, hp: 9009,
       },
     ],
   },

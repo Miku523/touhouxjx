@@ -25,6 +25,7 @@ import bat from './bat.js';
 import spear from './spear.js';
 import crystal from './crystal.js';
 import lava from './lava.js';
+import knife from './knife.js';
 
 /** 弹型编号 → 美术定义 */
 export const SKIN_META = Object.freeze({
@@ -42,6 +43,7 @@ export const SKIN_META = Object.freeze({
   ...spear,
   ...crystal,
   ...lava,
+  ...knife,
 });
 
 export { SKIN_IDS, SKIN_NAMES };

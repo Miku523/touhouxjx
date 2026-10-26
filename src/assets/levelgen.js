@@ -24,6 +24,13 @@ const AIR = '.';
 const DIRT = '#';
 const GRASS = 'G';
 
+/**
+ * 关底 Boss 场地占关卡末尾多少列（挖平成空地）。
+ * 列区间由 buildLevelRows() 的 arena 一并带出，Level 换成像素后交给 stage.js
+ * 当「Boss 战期间自机不能退出」的场地；改这个数会同时改生成器与场地锁，不用两边各写一份。
+ */
+export const BOSS_ARENA_COLS = 50;
+
 /* ---------------- 随机数 ---------------- */
 
 function mulberry32(seed) {
@@ -91,16 +98,19 @@ const STYLE_CHUNKS = {
 /**
  * 分面刷怪密度：不同主题「能站人的合法地面格」数量差别很大（森林断层多、湖面/月都开阔），
  * 按列随机步进会让各面小怪数漂 ±15%。这里改成「按每屏目标数量在合法格上等距取样」：
- *   perScreen = 每屏（40 列 / 1280px）目标小怪数（改造前基线 × ~1.5），
+ *   perScreen = 每屏（40 列 / 1280px）目标小怪数（本轮「小怪翻倍」在上一版基础上 ×2），
  *   groundRatio = 地面 s 与空中 f 的比例（沿用改造前各面的 s:f）。
  * 这样关卡长度改变（levels.js 的 cols 调整）时密度仍然稳定，不会因首尾边缘区占比变化而漂。
+ *
+ * 2026-10-27 需求「小怪在每面数量翻倍（STG 面 / EX 面除外）」：这里 5 个平台面的
+ * perScreen 全部 ×2（groundRatio 不变），取样 / 检查点 / 金币逻辑一行未动。
  */
 const MONSTER_SPAWN = {
-  shrine: { perScreen: 2.06, groundRatio: 1.92 },
-  forest: { perScreen: 1.71, groundRatio: 1.84 },
-  lake: { perScreen: 1.88, groundRatio: 1.41 },
-  nether: { perScreen: 1.85, groundRatio: 2.24 },
-  moon: { perScreen: 2.18, groundRatio: 1.84 },
+  shrine: { perScreen: 4.12, groundRatio: 1.92 },
+  forest: { perScreen: 3.42, groundRatio: 1.84 },
+  lake: { perScreen: 3.76, groundRatio: 1.41 },
+  nether: { perScreen: 3.70, groundRatio: 2.24 },
+  moon: { perScreen: 4.36, groundRatio: 1.84 },
 };
 
 /**
@@ -125,6 +135,8 @@ class Builder {
     this.crumble = [];
     // 中途 Boss 舞台的统计（列区间 / 取消的小怪数 / 补偿 P 数），供自测脚本与平衡检查读取
     this.midbossInfo = null;
+    // 关底 Boss 场地的列区间：Level 换成像素后交给 stage.js 锁自机（见 buildLevelRows 的 arena）
+    this.bossArena = null;
     this.chunkStats = Object.create(null);    this.chunkLog = [];
     this.stepCount = 0;
     this.cursor = 0;
@@ -809,8 +821,8 @@ class Builder {
     // 舞台靠左时不再硬性留 60 列：STAGE5 的第一个道中已取消，舞台左边就是开场准备区，
     // 具体还剩多少列由 cols 与 arenaFromEnd 决定（见 _prepareOpening）。
     const ms = Math.max(8, center - half);
-    // 不侵入关底 Boss 场（最后 50 列），中间至少留 4 列过渡
-    const me = Math.min(this.cols - 54, center + half);
+    // 不侵入关底 Boss 场（最后 BOSS_ARENA_COLS 列），中间至少留 4 列过渡
+    const me = Math.min(this.cols - (BOSS_ARENA_COLS + 4), center + half);
     if (me - ms < 8) return null;
 
     const entryTop = ms > 0 ? this.top[ms - 1] : this.ground;
@@ -924,10 +936,10 @@ class Builder {
    * 取三列里最高的地面当基准（不往下挖，避免把金币/装饰擦掉），并夹到与更左一列
    * 高差 <=1，保证「走近 → 站定 → 起跳」是一条平路。
    *
-   * 只处理 Boss 场（最后 50 列）之前的坑，关底地形保持原样。
+   * 只处理 Boss 场（最后 BOSS_ARENA_COLS 列）之前的坑，关底地形保持原样。
    */
   _widenPitRunways() {
-    const limit = Math.max(0, this.cols - 50);
+    const limit = Math.max(0, this.cols - BOSS_ARENA_COLS);
     for (let c = 3; c < limit; c++) {
       if (!this.gap[c] || this.gap[c - 1]) continue; // 只看每段坑的第一列
       let base = Math.min(this.top[c - 1], this.top[c - 2], this.top[c - 3]);
@@ -1094,8 +1106,8 @@ class Builder {
       this.coins(6, this.ground - 2, 4);
     }
 
-    // Boss 场：最后 50 列平地，终点旗在前一点的位置
-    const bossStart = Math.max(0, this.cols - 50);
+    // Boss 场：最后 BOSS_ARENA_COLS 列平地，终点旗在前一点的位置
+    const bossStart = Math.max(0, this.cols - BOSS_ARENA_COLS);
     const entryTop = bossStart > 0 ? this.top[bossStart - 1] : this.ground;
     for (let c = bossStart; c < this.cols; c++) {
       this.commit(c, this.ground);
@@ -1109,6 +1121,8 @@ class Builder {
     }
     this.set(this.cols - 8, this.ground - 1, 'F');
     this.coins(this.cols - 46, this.ground - 2, 4);
+    // 这段平地就是关底 Boss 场地：交给 Level 换成像素，Boss 战期间锁住自机
+    this.bossArena = { from: bossStart, to: this.cols };
   }
 
   build() {
@@ -1187,8 +1201,9 @@ class Builder {
 /**
  * 生成关卡字符行。
  * @param {object} gen 关卡生成配置
- * @returns {{rows:string[], crumble:[number,number][], midboss?:object|null, chunkStats?:object}}
- *   midboss: 中途 Boss 舞台的列区间与补偿统计（gen.midboss 存在时才有），不参与 Level 解析。
+ * @returns {{rows:string[], crumble:[number,number][], arena?:object|null, midboss?:object|null, chunkStats?:object}}
+ *   arena: 关底 Boss 场地的列区间 {from,to}（最后 BOSS_ARENA_COLS 列平地），Level 会换成像素交给 stage.js。
+ *   midboss: 中途 Boss 舞台的列区间与补偿统计（gen.midboss 存在时才有），同理由 Level 取用。
  */
 export function buildLevelRows(gen) {
   if (!gen) return { rows: [], crumble: [] };
@@ -1198,7 +1213,7 @@ export function buildLevelRows(gen) {
   }
   const b = new Builder(gen);
   const rows = b.build();
-  const out = { rows, crumble: b.crumble, midboss: b.midbossInfo };
+  const out = { rows, crumble: b.crumble, arena: b.bossArena, midboss: b.midbossInfo };
   if (gen.collectStats) {
     out.chunkStats = b.chunkStats;
     out.debug = { top: Array.from(b.top), gap: Array.from(b.gap), chunks: b.chunkLog, steps: b.stepCount, midboss: b.midbossInfo };

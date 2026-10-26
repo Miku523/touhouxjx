@@ -4473,3 +4473,32 @@ html[lang="en"] .overlay.screen-mode .set-row-lang .seg b {
     font-size: max(12px, calc(var(--s) * 13px));
   }
 }
+/* ============================================================
+   Boss 登场 cut-in（复用符卡 cut-in 的 DOM，.boss 修饰）
+   主色换成冷银蓝；符阵圆环整层隐藏 —— 角色身后不留光环 / 刀圈。
+   ============================================================ */
+.spell-cutin.boss {
+  --sc: #cfe0ff;
+  --sc2: #ffffff;
+}
+.spell-cutin.boss .sc-rings { display: none; }
+.spell-cutin.boss .sc-clear {
+  background:
+    radial-gradient(ellipse 46% 62% at 26% 58%, rgba(190, 214, 255, .14), rgba(0, 0, 0, 0) 70%),
+    linear-gradient(90deg, rgba(6, 8, 16, .96) 0%, rgba(6, 8, 16, .78) 40%, rgba(6, 8, 16, .24) 70%, rgba(6, 8, 16, .64) 100%),
+    linear-gradient(180deg, rgba(6, 8, 16, .64), rgba(6, 8, 16, .12) 38%, rgba(6, 8, 16, .76));
+}
+.spell-cutin.boss .sc-rays {
+  background: repeating-conic-gradient(from 10deg at 26% 58%,
+    rgba(214, 230, 255, .18) 0deg 1.5deg,
+    rgba(214, 230, 255, 0) 1.5deg 11deg);
+}
+.spell-cutin.boss .sc-tag {
+  color: var(--sc);
+  letter-spacing: 0.42em;
+  text-shadow: 0 0 calc(var(--s) * 12px) rgba(160, 196, 255, .55);
+}
+.spell-cutin.boss .sc-name {
+  text-shadow: 0 0 calc(var(--s) * 26px) rgba(120, 160, 255, .38);
+}
+

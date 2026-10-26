@@ -35,7 +35,10 @@ for (const [name, song] of Object.entries(SONGS)) {
   let prev = -1;
   for (const d of song.drums || []) {
     if (!(d[0] >= 0 && d[0] < song.duration + 4)) fail(`${name} 鼓时间越界 ${d[0]}`);
-    if (d[1] < 0 || d[1] > 4) fail(`${name} 鼓 kind 非法 ${d[1]}`);
+    // kind 0..4：曲库标准鼓（src/engine/audio.js 的 _scheduleDrum 实时合成）；
+    // kind 5..9：离线渲染扩展鼓（通鼓/ride/反向吊镲等），只在 src/assets/bgm/*.wav
+    // 成品里发声，实时合成回退会静默跳过——见 tools/build/_exsr_render.py:571 的对照表。
+    if (d[1] < 0 || d[1] > 9) fail(`${name} 鼓 kind 非法 ${d[1]}`);
     if (d[0] < prev - 1e-6) fail(`${name} 鼓未按时间排序`);
     prev = d[0];
   }

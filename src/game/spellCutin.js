@@ -1,12 +1,15 @@
 /**
- * 符卡 cut-in：释放瞬间的全屏演出。
+ * 符卡 cut-in / Boss 登场演出：释放或登场瞬间的全屏演出。
  *
  * 参考原作 Bomb 的四拍节奏：
  *   ① 白闪炸开、画面压暗
  *   ② 立绘带着残影从左破屏冲入，速度线刷过
- *   ③ 符卡名逐字砸出，符阵圆环同时扩张
+ *   ③ 符卡名/角色名逐字砸出，符阵圆环同时扩张
  *   ④ 白光收束、整体退场
  * 总时长 1.15s，期间游戏照常推进（伤害与判定不在这里结算）。
+ *
+ * Boss 登场复用同一套 DOM：.boss 修饰类把主色换成冷银蓝，并隐藏符阵圆环
+ * （角色身后不留任何光环/刀圈，只保留斜光带与速度线）。
  */
 
 import { tr } from '../i18n/index.js';
@@ -25,6 +28,11 @@ const SPELLS = {
   ],
 };
 
+/** Boss 登场：立绘 / 名字 / 称号（tag 统一显示 BOSS） */
+const BOSSES = {
+  sakuya: { name: '十六夜咲夜', sub: '完美而潇洒的从者', img: 'sakuya_title.png' },
+};
+
 /** 演出总时长（毫秒），与 style.css 里的 cut-in 动画时长保持同步 */
 const DURATION = 1150;
 
@@ -33,6 +41,7 @@ export class SpellCutin {
     this.el = document.getElementById('spellCutin');
     this.elName = document.getElementById('scName');
     this.elSub = document.getElementById('scSub');
+    this.elTag = this.el ? this.el.querySelector('.sc-tag') : null;
     this.canvas = document.getElementById('scPortrait');
     this.ghost = document.getElementById('scPortrait2');
     this.elGame = document.getElementById('game');
@@ -42,27 +51,29 @@ export class SpellCutin {
     this._timer = 0;
     this._n = { reimu: 0, marisa: 0 };
     this._last = null;
+    // 预热 Boss 登场立绘：不然第一次登场的前 100~200ms 会是空画布
+    for (const k of Object.keys(BOSSES)) this._img(BOSSES[k].img);
   }
 
-  _img(char) {
-    const key = char === 'marisa' ? 'marisa' : 'reimu';
-    let entry = this._imgs.get(key);
+  /** file = src/art/gen/ 下的文件名，例如 reimu_title.png */
+  _img(file) {
+    let entry = this._imgs.get(file);
     if (!entry) {
       const img = new Image();
       entry = { img, ready: false };
       img.onload = () => {
         entry.ready = true;
         // 立绘往往在第一次放符卡时才加载完，赶上了就立刻补画
-        if (this._last === key && this.el?.classList.contains('show')) this._paint(key);
+        if (this._last === file && this.el?.classList.contains('show')) this._paint(file);
       };
-      img.src = new URL(`${key}_title.png`, BASE).href;
-      this._imgs.set(key, entry);
+      img.src = new URL(file, BASE).href;
+      this._imgs.set(file, entry);
     }
     return entry;
   }
 
-  _paint(char) {
-    const entry = this._img(char);
+  _paint(file) {
+    const entry = this._img(file);
     const targets = [
       [this.ctx, this.canvas],
       [this.gctx, this.ghost],
@@ -102,33 +113,57 @@ export class SpellCutin {
     }
   }
 
+  /** 重播一遍 CSS 动画：先摘掉 show，强制一次重排，再挂回去 */
+  _replay() {
+    this.el.classList.remove('show');
+    // 世界层镜头 punch：只推 canvas，UI 保持不动。
+    // 两个元素先一起摘类、只强制同步一次布局（读一次 offsetWidth 就会把两者的样式一起刷干净），
+    // 再一起挂回去 —— 第二次 offsetWidth 读在 Boss 登场那一帧是白给的主线程停顿。
+    if (this.elGame) this.elGame.classList.remove('sc-punch');
+    void this.el.offsetWidth;
+    this.el.classList.add('show');
+    if (this.elGame) this.elGame.classList.add('sc-punch');
+    clearTimeout(this._timer);
+    this._timer = setTimeout(() => this.hide(), DURATION);
+  }
+
   /** 播放一次符卡演出。char = 'reimu' | 'marisa' */
   show(char) {
     if (!this.el) return;
     const key = char === 'marisa' ? 'marisa' : 'reimu';
     const list = SPELLS[key] || SPELLS.reimu;
     const spell = list[this._n[key]++ % list.length];
-    this._last = key;
+    const file = `${key}_title.png`;
+    this._last = file;
 
+    this.el.classList.remove('boss');
+    if (this.elTag) this.elTag.textContent = 'SPELL CARD';
     this._setName(tr(spell.name));
     if (this.elSub) this.elSub.textContent = tr(spell.sub);
     this.el.classList.toggle('marisa', key === 'marisa');
-    this._paint(key);
+    this._paint(file);
+    this._replay();
+  }
 
-    // 重播 CSS 动画：先摘掉 show，强制一次重排，再挂回去
-    this.el.classList.remove('show');
-    void this.el.offsetWidth;
-    this.el.classList.add('show');
+  /**
+   * Boss 登场演出：全屏 cut-in。
+   * 立绘进 src/art/gen/<key>_title.png，tag 显示 BOSS，主色走 .boss 冷银蓝。
+   * @param {string} key 例：'sakuya'
+   * @returns {boolean} 是否有这个 Boss 的配置
+   */
+  showBoss(key) {
+    const info = BOSSES[key];
+    if (!this.el || !info) return false;
+    this._last = info.img;
 
-    // 世界层镜头 punch：只推 canvas，UI 保持不动
-    if (this.elGame) {
-      this.elGame.classList.remove('sc-punch');
-      void this.elGame.offsetWidth;
-      this.elGame.classList.add('sc-punch');
-    }
-
-    clearTimeout(this._timer);
-    this._timer = setTimeout(() => this.hide(), DURATION);
+    this.el.classList.remove('marisa');
+    this.el.classList.add('boss');
+    if (this.elTag) this.elTag.textContent = 'BOSS';
+    this._setName(tr(info.name));
+    if (this.elSub) this.elSub.textContent = tr(info.sub);
+    this._paint(info.img);
+    this._replay();
+    return true;
   }
 
   hide() {

@@ -86,6 +86,21 @@ export class Level {
     /** 崩落砖：格子坐标 + 世界坐标，Stage 负责计时/复原 */
     this.crumble = (built ? built.crumble : []).map(([cx, cy]) => ({ cx, cy, x: cx * T, y: cy * T }));
 
+    /**
+     * Boss 场地（世界坐标像素矩形）：平台关开战后自机被锁在里面，不能退回道中。
+     *
+     * - bossArena：关底场地 = levelgen 挖平的最后 BOSS_ARENA_COLS 列平地；
+     * - midbossArena：中途 Boss（5 面妖梦）另外挖出来的舞台，没有中途 Boss 时为 null。
+     *
+     * 飞行关没有这块地形（滚动条在 Boss 战冻结，自机本来就回不到道中），保持 null。
+     */
+    this.bossArena = this.mode !== 'stg' && built && built.arena
+      ? { left: built.arena.from * T, right: built.arena.to * T }
+      : null;
+    this.midbossArena = this.mode !== 'stg' && built && built.midboss
+      ? { left: built.midboss.from * T, right: built.midboss.to * T }
+      : null;
+
     this._parse(rows);
   }
 

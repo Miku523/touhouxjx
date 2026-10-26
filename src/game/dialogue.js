@@ -26,6 +26,7 @@ const AI_PORTRAITS = {
   flandre: 'flandre.png',
   remilia: 'remilia.png',
   youmu: 'youmu.png',
+  sakuya: 'sakuya.png',
 };
 const AI_BASE = new URL('../art/gen/', import.meta.url);
 const aiImages = {};

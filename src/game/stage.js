@@ -15,7 +15,8 @@ import { Fx } from './fx.js';
 import { BulletPool } from './bullets.js';
 import { PlayerShots } from './playerShots.js';
 import { EnemyManager } from './enemies.js';
-import { Boss } from './boss.js';
+import { MinibossManager } from './miniboss.js';
+import { Boss, bossHalfCardHp } from './boss.js';
 import { getDifficulty, enemyStageDensityOf } from './difficulty.js';
 import { scalePlayerDamage } from './balance.js';
 import { StgPlayer, StgStage } from './stg.js';
@@ -27,23 +28,35 @@ import { drawCardFx } from './cardfx.js';
 import { updateCardEffect } from './cardEffects.js';
 
 /**
- * EXTRA 关的时间轴（秒）。
+ * EXTRA = 连环 Boss Rush：进关就开打，没有道中。
  *
- * EXTRA 不再是「一进关就开打」的快速 Boss 战，而是一条完整的道中：
- *   0:00 ─ 2:00   零火力起手的长道中 A（敌机波次一路铺到 2 分钟）
- *   2:00          雷米莉亚当中途 Boss 拦路（两张符卡，不打通进不去）
- *   2:00 ─ 3:00   击破后道中 B 继续推进（1 分钟收束段）
- *   3:00          芙兰朵露登场收尾
- * 道中合计 3:00，叠上中途 Boss 约 2 分钟的实际战斗，
- * 手感到芙兰登场大约是 5 分钟，随后是约 10 分钟的芙兰战。
- * 计时只在「可以操作道中」时推进：Boss 战、对话、死亡都暂停，
- * 所以中途 Boss 打多久都不会把后面的节奏挤掉。
+ * 四场按顺序连着来，场与场之间由 Game 播过场对白，播完调 stage.advanceChain() 放下一场：
+ *   0) 十六夜咲夜（第 1/2 张符卡）── 90 秒击破限时，身边有小怪伴战
+ *   1) 雷米莉亚（2 张符卡）      ── 咲夜没在限时内打完也照常登场
+ *   2) 十六夜咲夜（第 3/4 张符卡）── 又是 90 秒击破限时，小怪继续伴战
+ *   3) 芙兰朵露（全部符卡，终盘）
+ *
+ * cap：这一场的总战斗时长上限（秒），到点强制让 Boss 退场；没打完的那张卡不算击破，
+ *      不发 cardResult、不给奖励。cap 为 null 的场次不限时。
+ * minions：这一场是否刷伴战小怪（只有咲夜两场；雷米 / 芙兰是纯符卡战）。
+ * music：Game 侧的曲目槽位（'pre' 道中曲 ex_pre / 'mid' 中途曲 ex_mid / 'boss' 关底曲 extra）。
+ */
+export const EXTRA_CHAIN = Object.freeze([
+  { key: 'sakuya', midboss: true, cardFrom: 0, cardCount: 2, cap: 90, minions: true, music: 'pre' },
+  { key: 'remilia', midboss: true, cardFrom: 0, cardCount: 2, cap: null, minions: false, music: 'mid' },
+  { key: 'sakuya', midboss: true, cardFrom: 2, cardCount: 2, cap: 90, minions: true, music: 'pre' },
+  { key: 'flandre', midboss: false, cardFrom: 0, cardCount: 10, cap: null, minions: false, music: 'boss' },
+]);
+
+/**
+ * @deprecated 旧的三分钟道中时间轴。EXTRA 已改成上面的连环 Boss Rush，
+ * 这里只留 retryPower 给「再战补火力」在用，其它字段不再参与调度。
  */
 export const EXTRA_TIMELINE = Object.freeze({
-  midbossKey: 'remilia', // 中途 Boss 的键：时间轴与「再战」共用，别两处写死
-  midbossAt: 120,   // 2:00 雷米莉亚
-  finalAt: 180,     // 3:00 芙兰登场（中途 Boss 击破后还有 1 分钟道中）
-  retryPower: 72,   // 中途 / 终盘再战时的起手火力（Lv.4 起手，别让复习从零开始）
+  midbossKey: 'remilia',
+  midbossAt: 120,
+  finalAt: 180,
+  retryPower: 72,   // 再战时的起手火力（Lv.4 起手，别让复习从零开始）
 });
 
 /* ------------------------------------------------------------------
@@ -501,9 +514,24 @@ export class Stage {
     // 引擎里不写死任何 Boss key —— EXTRA 的雷米莉亚走的是下面另一套时间轴。
     this.midbossCfg = this.mode === 'platform' ? (this.def.midboss || null) : null;
     this.pendingBossFromEnd = null; // 下一个 Boss 的登场站位（距关卡右端像素）
+    // Boss 场地锁（平台关）：开战时把自机限制在场地内，见 beginBoss / _lockPlayerInBossArena
+    this._bossArena = null;
     this._midClearX = 0;            // 击破中途 Boss 时的玩家 x：呼吸区的距离基准
     this._midClearT = 0;            // 击破中途 Boss 后的道中计时：呼吸区的时间保险
     this.extraT = 0;
+    // ---- 连环 Boss Rush 的链状态（只有 EXTRA 用，别的关全是空闲值）----
+    this.extraChain = !!this.extra;   // 是否走链调度
+    this.chainIdx = 0;                // 当前 / 即将进行的场次下标
+    this.chainT = 0;                  // 本场已经在「battle」里打了多久（只有 cap 场累计）
+    this.chainMinionT = 10;           // 下一波伴战小怪的倒计时
+    this.chainTriggered = false;      // 本场 bossTrigger 已发出，等 Game 播完对白开战
+    this.chainWaiting = false;        // 本场已清，等 Game 播完过场调 advanceChain()
+    this.chainCleared = [];           // 已清的场次下标
+    this._chainForced = false;        // 本场是被限时强制送走的（不是真击破）
+    // 玩家死亡期间到达的击破结算先挂在这里，等复活后补算（详见 _deferClearIfDead）：
+    // 击破演出有 2.2s，伴战小怪还在开火，这时被打死会被 state='play' 吞掉死亡倒计时。
+    this._deferredClear = null;
+    this.cardGlobalFrom = 0;          // 当前 Boss 的第一张卡在整张卡表里的偏移
     // 中途 / 终盘再战：跳过已经看过的 Boss 战前对白
     this.skipBossDialogue = false;
 
@@ -518,8 +546,12 @@ export class Stage {
       this.player = new StgPlayer({ char: this.char, lives: opts.lives || 3, power: opts.power || 0 });
       // 分面密度：2–6 面道中敌机齐射更稀（Extra 传 0 → 1.00）
       this.stg = new StgStage(this.level, this.diff, enemyStageDensityOf(this.extra ? 0 : this.index + 1));
-      // EXTRA 的道中要撑满 3 分钟：换成更密、更有节奏起伏的波次表
-      if (this.extra) this._buildExtraWaves();
+      // EXTRA 没有道中：波次表清空、滚动条钉死在 0，四场 Boss 战共用同一个固定场地
+      if (this.extra) {
+        this.stg.reachedBoss = true;
+        this.stg.waves = [];
+        this.stg.waveIdx = 0;
+      }
       this.camera.x = 0;
       this.camera.y = 0;
       this.camera.follow = false;
@@ -532,6 +564,17 @@ export class Stage {
         stageDensity: enemyStageDensityOf(this.extra ? 0 : this.index + 1),
       });
       this.camera.snapTo(this.player.x + this.player.w / 2);
+      // 道中小头目（§6-D）：位置/数量由关卡几何 + 种子确定性布置，
+      // 只负责道中骚扰与资源奖励，不锁场、不参与 Boss 触发/检查点/存档流程。
+      // 血量统一取该面 Boss 伤害符卡的平均血量的一半（所有难度同 HP）。
+      this.minibosses = new MinibossManager({
+        level: this.level,
+        difficulty: this.difficulty,
+        stageNumber: this.index + 1,
+        halfCardHp: this.level.boss ? bossHalfCardHp(this.level.boss) : 1,
+        rngSeed: ((((Number(this.level.gen && this.level.gen.seed) || 1) * 2654435761) >>> 0)
+          ^ (((this.index + 1) * 101) >>> 0)) >>> 0,
+      });
     }
 
     this.castFx = 0;
@@ -630,12 +673,14 @@ export class Stage {
       if (list) {
         for (const e of list) {
           if (!e.alive) continue;
+          if (e.entering || e.entryT > 0) continue; // 进场中的 STG 敌机不可被追踪（entryT 为进场剩余时间）
           out.push({ ref: e, x: e.x, y: e.y });
         }
       }
     } else if (this.enemies) {
       for (const e of this.enemies.list) {
         if (!e.alive) continue;
+        if (e.entryState && e.entryState !== 'done') continue; // 进场中/未进场的平台杂兵不可被追踪
         out.push({ ref: e, x: e.x + e.w / 2, y: e.y + e.h / 2 });
       }
     }
@@ -664,6 +709,8 @@ export class Stage {
     }
     this.t += dt;
     if (this.state === 'play') this.time += dt;
+    // EXTRA 的 HUD 计时 = 本次挑战累计时间（没有道中，也就没有「道中时间」可分）
+    if (this.extra) this.extraT += dt;
     // 符卡屏幕染色的余韵，和 DOM cut-in 一起淡出
     if (this.castFx > 0) this.castFx = Math.max(0, this.castFx - dt * 1.05);
     this.camera.beginStep();
@@ -733,6 +780,11 @@ export class Stage {
         },
       });
     }
+    if (this.mode === 'platform' && this.minibosses) {
+      // 小头目独立结算（近似 Boss 矩形判定）：
+      // 击破奖励（+1/32P）在 MinibossManager._kill 里发，这里只回报命中音效。
+      this.minibosses.damageWithShots(this.shots, this.fx, () => this.onEvent('shotHit'));
+    }
     if (this.boss) {
       // 第三参是命中回调：Boss 中弹的专属音效
       this.boss.damageWithShots(this.shots, this.fx, () => this.onEvent('bossHit'));
@@ -754,7 +806,10 @@ export class Stage {
       });
       // 首张符卡开始：intro 演出期间的受击不算进无伤；之后每张卡由 onPhase 清零。
       if (before !== 'battle' && this.boss.state === 'battle') this._cardDamaged = false;
-      if (this.bossMid) {
+      if (this.extraChain) {
+        // EXTRA 连环战：清场 / 限时强制退场都走链调度，不走老的「中途 / 终盘」分支
+        if (before !== 'dead' && this.boss.state === 'dead') this._onChainEncounterClear();
+      } else if (this.bossMid) {
         // 中途 Boss 被击破：不算过关，清场后继续推道中
         if (this.boss.state === 'dead') this._onMidbossDefeated();
       } else if (before !== 'dead' && this.boss.state === 'dead') {
@@ -860,9 +915,51 @@ export class Stage {
     return { key: key || null, mid: !!mid };
   }
 
+  /**
+   * 把自机钳在 Boss 场地内（平台关）。
+   *
+   * 场地是 levelgen 挖平的平地，边界处没有墙：直接钳坐标最稳，也不会和 `_moveX`
+   * 的瓦片碰撞打架。撞到边界时清掉朝外的水平速度，站着推墙不会抖。
+   * 由 `_updatePlatform` 每帧在 `p.update()` 之后调用；开战 / 复活时也用同一条把人拉回来。
+   *
+   * @returns {boolean} 是否发生了钳制
+   */
+  _lockPlayerInBossArena() {
+    const a = this._bossArena;
+    const p = this.player;
+    if (!a || !p) return false;
+    // 场地比自机还窄（理论上不会）时至少保证左边界成立
+    const maxX = Math.max(a.left, a.right - p.w);
+    if (p.x >= a.left && p.x <= maxX) return false;
+    const clamped = p.x < a.left ? a.left : maxX;
+    p.x = clamped;
+    if (clamped === a.left && p.vx < 0) p.vx = 0;
+    else if (clamped === maxX && p.vx > 0) p.vx = 0;
+    return true;
+  }
+
+  /**
+   * 开战 / 复活时把自机塞进 Boss 场地并同步检查点。
+   *
+   * 正常流程下自机本来就在场地里（触发线在场地内），这条兜底两种情况：
+   * ① 读档重试（resumeBoss）用的检查点可能留在场地外（旧存档、空中触发时最后一次站稳的位置）；
+   * ② 复活后不能因为检查点在场地外，一睁眼又站回道中里。
+   */
+  _snapPlayerIntoBossArena() {
+    if (!this._lockPlayerInBossArena()) return;
+    const p = this.player;
+    p.prevX = p.x; // 瞬移一帧不要拉出残影
+    p.setCheckpoint(p.x, p.y);
+    this._safeSpot = { x: p.x, y: p.y };
+  }
+
   _updatePlatform(dt, input) {
     const p = this.player;
     p.update(dt, input);
+
+    // Boss 战期间把自机锁在场地里：这一场打完之前不能退回前面的道中
+    // （场地边界见 beginBoss 里按关底 / 妖梦舞台算出的 _bossArena）
+    this._lockPlayerInBossArena();
 
     // 手感：Boss 战里原地站定 0.3 秒后自动把朝向转向 Boss。
     // 平台关子弹沿 facing 射出，玩家站定不动时 facing 会停在最后一次走位的方向，
@@ -889,6 +986,8 @@ export class Stage {
           this.onEvent('enemyKill');
         },
       });
+      // 小头目只在「可自由跑图」的 play 状态推进：Boss 战 / 对话 / 复活倒计时都冻结。
+      this.minibosses?.update(dt, this);
     }
     this._updatePickups(dt, p);
     this._updateCheckpoints(p);
@@ -909,7 +1008,7 @@ export class Stage {
 
   _updateStg(dt, input) {
     const p = this.player;
-    if (this.extra && this.stg) this._updateExtraTimeline(dt);
+    if (this.extra && this.stg) this._updateExtraChain(dt);
     if (input.pressed('shoot') || input.down('shoot')) this._tryShoot(input);
     this.stg.update(dt, p, this.bullets, this.shots, this.fx, {
       onReachBoss: () => {
@@ -929,10 +1028,8 @@ export class Stage {
     });
     p.update(dt, input, this.stg.scroll);
 
-    // Extra：Boss 出现后把镜头锁在 Boss 附近，避免它随背景滚出画面
-    if (this.extra && this.bossStarted && this.boss) {
-      this.stg.scroll = Math.max(0, this.boss.x - 700);
-    }
+    // EXTRA：全程固定场地固定镜头（四场 Boss 都站在 scroll + 900），不推进地图
+    if (this.extra) this.stg.scroll = 0;
 
     // STG 里玩家子弹打 Boss 走通用路径
     this.camera.x = this.stg.scroll;
@@ -940,90 +1037,195 @@ export class Stage {
   }
 
   /**
-   * EXTRA 的关内时间轴：
-   *   道中计时 → 2:00 雷米莉亚（中途 Boss）→ 击破后继续道中 → 3:00 终盘芙兰。
-   * 计时只在「能操作道中」时推进（Boss 战 / 对话 / 复活倒计时都暂停），
-   * 这样中途 Boss 打得久也不会把终盘节奏往后推。
+   * EXTRA 连环 Boss Rush 的调度器（每帧调用，替代旧的三分钟道中时间轴）：
+   *   - 空闲且还没发过 trigger → 发 bossTrigger，Game 播完战前对白再 beginBoss()
+   *   - 战斗中 → 累计限时（只有 cap 场）+ 刷伴战小怪
    */
-  _updateExtraTimeline(dt) {
+  _updateExtraChain(dt) {
     const stg = this.stg;
-    const running = this.state === 'play' && !this.bossPending && !this.bossStarted;
-    if (running) this.extraT += dt;
-    // Boss 战期间不再刷道中敌机：打完回来不会满屏妖精糊脸
+    if (!stg) return;
     stg.spawnPaused = !!(this.bossPending || this.bossStarted);
-    if (this.bossPending || this.bossStarted) return;
-
-    if (!this.midbossDone && this.extraT >= EXTRA_TIMELINE.midbossAt) {
-      this.bossPending = true;
-      this.pendingBossKey = EXTRA_TIMELINE.midbossKey;
-      this.pendingBossMid = true;
-      this.onEvent('bossTrigger', { midboss: true });
-    } else if (this.midbossDone && this.extraT >= EXTRA_TIMELINE.finalAt) {
-      this.bossPending = true;
-      this.pendingBossKey = null;
-      this.pendingBossMid = false;
-      this.onEvent('bossTrigger');
-    }
-  }
-
-  /**
-   * EXTRA 的敌方波次表：柱状推进整条 3:00 道中（2:00 中途 Boss 前 + 1:00 收束段），
-   * 每 14 波（约 38 秒）为一个节奏段，段落收尾叠一波密集齐射，
-   * 避免长时间道中变成一条匀速的直线。波次间隔 450px（约 2.7 秒一拍）。
-   */
-  _buildExtraWaves() {
-    const stg = this.stg;
-    if (!stg) return;
-    const usable = this.level.w - 1280 - 200;
-    const step = 450;
-    const waves = [];
-    let n = 0;
-    for (let s = 420; s < usable; s += step, n++) {
-      const zone = Math.floor(n / 14);
-      const heavy = zone % 3 === 2;      // 每三段来一段「密集段」
-      const roll = n % 7;
-      if (roll === 0) waves.push({ at: s, kind: 'scout', count: heavy ? 5 : 4, gapY: 0 });
-      else if (roll === 1) waves.push({ at: s, kind: 'gunner', count: heavy ? 3 : 2, gapY: 130 });
-      else if (roll === 2) waves.push({ at: s, kind: 'diver', count: 5, gapY: 0 });
-      else if (roll === 3) {
-        waves.push({ at: s, kind: 'scout', count: 3, gapY: 180 });
-        waves.push({ at: s + 150, kind: 'diver', count: 3, gapY: -160 });
-      } else if (roll === 4) waves.push({ at: s, kind: 'gunner', count: 3, gapY: 0 });
-      else if (roll === 5) {
-        waves.push({ at: s, kind: 'scout', count: 2, gapY: -120 });
-        waves.push({ at: s + 120, kind: 'gunner', count: 2, gapY: 150 });
-      } else {
-        waves.push({ at: s, kind: 'diver', count: 4, gapY: 90 });
-        // 段落收尾：补一波横向齐射，做「潮水」的段落感
-        waves.push({ at: s + 240, kind: 'scout', count: 5, gapY: 40 });
+    if (this.bossPending || this.bossStarted) {
+      if (this.bossStarted && this.boss && this.boss.state === 'battle') {
+        const enc = EXTRA_CHAIN[this.chainIdx];
+        if (enc && enc.cap) {
+          this.chainT += dt;
+          if (this.chainT >= enc.cap) this._forceChainTimeout();
+        }
+        this._updateChainMinions(dt);
       }
+      return;
     }
-    stg.waves = waves;
-    stg.waveIdx = 0;
+    if (this.chainWaiting || this.chainTriggered) return;
+    if (this.state === 'play') this._triggerChain(this.chainIdx);
   }
 
-  /** 把波次指针推到当前滚动位置之前，避免再战时一进场就刷出一大坨敌机 */
-  _skipPastWaves() {
-    const stg = this.stg;
-    if (!stg) return;
-    while (stg.waveIdx < stg.waves.length && stg.waves[stg.waveIdx].at < stg.scroll - 600) stg.waveIdx++;
+  /** 发出第 i 场的开战请求：真正开打由 Game 播完战前对白后调 beginBoss() */
+  _triggerChain(i) {
+    const enc = EXTRA_CHAIN[i];
+    if (!enc) return;
+    this.chainIdx = i;
+    this.chainT = 0;
+    this.chainMinionT = 8 + Math.random() * 4;
+    this.chainTriggered = true;
+    this.chainWaiting = false;
+    this._chainForced = false;
+    this.pendingBossKey = enc.key;
+    this.pendingBossMid = !!enc.midboss;
+    this.onEvent('bossTrigger', {
+      midboss: !!enc.midboss,
+      chain: true,
+      chainIndex: i,
+      chainTotal: EXTRA_CHAIN.length,
+      key: enc.key,
+      cap: enc.cap || null,
+    });
+  }
+
+  /** Game 播完本场过场后调用：放下一场（已经是最后一场就什么都不做） */
+  advanceChain() {
+    if (!this.extraChain) return;
+    const next = this.chainIdx + 1;
+    if (next >= EXTRA_CHAIN.length) return;
+    this._triggerChain(next);
   }
 
   /**
-   * EXTRA 的中途 / 终盘再战：把时间轴与滚动位置拨到指定检查点。
-   * @param {'midboss'|'final'|null} from
+   * 限时到点：当前卡不算击破，直接让 Boss 退场（淡出 → dead），链继续往下走。
+   * 走 _advanceSpell 会发 cardResult（奖励 / 1UP），而「没打完的卡不给奖励」是这次改版
+   * 定下的规则，所以这里自己把状态机推到 defeat。
    */
-  resumeExtra(from) {
+  _forceChainTimeout() {
+    const b = this.boss;
+    if (!b || b.state !== 'battle') return;
+    this._chainForced = true;
+    b.state = 'defeat';
+    b.defeatT = 0;
+    b.spellBroken = false;
+    b.cardLimit = null;
+    b.cardElapsed = 0;
+    this.bullets.clear();
+    this.camera.shake(16, 0.5);
+    this.fx.shockwave(b.x, b.y - 80, '#cfe4ff', 24, 1100, 0.7);
+    this.onEvent('chainTimeout', {
+      chainIndex: this.chainIdx,
+      chainTotal: EXTRA_CHAIN.length,
+      key: b.key,
+    });
+  }
+
+  /**
+   * 伴战小怪：只有咲夜两场。每 10~15 秒一波、每波 3~6 架，进场方式由 stg 自己轮换
+   * （edgeR / top / bottom / chase / corner 全套），混进 Boss 弹幕里当压力源。
+   * 场上已有 10 架就不再补，免得玩家不打就堆满屏。
+   */
+  _updateChainMinions(dt) {
+    const enc = EXTRA_CHAIN[this.chainIdx];
+    if (!enc || !enc.minions || !this.stg) return;
+    if (this.stg.enemies.length >= 10) return;
+    this.chainMinionT -= dt;
+    if (this.chainMinionT > 0) return;
+    this.chainMinionT = 10 + Math.random() * 5;
+    const kinds = ['scout', 'gunner', 'diver', 'sniper', 'spinner'];
+    const forms = ['v', 'arc', 'line', 'column'];
+    this.stg._spawnWave({
+      kind: kinds[(Math.random() * kinds.length) | 0],
+      count: 3 + ((Math.random() * 4) | 0),   // 3~6 架
+      form: forms[(Math.random() * forms.length) | 0],
+      gapY: (Math.random() < 0.5 ? -1 : 1) * (20 + Math.random() * 50),
+    }, this.player);
+  }
+
+  /**
+   * 死亡期间到达的击破结算：先挂起，等复活后由 _flushDeferredClear 补算。
+   * 返回 true 表示「已经挂起，调用方必须立刻 return」。
+   *
+   * 为什么必须拦：击破演出（defeat）要 2.2s，EXTRA 的咲夜两场这时候伴战小怪还在开火，
+   * 玩家完全可能被打死；而 _onChainEncounterClear / _onMidbossDefeated 都是无条件
+   * state='play'，会把 'dead' 覆盖掉。复活只由 state==='dead' 且 deathT>0 驱动，
+   * 于是 deathT 永远停在原地 → 玩家永远 dead、也不发 gameover（软锁）。
+   */
+  _deferClearIfDead(kind) {
+    if (this.state !== 'dead' && this.player && this.player.alive) return false;
+    if (!this._deferredClear) this._deferredClear = { kind };
+    return true;
+  }
+
+  /** 复活后把死亡期间挂起的击破结算补上（Boss 对象一直留着，效果和当场结算一致） */
+  _flushDeferredClear() {
+    const d = this._deferredClear;
+    if (!d) return;
+    this._deferredClear = null;
+    if (d.kind === 'mid') this._onMidbossDefeated();
+    else this._onChainEncounterClear();
+  }
+
+  /** 本场 Boss 走到 dead：清场、记一笔，然后把「下一场」交给 Game 播完过场再推进 */
+  _onChainEncounterClear() {
+    if (this._deferClearIfDead('chain')) return;
+    const enc = EXTRA_CHAIN[this.chainIdx];
+    const b = this.boss;
+    const p = this.player;
+    this.boss = null;
+    this.bossStarted = false;
+    this.bossPending = false;
+    this.bossMid = false;
+    this.bullets.clear();
+    if (this.stg) {
+      this.stg.enemies.length = 0;
+      this.stg.spawnPaused = true;
+    }
+    this.camera.shake(20, 0.7);
+    if (b) {
+      const accent = b.def.accent || '#ffffff';
+      this.fx.burst(b.x, b.y - 80, accent, 34, 460);
+      this.fx.shockwave(b.x, b.y - 80, '#ffffff', 26, 1200, 0.7);
+    }
+    if (p) p.invuln = Math.max(p.invuln || 0, 1.2);
+    this.chainCleared.push(this.chainIdx);
+
+    // 最后一场（芙兰）打完了才算通关
+    if (this.chainIdx >= EXTRA_CHAIN.length - 1) {
+      this.state = 'clear';
+      this.finished = true;
+      this.onEvent('clear', { boss: enc ? enc.key : 'flandre' });
+      return;
+    }
+    this.state = 'play';
+    this.chainWaiting = true;
+    this.onEvent('chainClear', {
+      chainIndex: this.chainIdx,
+      chainTotal: EXTRA_CHAIN.length,
+      nextIndex: this.chainIdx + 1,
+      key: enc ? enc.key : null,
+      nextKey: (EXTRA_CHAIN[this.chainIdx + 1] || {}).key || null,
+      forced: this._chainForced,
+    });
+  }
+
+  /**
+   * EXTRA 再战：从第 index 场直接接上（前面的场次算已清），跳过看过的战前对白。
+   * 火力按 retryPower 兜底，不从零开始。
+   */
+  resumeExtraChain(index = 0) {
     if (!this.extra || !this.stg) return;
-    if (from !== 'midboss' && from !== 'final') return;
-    const at = from === 'midboss' ? EXTRA_TIMELINE.midbossAt : EXTRA_TIMELINE.finalAt;
-    this.midbossDone = from === 'final';
-    this.extraT = at;
+    const i = Math.max(0, Math.min(EXTRA_CHAIN.length - 1, index | 0));
+    this.chainIdx = i;
+    this.chainT = 0;
+    this.chainMinionT = 8 + Math.random() * 4;
+    this.chainTriggered = false;
+    this.chainWaiting = false;
+    this._chainForced = false;
+    this.chainCleared = [];
+    this._deferredClear = null;
+    for (let k = 0; k < i; k++) this.chainCleared.push(k);
+    this.pendingBossKey = EXTRA_CHAIN[i].key;
+    this.pendingBossMid = !!EXTRA_CHAIN[i].midboss;
     this.stg.t = 0;
-    this.stg.scroll = Math.max(0, Math.min(this.stg.bossTriggerScroll, at * this.stg.speed));
-    this._skipPastWaves();
-    // 不白白回到 Lv.1：给到 Lv.4 差一颗的火力
-    // 火力等级由 POWER 派生（StgPlayer.fireLevel 是 getter），这里只补 POWER
+    this.stg.scroll = 0;
+    this.stg.enemies.length = 0;
+    this.stg.waves = [];
+    this.stg.waveIdx = 0;
     this.player.power = Math.max(this.player.power || 0, EXTRA_TIMELINE.retryPower);
     this.skipBossDialogue = true;
     this.onEvent('respawn');
@@ -1262,6 +1464,17 @@ export class Stage {
       this._addExtend(10);
       reward = 'points';
     }
+    // ---- 连环 Boss Rush 专属奖励：咲夜第 2 / 第 4 张卡击破 → 各 +1 残机 ----
+    // 用整张卡表里的全局卡号判断（本场是切片，spellIdx 只是本场内序号）。
+    // 只有真的打完（拿到 cardResult）才走到这里：限时到点被强制送走的卡不算击破。
+    if (this.extraChain) {
+      const enc = EXTRA_CHAIN[this.chainIdx];
+      const gi = res.globalIndex != null ? res.globalIndex : (this.cardGlobalFrom + (res.index || 0));
+      if (enc && enc.key === 'sakuya' && (gi === 1 || gi === 3)) {
+        this._addExtend(POWER.extend);
+        this.onEvent('chainExtend', { chainIndex: this.chainIdx, card: gi + 1 });
+      }
+    }
     // reward 交给 main.js 决定横幅：'power'（+火力）/ 'life'（1UP）/ 'points'（+10 点）
     // noHit/base/bonus 供横幅与验证脚本区分「普通击破」「无伤」「满槽」三种情况。
     this.onEvent('cardResult', { ...res, reward, noHit, base, bonus });
@@ -1325,12 +1538,20 @@ export class Stage {
     this.state = this.bossStarted ? 'boss' : 'play';
     this.bullets.clear();
     this.shots.clear();
+    // 死亡倒计时里补掉的小头目先结算（爆裂特效会被下面的 fx.clear 一起扫掉，不会留到复活后）
+    this.minibosses?.flushPendingKills(this);
     this.fx.clear();
     // 复活无敌：给玩家反应时间，别一睁眼就被满屏弹幕打死
     p.invuln = Math.max(p.invuln, 1.8);
     if (this.mode === 'platform') {
+      // 检查点若落在 Boss 场地外（读档 / 空中触发时的旧检查点），复活先拉回场地再对镜头
+      this._snapPlayerIntoBossArena();
       this.camera.snapTo(p.x + p.w / 2);
     }
+    // 复活：未击破的小头目回到待机满血（已击破的保持击破，不会复活刷奖励）
+    this.minibosses?.onPlayerRespawn();
+    // 死亡倒计时里击破的 Boss / 连环战：现在才补算（会切 state、发 chainClear / midbossClear）
+    this._flushDeferredClear();
     this.onEvent('respawn');
   }
 
@@ -1344,9 +1565,13 @@ export class Stage {
     this.bossStarted = true;
     this.bossPending = false;
     this.state = 'boss';
+    // Boss 战期间小头目不更新也不该留在场上：全部撤回待机（不锁场、不改 Boss 流程）
+    this.minibosses?.clearActive();
 
-    const key = keyOverride || this.pendingBossKey || this.level.boss;
-    const isMid = opts.midboss != null ? !!opts.midboss : this.pendingBossMid;
+    // EXTRA 连锁战：key / 是否中途 都取当前场次的配置（resumeExtraChain 后也走这里）
+    const chainEnc = this.extraChain ? EXTRA_CHAIN[this.chainIdx] : null;
+    const key = keyOverride || this.pendingBossKey || (chainEnc && chainEnc.key) || this.level.boss;
+    const isMid = opts.midboss != null ? !!opts.midboss : (this.pendingBossMid || !!(chainEnc && chainEnc.midboss));
     this.bossMid = isMid;
     this.pendingBossKey = null;
     this.pendingBossMid = false;
@@ -1358,6 +1583,12 @@ export class Stage {
       || (isMid && this.midbossCfg ? (this.midbossCfg.arenaFromEnd || 520) : 520);
     this.pendingBossFromEnd = null;
 
+    // Boss 场地锁：关底用关卡末尾的平地，中途（5 面妖梦）用 levelgen 挖出来的舞台。
+    // 飞行关不设 —— 滚动条在 Boss 战冻结，自机本来就回不到道中（见 stg.js 的 bossTriggerScroll）。
+    this._bossArena = this.mode === 'platform'
+      ? (isMid ? this.level.midbossArena : this.level.bossArena)
+      : null;
+
     const bx = this.mode === 'stg'
       ? this.stg.scroll + 900
       : this.level.w - fromEnd;
@@ -1365,6 +1596,9 @@ export class Stage {
 
     this.boss = new Boss(key, bx, by, {
       difficulty: this.difficulty,
+      // 连锁战：只取这个 Boss 卡表里的一段（咲夜 4 张卡拆成前后两场，各 2 张）
+      cardFrom: chainEnc ? (chainEnc.cardFrom || 0) : undefined,
+      cardCount: chainEnc ? chainEnc.cardCount : undefined,
       // Extra 不参与 4/5/6 面的难符卡裁剪
       stageNumber: this.extra ? 0 : this.index + 1,
       // 平台关启用近战系统：踩踏 / 冲刺破势 / 破势硬直 / 俯冲砸地
@@ -1373,7 +1607,11 @@ export class Stage {
         ? (this.level.gen ? this.level.gen.ground * 32 : this.level.h - 96)
         : by + 240,
     });
+    // 本场第一张卡在整张卡表里的偏移：1UP 奖励 / 卡号都靠它换算
+    this.cardGlobalFrom = (this.boss && this.boss.cardGlobalFrom) || (chainEnc ? (chainEnc.cardFrom || 0) : 0);
     this.boss.x = Math.max(300, Math.min(this.boss.x, this.level.w - 200));
+    // 读档重试 / 触发瞬间人在场地外：先拉回场地内并同步检查点，保证这一场打不出去
+    this._snapPlayerIntoBossArena();
     // 平台关近战的演出计数（首次触发不重复播）
     this._seenStagger = 0;
     this._seenDive = 'idle';
@@ -1386,10 +1624,18 @@ export class Stage {
       name: this.boss.def.name,
       title: this.boss.def.title,
       midboss: isMid,
+      // 链信息：Game 用它选战前对白 / 切曲 / 记再战检查点
+      chain: !!chainEnc,
+      chainIndex: chainEnc ? this.chainIdx : 0,
+      chainTotal: chainEnc ? EXTRA_CHAIN.length : 0,
+      chainLimit: chainEnc ? (chainEnc.cap || null) : null,
+      music: chainEnc ? chainEnc.music : null,
     });
   }
 
   _onMidbossDefeated() {
+    // 平台第 5 面妖梦中途战同理：死亡倒计时里击破，不能立刻 state='play'
+    if (this._deferClearIfDead('mid')) return;
     const b = this.boss;
     this.boss = null;
     this.bossStarted = false;
@@ -1397,6 +1643,8 @@ export class Stage {
     this.bossMid = false;
     this.midbossDone = true;
     this.state = 'play';
+    // 舞台结界消失：击破后要能走下出口缓坡，进入第二道中
+    this._bossArena = null;
     this.bullets.clear();
     this.camera.shake(20, 0.7);
     if (b) {
@@ -1442,6 +1690,7 @@ export class Stage {
   _onBossDefeated() {
     this.state = 'clear';
     this.finished = true;
+    this._bossArena = null;
     this.bullets.clear();
     this.camera.shake(24, 0.8);
     const b = this.boss;
@@ -1988,8 +2237,13 @@ export class Stage {
     // 终点鸟居
     this._drawGoal(ctx, cam);
 
+    // Boss 场地结界：Boss 战期间的边界光幕，画在道具/地形之后、Boss 与自机之前
+    this._drawBossArenaWall(ctx, cam);
+
     // 敌人
     if (this.mode === 'platform' && this.enemies) this.enemies.draw(ctx, cam);
+    // 小头目（世界坐标，和敌人同层；在 Boss / 自机 / 弹幕之前）
+    this.minibosses?.draw(ctx, cam);
 
     // STG 敌机
     if (this.mode === 'stg') this.stg.draw(ctx);
@@ -2409,6 +2663,63 @@ export class Stage {
     }
   }
 
+  /**
+   * Boss 场地结界：Boss 战期间在场地边界画一道很淡的竖直光幕。
+   *
+   * 场地边界是空气，光靠「走不过去」会被当成 bug，这里给一层看得见的暗示：
+   * 横向柔边的光带 + 几条缓慢上升的细光带（颜色取当前 Boss 的强调色）。
+   * 击破后 `_bossArena` 清空，光幕自然消失；只有边界落在视野附近才画，屏幕外零开销。
+   */
+  _drawBossArenaWall(ctx, cam) {
+    const a = this._bossArena;
+    if (!a) return;
+    const accent = (this.boss && this.boss.def && this.boss.def.accent) || '#bfe9ff';
+    const h = this.level.h;
+    // 光幕渐变只跟 (边界 x, 强调色) 有关，缓存起来逐帧复用 —— 每帧新建 6~12 个 CanvasGradient
+    // 是纯粹的垃圾（Boss 战正是同屏绘制最重的时候），实测这条在软件光栅下能白掉一整毫秒。
+    const gc = (this._arenaGrad ||= new Map());
+    // 关底场地的右边界就是关卡尽头（外面是实心墙），只画左边界；中途舞台两侧都画
+    const xs = [a.left];
+    if (a.right < this.level.w) xs.push(a.right);
+    for (const x of xs) {
+      if (x < cam.x - 40 || x > cam.x + VIEW_W + 40) continue;
+      const pulse = 0.5 + 0.5 * Math.sin(this.t * 2.2 + x * 0.013);
+      let entry = gc.get(x);
+      if (!entry || entry.accent !== accent) {
+        // 主光幕：横向从透明到强调色再回到透明
+        const band = ctx.createLinearGradient(x - 20, 0, x + 20, 0);
+        band.addColorStop(0, 'rgba(255,255,255,0)');
+        band.addColorStop(0.5, accent);
+        band.addColorStop(1, 'rgba(255,255,255,0)');
+        // 流动光带的竖向渐变（局部坐标，靠 translate 定位，一次建好反复用）
+        const streak = ctx.createLinearGradient(0, -30, 0, 30);
+        streak.addColorStop(0, 'rgba(255,255,255,0)');
+        streak.addColorStop(0.5, accent);
+        streak.addColorStop(1, 'rgba(255,255,255,0)');
+        entry = { accent, band, streak };
+        gc.set(x, entry);
+      }
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.10 + pulse * 0.05;
+      ctx.fillStyle = entry.band;
+      ctx.fillRect(x - 20, 0, 40, h);
+      // 流动光带：几道短线沿光幕上升，免得整道墙看起来是块静止的半透明矩形
+      ctx.globalAlpha = 0.16 + pulse * 0.12;
+      const n = 5;
+      for (let i = 0; i < n; i++) {
+        const k = (this.t * 0.22 + i / n + x * 0.0007) % 1;
+        const y = h - k * h;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.fillStyle = entry.streak;
+        ctx.fillRect(-2, -30, 4, 60);
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+  }
+
   _drawGoal(ctx, cam) {
     const gx = this.goalX;
     if (!gx) return;
@@ -2514,7 +2825,7 @@ export class Stage {
       castCost: POWER.castCost,
       perLevel: POWER.perLevel,
       char: this.char,
-      // EXTRA 显示「道中累计时间」：中途 Boss 战期间冻结，3:00 就是雷米莉亚的位置
+      // EXTRA 显示本次挑战的累计时间（连环 Boss 战没有道中，计时一路走）
       time: this.extra ? this.extraT : this.time,
       boss: this.boss && this.boss.state !== 'dead'
         ? {
@@ -2540,6 +2851,13 @@ export class Stage {
           cardAccent: this.boss.cardAccent || this.boss.def.accent || '#b48cff',
           cardIndex: this.boss.spellIdx || 0,
           cardTotal: this.boss.spellCount || 0,
+          // ---- 连环 Boss Rush：本场限时（咲夜两场）----
+          // chainLimit 为 null 时不显示；HUD 优先看它，其次才退回逐卡 cardLimit。
+          chainIndex: this.extraChain ? this.chainIdx + 1 : 0,
+          chainTotal: this.extraChain ? EXTRA_CHAIN.length : 0,
+          chainLimit: this.extraChain && this.boss.state === 'battle'
+            ? ((EXTRA_CHAIN[this.chainIdx] || {}).cap || null) : null,
+          chainElapsed: this.extraChain ? this.chainT : 0,
           lastResult: this.boss.lastCardResult || null,
         }
         : null,

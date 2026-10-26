@@ -164,6 +164,11 @@ def drum_voice(kind, vel, gain):
         out.append(filtered_noise('highpass', 6650.0, 0.7, 0.13, min(0.06, v * 0.5), 0.003))
     elif kind == 4:    # 吊镲
         out.append(filtered_noise('highpass', 4400.0, 0.6, 0.45, min(0.055, v * 0.4), 0.003))
+    elif kind in (5, 6):  # 通鼓（仅 WAV 渲染器有，这里给个近似）
+        f0 = 150.0 if kind == 6 else 105.0
+        out.append(tone(f0, f0 * 0.55, 0.25, min(0.1, v * 0.8), 'triangle', attack=0.003))
+    elif kind == 7:    # ride
+        out.append(filtered_noise('highpass', 6000.0, 0.8, 0.5, min(0.035, v * 0.3), 0.002))
     return out
 
 
@@ -202,7 +207,8 @@ def render(song, loops=2, tail=1.2):
                 f = 440.0 * 2.0 ** ((float(midi) - 69.0) / 12.0)
                 add(buf, tone(f, f, d, peak, tr['wave'], attack=min(0.012, d * 0.3)),
                     base + float(t))
-        for (t, kind, vel) in song.get('drums') or []:
+        for ev in song.get('drums') or []:
+            t, kind, vel = ev[0], ev[1], ev[2]
             if t >= dur:
                 continue
             for sig in drum_voice(int(kind), int(vel), 0.12):

@@ -7,7 +7,8 @@
 //   1. 进度条单调不倒退，且确实从低位起步（不是一上来就满格）
 //   2. 揭幕瞬间读数必须是 100，之后 #boot 先透明、再 display:none（CSS 动画要真的停掉）
 //   3. 开屏盖着时的 Enter / 方向键不许漏进标题菜单（不然会盲选到「开始游戏」）
-//   4. 节流到 260 KB/s 时进度条要逐格推进、最终仍然揭幕（不能卡死或直接跳过动画）
+//   4. 节流到 700 KB/s 时进度条要逐格推进、最终仍然揭幕（不能卡死或直接跳过动画）；
+//      测之前必须先卸 Service Worker + 清 Cache Storage，否则二次导航全命中预缓存，节流测不到
 //   5. 全程零 console error
 import { launch, sleep, BASE } from './_pt_core.mjs';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -82,17 +83,27 @@ const stateAfter = await T.eval('window.__game ? window.__game.state : "n/a"');
 check('B 开屏期间 Enter/Arrow 被门禁吃掉', stateAfter === 'menu', 'state=' + stateAfter);
 
 // ---------- 场景 C：节流网（慢速）----------
+// 首屏跑完后 sw.js 已经装上，二次导航的请求会被 Cache Storage 全部命中——
+// CDP 的网络节流对 SW 命中的响应无效（2026-10-27 实测：260KB/s 下 9.6MB 资源 128ms 返回）。
+// 所以先卸 Service Worker、清 Cache Storage、关 HTTP 缓存，让这一趟真的走网络。
+await T.eval(`(async () => {
+  try { const rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map((r) => r.unregister())); } catch (e) {}
+  try { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); } catch (e) {}
+  return 1;
+})()`);
 await T.send('Network.enable');
+await T.send('Network.setCacheDisabled', { cacheDisabled: true });
 await T.send('Network.emulateNetworkConditions', {
   offline: false,
   latency: 220,
-  downloadThroughput: 260 * 1024,
-  uploadThroughput: 260 * 1024,
+  downloadThroughput: 700 * 1024,
+  uploadThroughput: 700 * 1024,
   connectionType: 'cellular3g',
 });
 await T.nav(BASE + '/index.html');
-const c = await sampleUntilReveal(30000);
+const c = await sampleUntilReveal(60000);
 out.samples.slow = c;
+await T.send('Network.setCacheDisabled', { cacheDisabled: false });
 await T.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
 const cp = c.filter((s) => typeof s.pct === 'number' && s.pct >= 0).map((s) => s.pct);
 const mid = cp.filter((p) => p > 0 && p < 100).length;

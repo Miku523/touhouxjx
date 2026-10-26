@@ -158,6 +158,74 @@ function pickPlatformKind(baseType, tier, rng, used) {
   return baseType;
 }
 
+/* =====================================================================
+ *  进场方案（平台面所有杂兵）
+ *
+ *  上一版 EnemyManager 直接把实体坐标摆上去站桩。现在每只在 build 时用关卡 RNG
+ *  确定性分配一种进场方式；玩家进入该敌 ±640px 才触发，触发前不可见、不碰撞、
+ *  不受伤、不发射，触发后播 0.7~1.4s 进场动画再回原站位进原状态机。
+ *  空中杂兵只从空中方向进场（滑翔 / 天降 / 俯冲），不上地面滑行或原地闪现。
+ * ===================================================================== */
+// 触发距离：相机把玩家放在约 58% 屏位，前方可见约 540~610px；取 640 让进场动画
+// 在 20%~70% 进度时已经落在可视区里（1100 会让整段动画发生在屏幕右缘之外）。
+const ENTRY_TRIGGER_PX = 640;
+/** 地面型进场权重：stand 45% / glideR 12% / glideL 12% / drop 12% / blink 8% / swoop 11% */
+const ENTRY_PLAN = [
+  ['stand', 0.45], ['glideR', 0.12], ['glideL', 0.12],
+  ['drop', 0.12], ['blink', 0.08], ['swoop', 0.11],
+];
+/** 空中型：只保留 glide / drop / swoop（按原比例重新归一） */
+const AIR_ENTRY_PLAN = [
+  ['glideR', 0.30], ['glideL', 0.30], ['drop', 0.20], ['swoop', 0.20],
+];
+
+/** 按权重抽一种进场方案（rng 由关卡种子驱动，同一关每次重开一致） */
+function pickEntryPlan(rng, air) {
+  const table = air ? AIR_ENTRY_PLAN : ENTRY_PLAN;
+  let total = 0;
+  for (const [, w] of table) total += w;
+  let r = rng() * total;
+  for (const [k, w] of table) { r -= w; if (r <= 0) return k; }
+  return 'stand';
+}
+
+function easeOutCubic(t) { return 1 - (1 - t) * (1 - t) * (1 - t); }
+function easeInQuad(t) { return t * t; }
+
+/** build 时给敌人挂上进场所需字段（不改变行为/血量/掉落） */
+function assignEntry(e, air, rng) {
+  e.entry = pickEntryPlan(rng, air);
+  e.entryState = 'idle';
+  e.entryT = 0;
+  e.entryWarn = 0;
+  e.entryAlpha = 0;
+  e.entryFxT = 0;
+  e.homeX = e.x;
+  e.homeY = e.y;
+  e.entryFromX = e.x;
+  e.entryFromY = e.y;
+  e.entrySide = rng() < 0.5 ? -1 : 1;
+  // 进场时长 0.7~1.4s；blink = 0.35s 光点预警 + 0.35s 淡入
+  e.entryDur = 0.7 + rng() * 0.7;
+  const dx = 620 + rng() * 180;
+  const dy = 460 + rng() * 200;
+  if (e.entry === 'glideR') {
+    e.entryFromX = e.x + dx;
+    e.entryFromY = e.y - 60 - rng() * 120;
+  } else if (e.entry === 'glideL') {
+    e.entryFromX = e.x - dx;
+    e.entryFromY = e.y - 60 - rng() * 120;
+  } else if (e.entry === 'drop') {
+    e.entryFromX = e.x + (rng() - 0.5) * 70;
+    e.entryFromY = e.y - dy - 160;
+  } else if (e.entry === 'swoop') {
+    e.entryFromX = e.x - e.entrySide * (470 + rng() * 170);
+    e.entryFromY = e.y - dy - 180;
+  } else if (e.entry === 'blink') {
+    e.entryDur = 0.35 + 0.35;
+  }
+}
+
 function makeFairy(type, x, y, idx, tint, kind = type, rng = null) {
   const colorKey = pickFairyColor(tint, idx);
   const info = PLATFORM_KINDS[kind] || PLATFORM_KINDS[type] || PLATFORM_KINDS.fairy;
@@ -201,6 +269,27 @@ function makeFairy(type, x, y, idx, tint, kind = type, rng = null) {
     // 开火变体计数（对地扇形 / 交叉火网 / 追踪延迟弹交替用）
     shotAlt: 0,
     spinBurst: 0,
+    // 进场状态机：entryState = idle 未触发 / active 进场中 / done 已完成
+    entry: 'stand',
+    entryState: 'idle',
+    entryT: 0,
+    entryDur: 0.9,
+    entryWarn: 0,
+    entryAlpha: 0,
+    entryFxT: 0,
+    entrySide: 1,
+    entryFromX: x,
+    entryFromY: y,
+    homeX: x,
+    homeY: y,
+    // 二次延迟齐射：主齐射后 0.25~0.45s 补一轮（弹数同样计入 bulletShots / bulletCap 护栏）
+    salvoLeft: 0,
+    salvoT: 0,
+    salvoGap: 0.3,
+    salvoShot: 0,
+    // 螺旋妖精「连续螺旋 ↔ 停顿-爆发」模式计时
+    spinMode: 0,
+    spinModeT: 3.2,
   };
 }
 
@@ -251,6 +340,10 @@ export class EnemyManager {
     // 种类分布由关卡 id + 生成种子决定：同一关每次进入完全一致
     const tier = platformTierOf(level);
     const rng = levelRng(level);
+    // 进场方案单独走一条随机流：不改动种类抽取/护航判定用的 rng 序列，
+    // 保证敌人种类分布与改动前逐只一致（进场多样性不影响数值/配比）
+    const entrySeed = (((Number(level.def?.gen?.seed) || 0) ^ hashStr(String(level.def?.id || 'stage'))) ^ 0x9e3779b9) >>> 0;
+    const entryRng = mulberry32(entrySeed || 0x27d4eb2f);
     const used = {};
     const escorts = [];
     for (const e of level.entities) {
@@ -267,7 +360,10 @@ export class EnemyManager {
         let guard = 0;
         while (level.rectHitsSolid(x, y, info.w, info.h) && y > T * 1.5 && guard < 30) { y -= 8; guard++; }
       }
-      this.list.push(makeFairy(e.type, x, y, i++, tint, kind, rng));
+      // 进场方案在 build 时确定（站桩 / 侧滑 / 天降 / 闪现 / 俯冲）
+      const unit = makeFairy(e.type, x, y, i++, tint, kind, rng);
+      assignEntry(unit, info.air, entryRng);
+      this.list.push(unit);
 
       // 高面数关卡的空中护航：只补空中兵，绝不在地面路线中间加卡位
       if (info.air && tier >= 3 && rng() < 0.2 && escorts.length < 12) {
@@ -275,7 +371,9 @@ export class EnemyManager {
         const ey = Math.max(T * 1.5, y - 38);
         if (ex > T * 2 && !level.rectHitsSolid(ex, ey, 30, 34)) {
           const ek = rng() < 0.5 ? 'spreader' : 'spinner';
-          escorts.push(makeFairy('flyer', ex, ey, i++, tint, ek, rng));
+          const es = makeFairy('flyer', ex, ey, i++, tint, ek, rng);
+          assignEntry(es, true, entryRng);
+          escorts.push(es);
         }
       }
     }
@@ -328,6 +426,12 @@ export class EnemyManager {
       e.stompGrace = Math.max(0, e.stompGrace - dt);
       e.phase += dt;
 
+      // 进场：未触发前只等玩家靠近；进场动画期间不可碰撞 / 不可被伤害 / 不发射
+      if (e.entryState !== 'done') {
+        if (!opts.freeze) this._updateEntry(e, dt, px, py, fx);
+        continue;
+      }
+
       if (e.ground) {
         this._updateGround(e, dt, player, px, py, bullets, fx, opts);
       } else {
@@ -361,6 +465,128 @@ export class EnemyManager {
 
     // 清理很久的尸体
     this.list = this.list.filter((e) => e.alive || e.deadT < 1.2);
+  }
+
+  /* ---------------- 进场动画（平台杂兵） ---------------- */
+
+  /**
+   * 进场状态机：idle → active → done。
+   * idle 阶段完全不可见 / 不可碰撞；active 阶段按曲线飞向 homeX/homeY，
+   * 带拖尾光尘与落地扬尘；done 后回到原状态机（行为/血量/掉落完全不变）。
+   */
+  _updateEntry(e, dt, px, py, fx) {
+    if (e.entryState === 'idle') {
+      // 玩家进入该敌 ±1100px 才触发；站桩型直接到位（不播动画，保持原行为）
+      if (Math.abs(e.homeX + e.w / 2 - px) > ENTRY_TRIGGER_PX) return;
+      e.entryState = 'active';
+      e.entryT = 0;
+      e.entryFxT = 0;
+      if (e.entry === 'stand') { this._finishEntry(e, fx); return; }
+      e.entryWarn = e.entry === 'blink' ? 0.35 : 0;
+      return;
+    }
+    if (e.entryState !== 'active') return;
+
+    e.entryT += dt;
+    const total = Math.max(0.01, e.entryDur);
+    const t = Math.min(1, e.entryT / total);
+
+    if (e.entry === 'blink') {
+      // 先 0.35s 光点预警（本体不可见），随后 0.35s 淡入
+      if (e.entryT < e.entryWarn) { e.entryAlpha = 0; return; }
+      e.entryAlpha = Math.min(1, (e.entryT - e.entryWarn) / Math.max(0.01, total - e.entryWarn));
+      if (t >= 1) this._finishEntry(e, fx);
+      return;
+    }
+
+    if (e.entry === 'drop') {
+      // 天降：竖直加速下落，落地前轻微横摆
+      const k = easeInQuad(t);
+      e.x = e.homeX + Math.sin(t * Math.PI * 2) * 18 * (1 - t);
+      e.y = e.entryFromY + (e.homeY - e.entryFromY) * k;
+    } else if (e.entry === 'swoop') {
+      // 斜向俯冲：横向缓出、纵向缓入，斜着砸进站位
+      const kx = easeOutCubic(t);
+      const ky = easeInQuad(t);
+      e.x = e.entryFromX + (e.homeX - e.entryFromX) * kx;
+      e.y = e.entryFromY + (e.homeY - e.entryFromY) * ky;
+    } else {
+      // glideR / glideL：水平滑翔，带一点上下浮动
+      const k = easeOutCubic(t);
+      e.x = e.entryFromX + (e.homeX - e.entryFromX) * k;
+      e.y = e.entryFromY + (e.homeY - e.entryFromY) * k - Math.sin(t * Math.PI) * 26;
+    }
+    e.entryAlpha = Math.min(1, 0.2 + t * 1.3);
+    e.facing = e.homeX > e.x ? 1 : -1;
+    // 拖尾：每 0.11s 落一撮光尘（数量少，不压粒子池）
+    e.entryFxT -= dt;
+    if (e.entryFxT <= 0 && fx) {
+      e.entryFxT = 0.11;
+      fx.burst(e.x + e.w / 2, e.y + e.h / 2, e.colors.wing, 2, 60);
+    }
+    if (t >= 1) this._finishEntry(e, fx);
+  }
+
+  /** 进场结束：落到原站位、恢复朝向/巡逻速度，补一次落地扬尘 */
+  _finishEntry(e, fx) {
+    e.entryState = 'done';
+    e.entryT = 0;
+    e.entryAlpha = 1;
+    e.x = e.homeX;
+    e.y = e.homeY;
+    e.baseY = e.homeY;
+    e.prevX = e.x;
+    e.prevY = e.y;
+    if (e.ground) e.vx = (e.facing >= 0 ? 1 : -1) * (e.patrol || 52);
+    if (e.entry === 'blink') fx?.burst(e.x + e.w / 2, e.y + e.h / 2, e.colors.hot, 10, 180);
+    else fx?.burst(e.x + e.w / 2, e.y + e.h, e.colors.wing, 6, 150);
+  }
+
+  /** 闪现进场的 0.35s 预警：一圈收束细环 + 一颗亮芯（本体仍不可见） */
+  _drawEntryWarn(ctx, e) {
+    if (typeof document === 'undefined') return;
+    const t = Math.min(1, e.entryT / Math.max(0.01, e.entryWarn));
+    const cx = e.homeX + e.w / 2;
+    const cy = e.homeY + e.h / 2;
+    const r = 26 * (1 - t) + 6;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = rgba(e.colors.hot, 0.25 + t * 0.55);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, TAU);
+    ctx.stroke();
+    ctx.fillStyle = rgba(e.colors.glow, 0.5 + t * 0.4);
+    ctx.beginPath();
+    ctx.arc(cx, cy, 2.4 + t * 3.2, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /**
+   * 二次延迟齐射：主齐射后 0.25~0.45s 补一轮（lancer / flyer 的第二种发射方式）。
+   * 弹数照样先过 _mayFire（bulletCap）护栏，弹速仍走 bulletSpeed 体系（×0.9 不会越 cap）。
+   */
+  _updateSalvo(e, dt, bullets, px, py) {
+    e.salvoT -= dt;
+    if (e.salvoT > 0) return;
+    if (!this._mayFire(bullets)) { e.salvoT = 0.1; return; }
+    e.salvoLeft -= 1;
+    e.salvoT = e.salvoGap;
+    const ox = e.x + e.w / 2;
+    const oy = e.y + e.h * (e.ground ? 0.45 : 0.55);
+    const a = Math.atan2(py - oy, px - ox);
+    const sp = this.bulletSpeed * 0.9;
+    if (e.salvoShot === 1) {
+      const n = Math.min(4, 2 + Math.max(0, this.bulletShots - 1));
+      bullets.fan(ox, oy, n, 0.26, a, sp, { r: 4.5, color: e.colors.wing, type: 1, life: 5 });
+    } else {
+      bullets.spawn({
+        x: ox, y: oy,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        r: 5, color: e.colors.glow, type: 1, life: 5,
+      });
+    }
   }
 
   /* ---------------- 地面型：巡逻 / 冲锋 / 闪现 ---------------- */
@@ -456,6 +682,8 @@ export class EnemyManager {
 
     // 地面型开火（fairy 保持原设计：不开火）
     if (opts.freeze || !bullets) return;
+    // 二次延迟齐射先推进（不占主冷却，弹数计入 _mayFire 护栏）
+    if (e.salvoLeft > 0) this._updateSalvo(e, dt, bullets, px, py);
     e.shootCd -= dt * (1 / this.bulletCooldownMul);
     if (e.shootCd > 0 || !this._mayFire(bullets)) return;
 
@@ -463,15 +691,32 @@ export class EnemyManager {
     const oy = e.y + e.h * 0.45;
     const dist = Math.hypot(px - ox, py - oy);
     if (e.kind === 'lancer' && dist < 760 && Math.abs(py - oy) < 280) {
-      // 瞄准扇形米弹：发数随 flyerShots（难度 / 分面密度）变宽，射速也吃分面递增
+      // 两种发射方式轮换：
+      //   ① 瞄准扇形米弹（原行为）② 冲锋后三连点射（同角三发按速度错开读成「连发」，再补一轮延迟齐射）
       e.shootCd = (2.0 + Math.random() * 0.7) * this.fireScale * this.tierMul;
       const n = 2 + Math.min(3, this.bulletShots - 1);
       const aimX = px + (player.vx || 0) * 0.14;
       const aimY = py + (player.vy || 0) * 0.14;
       const a = Math.atan2(aimY - oy, aimX - ox);
-      bullets.fan(ox, oy, n, 0.15 + 0.02 * n, a, this.bulletSpeed * 0.95, {
-        r: 5, color: e.colors.glow, type: 1, life: 5,
-      });
+      const alt = (e.shotAlt = (e.shotAlt || 0) + 1) % 2;
+      if (alt === 1) {
+        const sp = this.bulletSpeed * 0.95;
+        for (const mul of [1.28, 1, 0.76]) {
+          bullets.spawn({
+            x: ox, y: oy,
+            vx: Math.cos(a) * sp * mul, vy: Math.sin(a) * sp * mul,
+            r: 4.5, color: e.colors.hot, type: 1, life: 5, spin: 2,
+          });
+        }
+        e.salvoLeft = 1;
+        e.salvoT = 0.25 + ((e.phase * 0.37) % 0.2);
+        e.salvoGap = 0.3;
+        e.salvoShot = 0;
+      } else {
+        bullets.fan(ox, oy, n, 0.15 + 0.02 * n, a, this.bulletSpeed * 0.95, {
+          r: 5, color: e.colors.glow, type: 1, life: 5,
+        });
+      }
     } else if (e.kind === 'weaver' && dist < 720) {
       // 蛛网妖精两种弹幕交替：
       //  奇数发 = 交叉火网（新）：左右两点各一扇瞄准星弹，两股流线在半空交叉
@@ -492,14 +737,16 @@ export class EnemyManager {
           });
         }
       } else {
+        // 环形网：相邻两发一快一慢（speedVar 快慢混编，轻微复杂化），整环看起来会「呼吸」
         const n = this.bulletShots > 1 ? 10 : 6;
         const base = Math.PI / 4 + e.ringA;
         const sp = this.bulletSpeed * 0.72;
         for (let k = 0; k < n; k++) {
           const a = base + (k / n) * TAU;
+          const mul = (k & 1) ? 0.84 : 1.16;
           bullets.spawn({
             x: ox, y: oy,
-            vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+            vx: Math.cos(a) * sp * mul, vy: Math.sin(a) * sp * mul,
             r: 5, color: e.colors.wing, type: 3, life: 5, spin: 3,
           });
         }
@@ -527,16 +774,44 @@ export class EnemyManager {
     const ox = cx;
     const oy = e.y + e.h * 0.55;
 
-    // 魔法妖精：持续螺旋（不进入冷却池，单独用 fireT 计时）
+    // 魔法妖精：两种螺旋节奏交替
+    //   ① 连续螺旋（原行为，每 3 轮追加一对追踪延迟弹）
+    //   ② 停顿-爆发：双臂连续打 5 轮快螺旋，随后进入长冷却
     if (e.kind === 'spinner') {
       e.spinA += dt * 2.1;
       e.fireT -= dt;
+      e.spinModeT -= dt;
+      if (e.spinModeT <= 0) {
+        e.spinMode = e.spinMode ? 0 : 1;
+        e.spinModeT = 3.4 + (e.phase * 0.13) % 1.2;
+        e.spinBurst = 0;
+        e.fireT = Math.min(e.fireT, 0.1);
+      }
       if (e.fireT > 0 || opts.freeze || !this._mayFire(bullets)) return;
-      e.fireT = Math.max(0.11, 0.16 * this.fireScale * this.tierMul);
-      const arms = this.bulletShots >= 4 ? 3 : this.bulletShots > 2 ? 2 : 1;
+      const armsBase = this.bulletShots >= 4 ? 3 : this.bulletShots > 2 ? 2 : 1;
       const sp = Math.min(this.bulletSpeed, 150);
-      for (let k = 0; k < arms; k++) {
-        bullets.spiral(ox, oy, e.spinA + (k / arms) * Math.PI, sp, {
+      if (e.spinMode === 1) {
+        // ② 爆发档：双倍臂 + 更短间隔，打满 5 轮进冷却
+        e.fireT = Math.max(0.09, 0.11 * this.fireScale * this.tierMul);
+        const arms = Math.min(6, armsBase * 2);
+        for (let k = 0; k < arms; k++) {
+          bullets.spiral(ox, oy, e.spinA + (k / arms) * Math.PI, sp, {
+            r: 4.5, color: e.colors.hot, type: 0, life: 4.5,
+          });
+        }
+        e.spinBurst += 1;
+        if (e.spinBurst >= 5) {
+          e.spinMode = 0;
+          e.spinModeT = 3.4;
+          e.spinBurst = 0;
+          e.fireT = 0.5 + Math.min(0.24, this.fireScale * 0.24);
+        }
+        return;
+      }
+      // ① 连续档（原行为）
+      e.fireT = Math.max(0.11, 0.16 * this.fireScale * this.tierMul);
+      for (let k = 0; k < armsBase; k++) {
+        bullets.spiral(ox, oy, e.spinA + (k / armsBase) * Math.PI, sp, {
           r: 4.5, color: e.colors.wing, type: 0, life: 4.5,
         });
       }
@@ -557,17 +832,33 @@ export class EnemyManager {
       return;
     }
 
+    // 二次延迟齐射先推进（flyer 第二种发射方式的补射，飞完就归零）
+    if (e.salvoLeft > 0) this._updateSalvo(e, dt, bullets, px, py);
+
     e.shootCd -= dt * (1 / this.bulletCooldownMul);
     if (e.shootCd > 0 || opts.freeze || !this._mayFire(bullets)) return;
 
     if (e.kind === 'spreader') {
-      // 环射：每次换一个角度，弹数随难度 / 分面密度增加
+      // 两种环射方式交替：
+      //   ① 整圈环射（原行为）② 朝玩家的双向扇形，speedVar 快慢混编
       e.shootCd = (2.4 + Math.random() * 0.6) * this.fireScale * this.tierMul;
       const n = Math.min(12, 6 + Math.max(0, this.bulletShots - 1) * 2);
-      bullets.ring(ox, oy, n, Math.min(this.bulletSpeed, 140), {
-        angle: e.ringA, r: 5, color: e.colors.glow, type: 0, life: 5.5,
-      });
-      e.ringA += Math.PI / n;
+      if ((e.shotAlt = (e.shotAlt || 0) + 1) % 2 === 1) {
+        bullets.ring(ox, oy, n, Math.min(this.bulletSpeed, 140), {
+          angle: e.ringA, r: 5, color: e.colors.glow, type: 0, life: 5.5,
+        });
+        e.ringA += Math.PI / n;
+      } else {
+        const a = Math.atan2(py - oy, px - ox);
+        const half = n >= 10 ? 5 : 4;
+        for (const side of [-1, 1]) {
+          bullets.fan(ox, oy, half, 0.34, a + side * 0.5, Math.min(this.bulletSpeed, 145), {
+            r: 5, color: e.colors.wing, type: 0, life: 5.5,
+            speedVar: [1.22, 0.88, 1.06, 0.94],
+          });
+        }
+        e.ringA += Math.PI / 7;
+      }
     } else if (e.kind === 'bomber') {
       // 两种弹幕交替：奇数发 = 对地扇形（新），偶数发 = 原延迟雨
       const dist = Math.hypot(px - ox, py - oy);
@@ -587,31 +878,47 @@ export class EnemyManager {
           }
           fx?.flash?.(ox, oy + 12, e.colors.wing, 20);
         } else {
-          // 延迟雨：初速很慢 + 沿速度持续加速，落下时才是「雨」
+          // 延迟雨：初速很慢 + 沿速度持续加速，落下时才是「雨」；
+          // 加一点横向游移（wobble）让鬼火左右飘，落点不再纯竖直，需要真躲
           const n = 3 + Math.min(2, Math.max(0, this.bulletShots - 1));
           for (let k = 0; k < n; k++) {
             const bx = ox + (k - (n - 1) / 2) * 26;
             bullets.spawn({
               x: bx, y: oy + 6, vx: 0, vy: 30, accel: 260,
               r: 6, color: e.colors.glow, type: 1, life: 7, scaleIn: 0.2,
+              wobbleAmp: 16, wobbleFreq: 2.2,
             });
           }
           fx?.flash?.(ox, oy + 10, e.colors.wing, 18);
         }
       }
     } else {
-      // 原 flyer：齐射数随 flyerShots 提高，开火间隔也吃 fireScale（分面递增）
+      // 原 flyer：两种发射方式交替
+      //   ① 瞄准齐射（原行为，弹数随 flyerShots 提高）
+      //   ② 先撒一把宽扇，再隔 0.2s 补两轮精确点射（二次齐射）
       e.shootCd = (2.1 + Math.random() * 1.3) * this.fireScale * this.tierMul;
-      if (this.bulletShots > 1) {
-        const a = Math.atan2(py - oy, px - ox);
-        const n = Math.min(5, this.bulletShots + 1);
-        bullets.fan(ox, oy, n, 0.2, a, this.bulletSpeed, {
-          r: 5, color: e.colors.glow, type: 0, life: 5,
-        });
+      const a = Math.atan2(py - oy, px - ox);
+      if ((e.shotAlt = (e.shotAlt || 0) + 1) % 2 === 1) {
+        if (this.bulletShots > 1) {
+          const n = Math.min(5, this.bulletShots + 1);
+          bullets.fan(ox, oy, n, 0.2, a, this.bulletSpeed, {
+            r: 5, color: e.colors.glow, type: 0, life: 5,
+          });
+        } else {
+          bullets.aimed(ox, oy, px, py, this.bulletSpeed, {
+            r: 6, color: e.colors.glow, type: 0, life: 5,
+          });
+        }
       } else {
-        bullets.aimed(ox, oy, px, py, this.bulletSpeed, {
-          r: 6, color: e.colors.glow, type: 0, life: 5,
+        e.shootCd = (2.7 + Math.random() * 0.9) * this.fireScale * this.tierMul;
+        const n = Math.min(4, 2 + Math.max(0, this.bulletShots - 1));
+        bullets.fan(ox, oy, n, 0.3, a, this.bulletSpeed * 0.85, {
+          r: 5, color: e.colors.wing, type: 0, life: 5,
         });
+        e.salvoLeft = 2;
+        e.salvoT = 0.25;
+        e.salvoGap = 0.2;
+        e.salvoShot = 0;
       }
     }
   }
@@ -633,7 +940,8 @@ export class EnemyManager {
   damageWithShots(shots, fx, opts = {}) {
     if (!shots) return;
     for (const e of this.list) {
-      if (!e.alive) continue;
+      // 进场中 / 尚未触发的敌人不可被伤害
+      if (!e.alive || e.entryState !== 'done') continue;
       // 传 e 作为 targetRef：魔理沙的穿透弹靠它保证对同一个敌人只结算一次伤害
       const hit = shots.hitRect(e.x, e.y, e.w, e.h, (dmg, hx, hy) => {
         e.hp -= dmg;
@@ -652,7 +960,7 @@ export class EnemyManager {
   /** 半径内伤害（符卡） */
   damageArea(x, y, r, dmg, fx, opts = {}) {
     for (const e of this.list) {
-      if (!e.alive) continue;
+      if (!e.alive || e.entryState !== 'done') continue;
       const cx = e.x + e.w / 2;
       const cy = e.y + e.h / 2;
       if (Math.hypot(cx - x, cy - y) <= r && Math.hypot(cx - x, cy - y) <= r) {
@@ -669,6 +977,8 @@ export class EnemyManager {
   /** 绘制（世界坐标系，已应用相机） */
   draw(ctx, cam) {
     for (const e of this.list) {
+      // 未触发进场的敌人整只不画（远处站桩不该提前暴露）
+      if (e.entryState === 'idle') continue;
       const alpha = e.alive ? 1 : Math.max(0, 1 - e.deadT / 0.5);
       if (alpha <= 0) continue;
       // 视野剔除
@@ -677,7 +987,13 @@ export class EnemyManager {
         const sy = e.y - cam.y;
         if (sx < -120 || sx > 1400 || sy < -120 || sy > 840) continue;
       }
-      this._drawFairy(ctx, e, alpha);
+      // 闪现进场的前 0.35s：只画收束预警环，本体不可见
+      if (e.entryState === 'active' && e.entry === 'blink' && e.entryT < e.entryWarn) {
+        this._drawEntryWarn(ctx, e);
+        continue;
+      }
+      const a = e.entryState === 'active' ? alpha * e.entryAlpha : alpha;
+      this._drawFairy(ctx, e, a);
     }
   }
 

@@ -184,8 +184,8 @@ const SPEC_CARDS = {
     { name: '蝶符「花之舞」', mode: 'damage', limit: 45, fx: 'petals' },
     { name: '蝶符「死蝶之华尔兹」', mode: 'damage', limit: 90, fx: 'petals' },
     { name: '亡乡「亡我乡 -宿罪-」', mode: 'damage', limit: 60, fx: 'night' },
-    { name: '冥符「常夜樱」', mode: 'damage', limit: 90, fx: 'petals' },
-    { name: '反魂蝶「八分咲」', mode: 'survival', limit: 66, fx: 'petals' },
+    { name: '冥符「常夜樱」', mode: 'survival', limit: 90, fx: 'petals' },
+    { name: '反魂蝶「八分咲」', mode: 'damage', limit: 66, fx: 'petals' },
   ],
   6: [
     { name: '难题「龙颈之玉 -五色的弹丸-」', mode: 'damage', limit: 40, fx: 'moon' },
@@ -1553,8 +1553,13 @@ function writeMarkdown(summary) {
   lines.push('| 面 | 难度 | # | 符卡 | 模式 | limit | elapsed | 偏差 | ok | reward | 判定 | HUD | 截图 |');
   lines.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const c of summary.cards) {
-    const dev = c.ratio != null ? `${(c.ratio * 100).toFixed(1)}% / 目标差 ${((c.ratio / TARGET_RATIO) * 100 - 100).toFixed(1)}%` : '—';
-    const pass = c.ratio == null ? '—' : c.ratio > TIMING_HI ? 'FAIL' : c.ratio < TIMING_LO ? 'WARN' : 'PASS';
+    const isSurv = c.mode === 'survival';
+    const dev = isSurv
+      ? (c.ratio != null ? `${(c.ratio * 100).toFixed(1)}%（撑满即过关）` : '—')
+      : c.ratio != null ? `${(c.ratio * 100).toFixed(1)}% / 目标差 ${((c.ratio / TARGET_RATIO) * 100 - 100).toFixed(1)}%` : '—';
+    const pass = isSurv
+      ? (c.ok === true ? 'PASS' : 'FAIL')
+      : c.ratio == null ? '—' : c.ratio > TIMING_HI ? 'FAIL' : c.ratio < TIMING_LO ? 'WARN' : 'PASS';
     const hud = c.mode === 'survival' ? (c.hudMid || c.hudStart || '') : (c.hudMid || c.hudStart || '');
     lines.push(`| ${c.stage} | ${c.diff} | ${c.index} | ${c.name} | ${c.mode} | ${c.limit ?? '—'} | ${c.elapsed ?? '—'} | ${dev} | ${c.ok} | ${c.reward || '—'} | ${pass} | ${String(hud).replace(/\|/g, '\\|')} | |`);
   }

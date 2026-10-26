@@ -302,6 +302,40 @@ export class Hud {
    */
   _updateBossCardTimer(b, survival, dt) {
     if (!this.elBossCardTimer) return;
+
+    // 连环战（EXTRA Boss Rush）：咲夜那两场有「整场击破限时」，优先于逐卡计时显示。
+    // 逐卡限时在这种场次里失去意义（真正的约束是这一场打完的截止时刻）。
+    const chainLimit = Number.isFinite(b.chainLimit) && b.chainLimit > 0 ? b.chainLimit : null;
+    if (chainLimit) {
+      const ce = Number.isFinite(b.chainElapsed) ? Math.max(0, b.chainElapsed) : 0;
+      const remain = Math.max(0, chainLimit - ce);
+      const phase = remain > 0 ? 'chain' : 'chainover';
+      if (phase === this._bossTimerPhase) {
+        this._bossTimerAcc += dt;
+        if (this._bossTimerAcc < 0.1) return;
+      }
+      this._bossTimerAcc = 0;
+      this._bossTimerPhase = phase;
+      this._setBossTimerVisible(true);
+      const key = phase + ':' + remain.toFixed(1);
+      if (key !== this._bossTimerKey) {
+        this._bossTimerKey = key;
+        if (this.elBossCardText) {
+          this.elBossCardText.textContent = remain > 0
+            ? tr('击破限时 剩余 {n}s', { n: remain.toFixed(1) })
+            : tr('时间到');
+        }
+      }
+      this._bossTimerModeLabel = '';
+      if (this.elBossCardMode) {
+        this.elBossCardMode.textContent = '';
+        this.elBossCardMode.classList.add('hidden');
+      }
+      this.elBossCardTimer.classList.toggle('overtime', remain <= 0);
+      this.elBossCardTimer.classList.toggle('survive', false);
+      return;
+    }
+
     const limit = Number.isFinite(b.cardLimit) && b.cardLimit > 0 ? b.cardLimit : null;
     if (!limit) {
       this._setBossTimerVisible(false);

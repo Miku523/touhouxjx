@@ -259,12 +259,12 @@ still / glow / mote / shots: [ { bg, cast: [{ key, x, h }], lines: [{ who, text 
 | 11 | `stage5` | 幽雅に咲かせ、墨染の桜 ～ Border of Life | STAGE 5 | 白玉楼 · 冥界花海 | 原曲 / ZUN | 141.1 | `:192` |
 | 12 | `pre6` | ヴォヤージュ1970（旅人编） | STAGE 6 · 道中 | 月都 · 永远亭 | 原曲 / ZUN | 77.1 | `:209` |
 | 13 | `stage6` | 竹取飛翔 ～ Lunatic Princess | STAGE 6 | 月都 · 永远亭 | 原曲 / ZUN | 151.2 | `:227` |
-| 14 | `ex_pre` | ツェペシュの幼き末裔（血月编） | EXTRA · 道中 | 红魔馆地下 · 血月水晶 | 原曲 / ZUN | 55.4 | `:245` |
+| 14 | `ex_pre` | 红月下追逐不止的女仆 | EXTRA · 道中 | 红魔馆地下 · 血月水晶 | 原曲 / ZUN、COOL&CREATE（参考同人改编） | 120 | `:208` |
 | 15 | `ex_mid` | 亡き王女の為のセプテット（血月王座编） | EXTRA · 中段 | 红魔馆地下 · 血月水晶 | 原曲 / ZUN | 137.1 | `:263` |
 | 16 | `extra` | U.N.オーエンは彼女なのか？（空旷编） | EXTRA | 红魔馆地下 · 血月水晶 | 原曲 / ZUN | 124.3 | `:282` |
 | 17 | `gameover` | 失われた道標 | GAME OVER | 无名的路口 | 原创 · 本作 | 33.3 | `:302` |
 | 18 | `ending` | 帰り道の夕暮れ | ENDING | 归途 · 黄昏坂道 | 原创 · 本作 | 70 | `:317` |
-| 19 | `endingW` | 魔法少女達の百年祭 | EXTRA ENDING | 百年祭 · 八音盒房间 | 原曲 / ZUN · 柔和改编 | 48.6 | `:333` |
+| 19 | `endingW` | 今宵未尽的祭典 | EXTRA ENDING | 祭典 · 八音盒房间 | 原曲 / ZUN · 整曲八音盒改编（WAV） | 219.1 | `:333` |
 
 - 曲目表顺序 = 游戏流程顺序，也决定音乐室编号（`src/game/musicTracks.js:15`）。
 - 音乐室遍历整张 `MUSIC_TRACKS`（`src/game/musicRoom.js:49`），所以**道中曲（pre1–pre6、ex_pre、ex_mid）也进目录**，实际是 19 首。
@@ -309,7 +309,7 @@ still / glow / mote / shots: [ { bg, cast: [{ key, x, h }], lines: [{ who, text 
 1. **README 与实际不一致**：README 三处写「11 首」（README.md:25、:26、:105），而 `MUSIC_TRACKS` 实际是 **19 首**（`src/game/musicTracks.js:17-338`，道中曲也进音乐室）。换曲后必须同时修 README，否则文档继续骗人。
 2. **音乐室硬编码「11」**：`src/game/musicRoom.js:477` 与 `:518` 直接写死 `11`，而 `:424/:447` 用 `this.tracks.length` 动态计算——曲目数一变，界面就会自相矛盾。这是纯前端文案，但很容易漏。
 3. **`musicTracks.note` 是隐藏剧情**：19 段解说都是第一人称杂谈，逐首提到角色关系、场景、甚至结局（`:29`、`:263`、`:282`、`:317`）。只换主线不换解说，音乐室会变成「世界观罗生门」。
-4. **结局曲名与 W1/W2 文案**：`ending` 叫《帰り道の夕暮れ》、`endingW` 叫《魔法少女達の百年祭》（`src/game/musicTracks.js:307-337`）；README.md:50-51 的 W1/W2 描述与之呼应。换结局必须同步曲名 / `sub` / README。
+4. **结局曲名与 W1/W2 文案**：`ending` 叫《帰り道の夕暮れ》、`endingW` 叫《今宵未尽的祭典》（`src/game/musicTracks.js:307-337`）；README.md:50-51 的 W1/W2 描述与之呼应。换结局必须同步曲名 / `sub` / README。
 5. **标题页文案**：主标题 `東方新紀行` 与副标题 `～ Chronicle of Gensokyo ～` 在 `src/main.js:619-620` 写死；EXTRA 按钮「禁忌的祭典」及锁定提示（`:604-610`）也属于世界观文案。
 6. **进度/存档语义**：没有成就系统，但旧存档只有 `extraUnlocked` 与 `extraChar`（`src/main.js:2075-2098`）。如果新剧情改了「真结局」定义，老玩家会带着旧解锁状态直接进新 EXTRA；`extraChar` 还会把 EXTRA 锁死在旧主角上。
 7. **双主角对称**：开场 2 段、6 面 × 5 段 × 2 线、EXTRA 4 段 × 2 线，缺一条线不会报错，只会静默回退到灵梦线（`routeOf`，`src/game/story.js:1148-1150`）——表现为「魔理沙说着灵梦的台词」。

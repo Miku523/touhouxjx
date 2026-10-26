@@ -740,6 +740,7 @@ function makeBullet() {
     pierce: false,
     spawnT: 0,
     accel: 0,
+    grav: 0,
     turn: 0,
     scaleIn: 0.12,
     _spr: null,
@@ -788,6 +789,7 @@ export class BulletPool {
    * @param {number} [o.type]
    * @param {number} [o.life=7]
    * @param {number} [o.accel]      沿速度方向的加速度
+   * @param {number} [o.gravity]    竖直向下的加速度（px/s²，抛射弹用：先上抛再落回来）
    * @param {number} [o.turn]       每帧转向率（弧度/秒）
    * @param {number} [o.spin]       自转
    * @param {number} [o.wobbleAmp]  横向摆动幅度
@@ -806,11 +808,17 @@ export class BulletPool {
     b.r = o.r || 6;
     b.x = o.x; b.y = o.y;
     b.vx = o.vx || 0; b.vy = o.vy || 0;
-    b.ax = 0; b.ay = 0; b.accel = o.accel || 0;
+    b.ax = 0; b.ay = 0; b.accel = o.accel || 0; b.grav = o.gravity || 0;
     b.turn = o.turn || 0;
     b.life = o.life || 7;
     b.maxLife = b.life;
-    b.rot = o.rot !== undefined ? o.rot : 0;
+    const _skin = SKIN_META[b.type];
+    // 朝向类弹型（飞刀等，autoSpin）：朝向 = 速度方向，传进来的 rot 一律让位——
+    // 刀尖必须跟着它飞的方向，否则旋转着插进去会横着飘。
+    // 本地造型长轴朝上（刀尖在 -y），所以 velocity 角 a 要再转 +90°。
+    b.rot = _skin && _skin.autoSpin
+      ? Math.atan2(b.vy, b.vx) + Math.PI / 2
+      : (o.rot !== undefined ? o.rot : 0);
     b.spin = o.spin || 0;
     b.wobbleAmp = o.wobbleAmp || 0;
     b.wobbleFreq = o.wobbleFreq || 3;
@@ -820,9 +828,25 @@ export class BulletPool {
     b.damage = o.damage || 1;
     b.pierce = !!o.pierce;
     b.spawnT = 0;
+    b.holdT = o.holdT || 0;   // >0 = 时停/凝滞：这段时间内不移动、不转向、不衰减寿命
     b.scaleIn = o.scaleIn !== undefined ? o.scaleIn : 0.12;
     b._spr = null;
     return b;
+  }
+
+  /**
+   * 时停：让当前场上所有弹幕原地凝滞 sec 秒（时符「Private Square」用）。
+   * 凝滞中的弹幕不移动、不转向、寿命不衰减；sec 到点后原速继续。
+   * @param {number} sec
+   */
+  freezeAll(sec) {
+    if (!(sec > 0)) return;
+    const pool = this.pool;
+    for (let i = 0; i < pool.length; i++) {
+      const b = pool[i];
+      if (!b.active) continue;
+      b.holdT = Math.max(b.holdT || 0, sec);
+    }
   }
 
   /**
@@ -893,6 +917,13 @@ export class BulletPool {
       const b = pool[i];
       if (!b.active) continue;
 
+      // 时停（时符领域 / 紫罗兰静止刃）：停滞期间原地不动、寿命不衰减、不转向
+      if (b.holdT > 0) {
+        b.holdT -= dt;
+        b.spawnT += dt;
+        continue;
+      }
+
       b.life -= dt;
       b.spawnT += dt;
       if (b.life <= 0) { b.active = false; if (this.activeCount > 0) this.activeCount--; continue; }
@@ -923,6 +954,9 @@ export class BulletPool {
         b.vx += (b.vx / sp) * b.accel * dt;
         b.vy += (b.vy / sp) * b.accel * dt;
       }
+
+      // 竖直重力：抛射弹先向上飞、减速、再落回来（accel 是沿速度方向的加速度，替代不了这个）
+      if (b.grav) b.vy += b.grav * dt;
 
       b.x += b.vx * dt;
       b.y += b.vy * dt;

@@ -72,21 +72,21 @@ def post(payload: dict) -> str:
 
 
 def whiten(im: Image.Image, thresh=241) -> Image.Image:
-    im = im.convert('RGBA')
-    px = im.load()
-    w, h = im.size
-    for y in range(h):
-        for x in range(w):
-            r, g, b, a = px[x, y]
-            if a == 0:
-                continue
-            if r >= thresh and g >= thresh and b >= thresh:
-                px[x, y] = (r, g, b, 0)
-            else:
-                mn = min(r, g, b)
-                if mn >= thresh - 20 and max(r, g, b) - mn <= 14:
-                    px[x, y] = (r, g, b, 0)
-    return im
+    """白底 -> 透明底（只抹与画布边缘相连的白）。
+
+    2026-10-27 修正：旧实现「凡近白像素一律抹掉」会把角色身上的白围裙 /
+    白泡泡袖 / 女仆帽白边一起抠穿（贴到深色背景上直接透出背景）。
+    现在改成连通域：从四条边向内洪泛，只有能被背景连到的近白像素才算背景。
+    thresh 参数保留兼容（只影响近白判定阈值）。
+    """
+    import sys
+    from pathlib import Path as _P
+    _here = _P(__file__).resolve().parent
+    if str(_here) not in sys.path:
+        sys.path.insert(0, str(_here))
+    from matte_white import matte
+
+    return matte(im.convert('RGB'), height=None, white_min=max(200, int(thresh) - 26))
 
 
 def finish(src: Path, dst: Path, height=560):
