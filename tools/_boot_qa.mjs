@@ -15,6 +15,10 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 
 const OUT_DIR = '_pt';
 mkdirSync(OUT_DIR, { recursive: true });
+// 超时上限可用环境变量放大：测公网线上时冷启动可能 10s+，用 BOOT_QA_A_MS / BOOT_QA_C_MS
+//   PT_BASE=https://mikuascendlog.com/touhouxjx BOOT_QA_A_MS=90000 BOOT_QA_C_MS=180000 node tools/_boot_qa.mjs
+const A_MAX_MS = Number(process.env.BOOT_QA_A_MS || 20000);
+const C_MAX_MS = Number(process.env.BOOT_QA_C_MS || 60000);
 
 const T = await launch({ port: 9424, width: 1280, height: 720 });
 const out = { checks: [], samples: {}, timeline: null, errors: [] };
@@ -56,7 +60,7 @@ function check(name, ok, detail = '') {
 
 // ---------- 场景 A：正常网 ----------
 await T.nav(BASE + '/index.html');
-const a = await sampleUntilReveal(20000);
+const a = await sampleUntilReveal(A_MAX_MS);
 out.samples.normal = a;
 out.timeline = JSON.parse(await T.eval('JSON.stringify(window.__boot && window.__boot.timeline || null)'));
 const pcts = a.filter((s) => typeof s.pct === 'number' && s.pct >= 0).map((s) => s.pct);
@@ -101,7 +105,7 @@ await T.send('Network.emulateNetworkConditions', {
   connectionType: 'cellular3g',
 });
 await T.nav(BASE + '/index.html');
-const c = await sampleUntilReveal(60000);
+const c = await sampleUntilReveal(C_MAX_MS);
 out.samples.slow = c;
 await T.send('Network.setCacheDisabled', { cacheDisabled: false });
 await T.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
