@@ -85,6 +85,27 @@ export const CARD_LV2_SHARE = 0.4;
 export const CARD_DPS_CAL = 0.85;
 export const CARD_HP_ANCHOR_LEGACY = CARD_LV2_SHARE * PLAYER_ATK_SCALE * CARD_DPS_CAL;   // ≈ 0.884
 
+/**
+ * 终局血量倍率（2026-10-26 用户口述）：作用在「逐卡血量」（显式 hp / limit × dps × 锚点）之后，
+ * 用来整体加厚 Boss 血条，不重新标定 0.655 / 0.77 这两个目标占比。
+ *  - 「将全BOSS血量上调5%左右」→ 主线 7 个 Boss（含 5 面中途妖梦）统一 ×1.05；
+ *  - 「蕾米莉亚上调8%」→ EXTRA 中途战雷米莉亚的总血量 ×1.08（是覆盖值，不是 5% 再叠 8%）；
+ *  - 「芙兰朵路上调10%」→ EXTRA 关底芙兰朵露的总血量 ×1.10（同上，覆盖值）。
+ * 口径：这是「单场 Boss 总血量」的倍率，逐卡四舍五入后相加；存活卡（survival）的血条只是
+ * 拖时间的底、不影响判定，也一起加厚。以后想再整体调松紧只改这里，不用逐张改 hp。
+ */
+export const BOSS_FINAL_HP_MUL = 1.05;
+/** 单独覆盖的 Boss（值 = 该 Boss 自己的总血量倍率，覆盖 BOSS_FINAL_HP_MUL，不是再乘）。 */
+export const BOSS_FINAL_HP_MUL_OVERRIDE = {
+  remilia: 1.08,
+  flandre: 1.10,
+};
+/** 取某个 Boss 的终局血量倍率；未登记的 Boss 用全局值。 */
+export function finalHpMulFor(key) {
+  const override = Number(BOSS_FINAL_HP_MUL_OVERRIDE[key]);
+  return Number.isFinite(override) && override > 0 ? override : BOSS_FINAL_HP_MUL;
+}
+
 /** 取档位对应的倍率；非法 / 未填 = 档 3（不改变现有手感） */
 export function tierMultipliers(tier) {
   return CARD_TIER_MUL[Number(tier)] || CARD_TIER_MUL[3];

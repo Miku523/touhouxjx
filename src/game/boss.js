@@ -23,7 +23,7 @@ import { drawGenBoss, ensureBossArt, bossArtHeight, bossArtReady } from '../art/
 import { getDifficulty, bossPhasesFor, scaleBossHp, stageDensityOf } from './difficulty.js';
 import { scalePlayerDamage } from './balance.js';
 // 逐卡限时 / 生存模式 / 卡面数据（43 张符卡的目标时长与创作数据）
-import { cardTuningFor, tierMultipliers, CARD_HP_ANCHOR } from './bossTuning.js';
+import { cardTuningFor, tierMultipliers, CARD_HP_ANCHOR, finalHpMulFor } from './bossTuning.js';
 // 创造模式弹幕设计（每卡专属 pattern 表 + 自定义弹型注册表）
 import { patternsFor } from './bossPatternDesigns.js';
 import { CUSTOM_PATTERNS } from './bossBullets.js';
@@ -1193,6 +1193,14 @@ export class Boss {
           if (Array.isArray(pats) && pats.length) ph.patterns = pats;
         }
       }
+    }
+
+    // 终局血量倍率（2026-10-26 用户口述：全局 +5%、蕾米莉亚 +8%、芙兰朵露 +10%）：
+    // 放在逐卡数据之后、总血量之前，逐卡四舍五入，保证每张卡按同一比例变厚、卡间比例不变，
+    // 0.655 / 0.77 的目标占比（限时奖励的手感）不被重新标定。
+    this.finalHpMul = finalHpMulFor(this.key);
+    if (this.finalHpMul !== 1) {
+      this.phases = this.phases.map((p) => ({ ...p, hp: Math.max(1, Math.round(p.hp * this.finalHpMul)) }));
     }
 
     // 总血量 = 实际（可能被难度裁掉难符卡后的）各符卡血量之和，避免与独立的
