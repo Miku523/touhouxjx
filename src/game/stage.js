@@ -60,12 +60,12 @@ export const EXTRA_TIMELINE = Object.freeze({
 });
 
 /* ------------------------------------------------------------------
- * 每关的厚涂背景图（src/art/gen/bg/<theme>.jpg）
+ * 每关的厚涂背景图（src/art/gen/bg/<theme>.webp）
  * 程序化场景作为 fallback，图片加载完成后优先使用。
  * 图片 2048x1152 (16:9)，按屏幕 cover 裁切 + 随关卡进度横移，形成纵深。
  * ------------------------------------------------------------------ */
 /**
- * 每套背景实际有几张：<theme>.jpg、<theme>_2.jpg ……目前全套都是 2 张。
+ * 每套背景实际有几张：<theme>.webp、<theme>_2.webp ……目前全套都是 2 张。
  * 以前是「一直探到第 3 张、靠 404 判断缺图」，静态托管下每次进关都会在控制台
  * 留一条 404。这里显式写死张数：加新变体时把对应数字 +1 即可。
  */
@@ -91,7 +91,7 @@ function _bgEntry(theme, idx) {
   if (e) return e;
   e = { img: typeof Image !== 'undefined' ? new Image() : null, ok: false, failed: false, idx, tries: 0, src: '' };
   if (e.img) {
-    e.src = new URL('../art/gen/bg/' + key + '.jpg', import.meta.url).href;
+    e.src = new URL('../art/gen/bg/' + key + '.webp', import.meta.url).href;
     e.img.decoding = 'async';
     e.img.onload = () => { e.ok = true; e.failed = false; };
     // 一次瞬时失败（弱网 / Service Worker 离线兜底返回 504）不该让这一面整局都退回

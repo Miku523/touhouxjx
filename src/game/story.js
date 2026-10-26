@@ -1465,7 +1465,7 @@ export const STORY = {
     /* EXTRA 是「进关即战」的连环关：门厅 → 大厅 → 楼梯 → 地下室，中间没有道中，只有换气用的短过场。
        chainPre[0..3] 依次是 咲夜初战 / 蕾米莉亚 / 咲夜再登场 / 芙兰朵露 开打前的对话，按 reimu / marisa 分线。
        chainPost[0..2] 依次是 咲夜初战退场→蕾米登场 / 蕾米败→咲夜再登场 / 咲夜二次退场→芙兰登场 的短过场。
-       咲夜用 who:'sakuya'（CHAR_NAMES 已有「十六夜咲夜」；AI 立绘 sakuya.png 由 sakuya-fight 接线）。 */
+       咲夜用 who:'sakuya'（CHAR_NAMES 已有「十六夜咲夜」；AI 立绘 sakuya.webp 由 sakuya-fight 接线）。 */
     intro: {
       reimu: [
         { who: 'narrator', text: '例大祭前夜。博丽神社的石阶上挂了三十七盏灯笼，一盏没点。' },

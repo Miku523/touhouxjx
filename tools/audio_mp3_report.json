@@ -1,0 +1,80 @@
+[
+ {
+  "track": "sakuya_ex",
+  "wav": "src/assets/bgm/sakuya_ex.wav",
+  "mp3": "src/assets/bgm/sakuya_ex.mp3",
+  "mode": "vbr",
+  "sample_rate": 22050,
+  "samples": 2646000,
+  "duration_s": 120.0,
+  "before_bytes": 5292044,
+  "after_bytes": 1369893,
+  "bitrate_kbps": 91.33,
+  "frames": 4597,
+  "delay": 576,
+  "padding": 1296,
+  "padded_source_samples": 0,
+  "expected_decoded_samples": 2646000,
+  "attempts": [
+   {
+    "pad_zeros": 0,
+    "frames": 4596,
+    "slack": 1296
+   }
+  ],
+  "elapsed_s": 0.86,
+  "written": true
+ },
+ {
+  "track": "festival_box",
+  "wav": "src/assets/bgm/festival_box.wav",
+  "mp3": "src/assets/bgm/festival_box.mp3",
+  "mode": "vbr",
+  "sample_rate": 22050,
+  "samples": 4832037,
+  "duration_s": 219.14,
+  "before_bytes": 9664118,
+  "after_bytes": 2545365,
+  "bitrate_kbps": 92.92,
+  "frames": 8392,
+  "delay": 576,
+  "padding": 1179,
+  "padded_source_samples": 0,
+  "expected_decoded_samples": 4832037,
+  "attempts": [
+   {
+    "pad_zeros": 0,
+    "frames": 8391,
+    "slack": 1179
+   }
+  ],
+  "elapsed_s": 1.02,
+  "written": true
+ },
+ {
+  "track": "extra_mad",
+  "wav": "src/assets/bgm/extra_mad.wav",
+  "mp3": "src/assets/bgm/extra_mad.mp3",
+  "mode": "vbr",
+  "sample_rate": 22050,
+  "samples": 2741741,
+  "duration_s": 124.341995,
+  "before_bytes": 5483526,
+  "after_bytes": 1401593,
+  "bitrate_kbps": 90.18,
+  "frames": 4763,
+  "delay": 576,
+  "padding": 1171,
+  "padded_source_samples": 0,
+  "expected_decoded_samples": 2741741,
+  "attempts": [
+   {
+    "pad_zeros": 0,
+    "frames": 4762,
+    "slack": 1171
+   }
+  ],
+  "elapsed_s": 0.67,
+  "written": true
+ }
+]

@@ -13,6 +13,7 @@
  */
 
 import { tr } from '../i18n/index.js';
+import { preloadWhenIdle } from '../engine/lazy_preload.js';
 
 const BASE = new URL('../art/gen/', import.meta.url);
 
@@ -30,7 +31,7 @@ const SPELLS = {
 
 /** Boss 登场：立绘 / 名字 / 称号（tag 统一显示 BOSS） */
 const BOSSES = {
-  sakuya: { name: '十六夜咲夜', sub: '完美而潇洒的从者', img: 'sakuya_title.png' },
+  sakuya: { name: '十六夜咲夜', sub: '完美而潇洒的从者', img: 'sakuya_title.webp' },
 };
 
 /** 演出总时长（毫秒），与 style.css 里的 cut-in 动画时长保持同步 */
@@ -51,11 +52,14 @@ export class SpellCutin {
     this._timer = 0;
     this._n = { reimu: 0, marisa: 0 };
     this._last = null;
-    // 预热 Boss 登场立绘：不然第一次登场的前 100~200ms 会是空画布
-    for (const k of Object.keys(BOSSES)) this._img(BOSSES[k].img);
+    // 预热 Boss 登场立绘：不然第一次登场的前 100~200ms 会是空画布。
+    // 排到首屏空闲时段（弱网受限链路跳过；真到登场时 _img 仍会按需请求，onload 后补画）。
+    preloadWhenIdle(() => {
+      for (const k of Object.keys(BOSSES)) this._img(BOSSES[k].img);
+    });
   }
 
-  /** file = src/art/gen/ 下的文件名，例如 reimu_title.png */
+  /** file = src/art/gen/ 下的文件名，例如 reimu_title.webp */
   _img(file) {
     let entry = this._imgs.get(file);
     if (!entry) {
@@ -133,7 +137,7 @@ export class SpellCutin {
     const key = char === 'marisa' ? 'marisa' : 'reimu';
     const list = SPELLS[key] || SPELLS.reimu;
     const spell = list[this._n[key]++ % list.length];
-    const file = `${key}_title.png`;
+    const file = `${key}_title.webp`;
     this._last = file;
 
     this.el.classList.remove('boss');
@@ -147,7 +151,7 @@ export class SpellCutin {
 
   /**
    * Boss 登场演出：全屏 cut-in。
-   * 立绘进 src/art/gen/<key>_title.png，tag 显示 BOSS，主色走 .boss 冷银蓝。
+   * 立绘进 src/art/gen/<key>_title.webp，tag 显示 BOSS，主色走 .boss 冷银蓝。
    * @param {string} key 例：'sakuya'
    * @returns {boolean} 是否有这个 Boss 的配置
    */

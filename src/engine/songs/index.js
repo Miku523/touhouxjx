@@ -49,9 +49,9 @@ export const SONGS = {
   ...BOSS_SONGS,
   ...EXTRA_ENDING,
   // EXTRA 结局曲：整曲八音盒版《今宵未尽的祭典》（离线渲染，见 tools/build/build_festival_ending.py
-  // 与 _make_festival_wav.py）。audio 让引擎直接播 src/assets/bgm/festival_box.wav，
+  // 与 _make_festival_wav.py）。audio 让引擎直接播 src/assets/bgm/festival_box.mp3，
   // fetch 失败时自动回退 extra_ending.js 里的合成数据。
-  endingW: { ...EXTRA_ENDING.endingW, audio: 'src/assets/bgm/festival_box.wav' },
+  endingW: { ...EXTRA_ENDING.endingW, audio: 'src/assets/bgm/festival_box.mp3' },
   // 标题画面：13 作主题曲融合 medley 的完整曲式版（去 8bit 音色，见 tools/title_arrange.py）
   title: TITLE_FULL.title,
   // 1 面道中：ほおずきみたいに紅い魂 —— 照 ZUN 扒谱 1:1 直译（见 tools/pre1_honou.py）
@@ -72,9 +72,9 @@ export const SONGS = {
   pre6: VOYAGE_PRE6.pre6,
   // EX 道中：红月下追逐不止的女仆 —— 月時計 ～ ルナ・ダイアル / フラワリングナイト /
   // ナイト・オブ・ナイツ 三曲的 idiom 融合，G 小调 160 BPM 80 小节 = 120.0s（见 tools/build/_exsr_compose.py）。
-  // audio 让引擎直接播离线 band 渲染成品 src/assets/bgm/sakuya_ex.wav，
+  // audio 让引擎直接播离线 band 渲染成品 src/assets/bgm/sakuya_ex.mp3，
   // fetch 失败时自动回退 sakuya_ex.js 里的合成数据。
-  ex_pre: { ...SAKUYA_EX.ex_pre, audio: 'src/assets/bgm/sakuya_ex.wav?v=1.6.14' },
+  ex_pre: { ...SAKUYA_EX.ex_pre, audio: 'src/assets/bgm/sakuya_ex.mp3?v=1.6.15' },
   // EX 中段（雷米莉亚拦路）：亡き王女の為のセプテット —— 主旋律照原曲扒谱、编制照 194s 蓝本重排到 160 BPM 圆舞（见 tools/ex_septette2.py）
   ex_mid: REMILIA_EX.ex_mid,
   // 3 面 Boss：おてんば恋娘 —— Ateam 重低频编 + 花映塚 + 完美教室（见 tools/ateam_stage3.py）
@@ -87,7 +87,7 @@ export const SONGS = {
   stage6: KAGUYA_STAGE6.stage6,
   // EX Boss：U.N.オーエンは彼女なのか？～ 495年の孤独 —— 168 BPM 重编：主奏/副旋律/铺底/贝斯
   // 仍是游戏内原曲逐音搬移，新写鼓组、bII 强力和弦块、半音颤音与底鼓真空（见 tools/un_mad.py）
-  // （audio 让引擎直接播离线渲染成品 src/assets/bgm/extra_mad.wav，
+  // （audio 让引擎直接播离线渲染成品 src/assets/bgm/extra_mad.mp3，
   //  fetch 失败时自动回退到 un_mad.js 里的合成数据）
-  extra: { ...UN_MAD.extra, audio: 'src/assets/bgm/extra_mad.wav' },
+  extra: { ...UN_MAD.extra, audio: 'src/assets/bgm/extra_mad.mp3' },
 };

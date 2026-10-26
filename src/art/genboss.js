@@ -1,7 +1,7 @@
 /**
  * AI 生成的 Boss 战斗立绘
  *
- * 图片：src/art/gen/boss/<key>.png（抠白底透明，内容高 560、脚底贴底）
+ * 图片：src/art/gen/boss/<key>.webp（抠白底透明，内容高 560、脚底贴底）
  * 加载不到时 drawGenBoss 返回 false，boss.js 只铺柔光占位（不再回退程序化人物）。
  *
  * 加载时预处理（同源图片可读像素）：
@@ -33,7 +33,7 @@ const BOSS_H = {
   // 连环 Rush 的咲夜：比雷米再矮一点点，双场都能和血条拉开距离
   sakuya: 232,
 };
-/* 立绘一律走 AI 素材（src/art/gen/boss/<key>.png）；缺图由调用方铺柔光占位，不画矢量小人。 */
+/* 立绘一律走 AI 素材（src/art/gen/boss/<key>.webp）；缺图由调用方铺柔光占位，不画矢量小人。 */
 /** 暗贴纸放大倍率 / 光晕模糊半径 */
 const HALO_K = 1.05;
 const HALO_BLUR = 3;
@@ -151,7 +151,7 @@ export function ensureBossArt(key) {
       LOADING.delete(key);
       resolve(false);
     };
-    img.src = new URL(key + '.png', BASE).href;
+    img.src = new URL(key + '.webp', BASE).href;
   });
   LOADING.set(key, p);
   return p;
@@ -160,7 +160,7 @@ export function ensureBossArt(key) {
 // 首屏只需要标题素材：Boss 立绘等首屏稳定后再排队（未就绪时 drawGenBoss 返回 false，只留柔光占位）
 preloadWhenIdle(() => {
   if (typeof Image === 'undefined') return;
-  for (const k of KEYS) IMGS[k] = IMGS[k] || loadOne(new URL(k + '.png', BASE).href);
+  for (const k of KEYS) IMGS[k] = IMGS[k] || loadOne(new URL(k + '.webp', BASE).href);
 });
 
 /**

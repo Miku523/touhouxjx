@@ -10,7 +10,7 @@
  * 视角约定与主循环一致：逻辑分辨率 1280x720，由 Renderer 统一缩放。
  */
 import { VIEW_W, VIEW_H } from '../engine/renderer.js';
-import { setPriority } from '../engine/lazy_preload.js';
+import { preloadWhenIdle, setPriority } from '../engine/lazy_preload.js';
 import { ENDINGS } from './endings.js';
 import { getLang, tr } from '../i18n/index.js';
 import { CHAR_NAMES } from './dialogue.js';
@@ -71,7 +71,9 @@ export class Ending {
 
     this.bgImgs = new Map();
     this.charImgs = new Map();
-    this._preload();
+    // 结局素材（3 张背景 + 4 张立绘，约 960KB）排到首屏空闲时段：
+    // 弱网受限链路会跳过，进最后一面时由 preloadAssets() 提前拉，真到结局也只按需补。
+    preloadWhenIdle(() => this._preload());
 
     this._onPointer = (e) => {
       if (!this.active) return;
@@ -90,7 +92,14 @@ export class Ending {
   /* 素材                                                                */
   /* ------------------------------------------------------------------ */
 
+  /** 提前拉起全部结局素材；重复调用无副作用 */
+  preloadAssets() {
+    this._preload();
+  }
+
   _preload() {
+    if (this._endedPreload) return;
+    this._endedPreload = true;
     const bgs = new Set();
     const chars = new Set();
     for (const spec of Object.values(ENDINGS)) {
@@ -104,14 +113,14 @@ export class Ending {
       const img = new Image();
       img.decoding = 'async';
       setPriority(img, 'low');
-      img.src = new URL(`${name}.jpg`, BG_BASE).href;
+      img.src = new URL(`${name}.webp`, BG_BASE).href;
       this.bgImgs.set(name, img);
     }
     for (const key of chars) {
       const img = new Image();
       img.decoding = 'async';
       setPriority(img, 'low');
-      img.src = new URL(`${key}.png`, ART_BASE).href;
+      img.src = new URL(`${key}.webp`, ART_BASE).href;
       this.charImgs.set(key, img);
     }
   }
@@ -122,6 +131,7 @@ export class Ending {
 
   play(spec, opts = {}) {
     if (!spec) return;
+    this._preload(); // 兜底：弱网下空闲预取被跳过时，结局开场才开始下载
     this.spec = spec;
     this.opts = opts;
     this.active = true;

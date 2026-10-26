@@ -2,10 +2,10 @@
  * 《东方新纪行》—— 角色名册（纯数据，零绘制代码）
  *
  * 人物造型一律来自 AI 生成素材：
- *   战斗立绘   src/art/gen/boss/<key>.png
- *   对话立绘   src/art/gen/<key>.png
- *   自机动作帧 src/art/gen/run/<char>_*.png
- *   妖精       src/art/gen/fairy/<color>.png
+ *   战斗立绘   src/art/gen/boss/<key>.webp
+ *   对话立绘   src/art/gen/<key>.webp
+ *   自机动作帧 src/art/gen/run/<char>_*.webp
+ *   妖精       src/art/gen/fairy/<color>.webp
  *
  * 任何绘制入口在素材未就绪时都返回 false，由调用方留柔光占位；
  * 本仓库不再保留任何程序化人物/剪影路径，缺图也不许再画「矢量小人」。

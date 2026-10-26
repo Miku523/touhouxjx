@@ -17,9 +17,11 @@ const RTT = Number(arg('rtt', 0));
 const DOWN = Number(arg('down', 0));
 const UP = Number(arg('up', 0));
 const OUT = arg('out', '_pt_net_probe.json');
+// --insecure: 连本地自签 HTTPS（tools/_serve_h2.mjs）时必须带上
+const INSECURE = process.argv.includes('--insecure');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const profile = mkdtempSync(join(tmpdir(), 'edge-net-'));
-const proc = spawn(EDGE, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check', '--user-data-dir=' + profile, '--window-size=1280,720', '--remote-debugging-port=' + PORT, 'about:blank'], { stdio: 'ignore' });
+const proc = spawn(EDGE, ['--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run', '--no-default-browser-check', ...(INSECURE ? ['--ignore-certificate-errors', '--allow-insecure-localhost'] : []), '--user-data-dir=' + profile, '--window-size=1280,720', '--remote-debugging-port=' + PORT, 'about:blank'], { stdio: 'ignore' });
 let page;
 for (let i = 0; i < 80; i++) { try { const r = await fetch('http://127.0.0.1:' + PORT + '/json/list'); page = (await r.json()).find((t) => t.type === 'page'); if (page) break; } catch {} await sleep(250); }
 if (!page) { console.error('edge not ready'); proc.kill(); process.exit(1); }
@@ -52,9 +54,9 @@ const byProto = {}; let totalEnc = 0;
 for (const m of meta) { byProto[m.proto] = (byProto[m.proto] || 0) + 1; totalEnc += m.encoded; }
 console.log('PROTO', JSON.stringify(byProto), 'encodedTotalKB', Math.round(totalEnc / 1024));
 console.log('TOP BYTES');
-for (const m of meta.filter((m) => m.encoded > 40000).sort((a, b) => b.encoded - a.encoded).slice(0, 25)) console.log('  ', (m.encoded / 1024).toFixed(0) + 'KB', m.status, m.proto, m.mime, m.connReused ? 'reuse' : 'newconn', m.url.replace(URL_, ''));
+for (const m of meta.filter((m) => m.encoded > 40000).sort((a, b) => b.encoded - a.encoded).slice(0, 25)) console.log('  ', (m.encoded / 1024).toFixed(0) + 'KB', m.status, m.proto, m.mime, m.connReused ? 'reuse' : 'newconn', String(m.url).replace(URL_, '').slice(0, 110));
 const byStart = [...meta].sort((a, b) => b.encoded - a.encoded).slice(0, 6);
 console.log('SLOWEST (network wall by resource finish)');
-for (const m of byStart) { const rr = data.res.find((x) => x.n === m.url); console.log('  ', (rr ? rr.d : '?') + 'ms', 'start@' + (rr ? rr.start : '?'), m.url.replace(URL_, '')); }
+for (const m of byStart) { const rr = data.res.find((x) => x.n === m.url); console.log('  ', (rr ? rr.d : '?') + 'ms', 'start@' + (rr ? rr.start : '?'), String(m.url).replace(URL_, '').slice(0, 110)); }
 console.log('FAILURES', JSON.stringify(failures.slice(0, 10)));
 ws.close(); proc.kill();

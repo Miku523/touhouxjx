@@ -107,3 +107,5 @@ tools/build/_aya_stage4_prev.js
 tools/build/midi/
 # 剧情重制过程截图（本地留存，不入库）
 docs/RE_STORY/artifacts/
+# 素材优化（WebP/MP3 转换）的中间产物：转换日志、逐张 PSNR 表、降采样图、试听片段，脚本本身入库
+tools/_opt/

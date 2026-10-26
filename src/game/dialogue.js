@@ -15,18 +15,18 @@ import { tr } from '../i18n/index.js';
 
 /* ---------------- AI 立绘（Seedream 生成，tools/cutout.py 抠图） ---------------- */
 const AI_PORTRAITS = {
-  reimu: 'reimu.png',
-  marisa: 'marisa.png',
-  rumia: 'rumia.png',
-  wriggle: 'wriggle.png',
-  cirno: 'cirno.png',
-  aya: 'aya.png',
-  yuyuko: 'yuyuko.png',
-  kaguya: 'kaguya.png',
-  flandre: 'flandre.png',
-  remilia: 'remilia.png',
-  youmu: 'youmu.png',
-  sakuya: 'sakuya.png',
+  reimu: 'reimu.webp',
+  marisa: 'marisa.webp',
+  rumia: 'rumia.webp',
+  wriggle: 'wriggle.webp',
+  cirno: 'cirno.webp',
+  aya: 'aya.webp',
+  yuyuko: 'yuyuko.webp',
+  kaguya: 'kaguya.webp',
+  flandre: 'flandre.webp',
+  remilia: 'remilia.webp',
+  youmu: 'youmu.webp',
+  sakuya: 'sakuya.webp',
 };
 const AI_BASE = new URL('../art/gen/', import.meta.url);
 const aiImages = {};

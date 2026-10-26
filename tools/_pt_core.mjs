@@ -175,6 +175,9 @@ export async function launch(opts = {}) {
   await send('Log.enable');
   await send('Network.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: opts.deviceScaleFactor ?? 1, mobile: !!opts.mobile });
+  // 关键：headless Edge 偶尔把 CDP 附着的标签放到后台，后台标签 requestAnimationFrame 被节流为 0
+  // （setTimeout 照常跑、rAF 不走）→ 启动幕永远不揭晓、模块图加载被降优先级。必须把目标页提到前台。
+  try { await send('Page.bringToFront'); } catch {}
 
   const T = {
     port, proc, page, send, profile, logPath, logTail,
@@ -188,6 +191,7 @@ export async function launch(opts = {}) {
       return r.result?.value;
     },
     async nav(url = BASE + '/index.html') {
+      try { await send('Page.bringToFront'); } catch {}
       await send('Page.navigate', { url });
       await sleep(50);
     },

@@ -1,0 +1,176 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>BGM MP3 验证（供 tools/verify_audio_mp3.mjs 调用）</title>
+<style>body{font:14px/1.6 ui-monospace,Consolas,monospace;margin:24px;background:#111;color:#ddd}</style>
+<pre id="out">等待 window.runVerify() …</pre>
+<script>
+/**
+ * 浏览器侧验证逻辑：fetch 字节数/Content-Type、decodeAudioData 的 duration/length、
+ * 循环接缝指标、wav vs mp3 波形对齐与残差。只读，不碰游戏代码。
+ * 返回体积很小的 JSON（样本级数组一律在页面内算完就丢）。
+ */
+window.runVerify = async function runVerify() {
+  const BASE = '/src/assets/bgm/';
+  const TRACKS = ['sakuya_ex', 'festival_box', 'extra_mad'];
+  const log = (s) => { const el = document.getElementById('out'); if (el) el.textContent += '\n' + s; };
+
+  const get = async (name) => {
+    const r = await fetch(BASE + name, { cache: 'no-store' });
+    const ab = await r.arrayBuffer();
+    return { status: r.status, ok: r.ok, ct: r.headers.get('content-type'), bytes: ab.byteLength, ab };
+  };
+  const dec = async (ctx, buf) => {
+    const t0 = performance.now();
+    const b = await ctx.decodeAudioData(buf.ab.slice(0));
+    return { buf: b, ms: +(performance.now() - t0).toFixed(1) };
+  };
+
+  // 接缝指标：末 128 采样 RMS / 首 128 采样 RMS / 末→首跳变，全部和「内部相邻样本跳变」比
+  const seam = (x) => {
+    const N = x.length, W = 128;
+    let a = 0, b = 0;
+    for (let i = 0; i < W; i++) { const u = x[i], v = x[N - W + i]; a += u * u; b += v * v; }
+    let sa = 0;
+    for (let i = 0; i < N; i++) { const u = x[i]; sa += u * u; }
+    const rmsAll = Math.sqrt(sa / N);
+    let maxJump = 0, sumJump = 0, over = 0, peak = 0;
+    for (let i = 0; i < N; i++) { const u = Math.abs(x[i]); if (u > peak) peak = u; }
+    for (let i = 1; i < N; i++) {
+      const d = Math.abs(x[i] - x[i - 1]);
+      if (d > maxJump) maxJump = d;
+      sumJump += d;
+    }
+    const seamJump = Math.abs(x[0] - x[N - 1]);
+    for (let i = 1; i < N; i++) if (Math.abs(x[i] - x[i - 1]) >= seamJump) over++;
+    return {
+      rmsFirst128: +Math.sqrt(a / W).toFixed(6),
+      rmsLast128: +Math.sqrt(b / W).toFixed(6),
+      rmsAll: +rmsAll.toFixed(6),
+      peak: +peak.toFixed(6),
+      seamJump: +seamJump.toFixed(6),
+      meanJump: +(sumJump / Math.max(1, N - 1)).toFixed(6),
+      maxJump: +maxJump.toFixed(6),
+      // 接缝跳变在内部相邻跳变分布里的位置：100 = 比其他所有都大（=异常尖峰）
+      seamJumpPct: +(100 * over / Math.max(1, N - 1)).toFixed(3),
+      x0: +x[0].toFixed(6), xLast: +x[N - 1].toFixed(6),
+    };
+  };
+
+  // wav 与 mp3 解码结果对齐：用 2s 处 4096 采样窗做互相关找 lag，再算整段残差
+  const align = (a, b) => {
+    const W = 4096, start = Math.min(44100, a.length - W - 1);
+    let best = { lag: 0, corr: -2 };
+    for (let lag = -2048; lag <= 2048; lag++) {
+      const j = start + lag;
+      if (j < 0 || j + W > b.length) continue;
+      let sab = 0, saa = 0, sbb = 0;
+      for (let i = 0; i < W; i++) {
+        const u = a[start + i], v = b[j + i];
+        sab += u * v; saa += u * u; sbb += v * v;
+      }
+      const c = sab / Math.sqrt(Math.max(1e-12, saa * sbb));
+      if (c > best.corr) best = { lag, corr: +c.toFixed(6) };
+    }
+    const lag = best.lag;
+    let sd = 0, sa = 0, mx = 0, n = 0;
+    for (let i = 0; i < a.length; i++) {
+      const j = i + lag;
+      if (j < 0 || j >= b.length) continue;
+      const u = a[i], v = b[j], d = u - v;
+      sd += d * d; sa += u * u; if (Math.abs(d) > mx) mx = Math.abs(d); n++;
+    }
+    const rmsD = Math.sqrt(sd / Math.max(1, n)), rmsA = Math.sqrt(sa / Math.max(1, n));
+    return {
+      lag, corr: best.corr, n,
+      rmsDiff: +rmsD.toFixed(6), rmsRef: +rmsA.toFixed(6), maxAbsDiff: +mx.toFixed(6),
+      snrDb: +(20 * Math.log10(Math.max(1e-9, rmsA) / Math.max(1e-9, rmsD))).toFixed(2),
+    };
+  };
+
+  // 真实播路径的循环接缝测试：AudioBufferSourceNode.loop = true（游戏 audio.js 就是这么播的），
+  // 从结尾前 0.1s 起播、离线渲染 0.25s，跨越接缝；再和 WAV 的同条件渲染对比。
+  const loopRender = async (buf, sr = 48000) => {
+    const dt = 0.25, pre = 0.1;
+    const off = new OfflineAudioContext(1, Math.round(sr * dt), sr);
+    const src = off.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.connect(off.destination);
+    src.start(0, Math.max(0, buf.duration - pre));
+    const rendered = await off.startRendering();
+    const x = rendered.getChannelData(0);
+    let minWin = Infinity, zeroRun = 0, maxZeroRun = 0;
+    for (let i = 0; i < x.length; i++) { if (x[i] === 0) { zeroRun++; if (zeroRun > maxZeroRun) maxZeroRun = zeroRun; } else zeroRun = 0; }
+    for (let i = 0; i + 32 <= x.length; i += 16) {
+      let s = 0;
+      for (let j = 0; j < 32; j++) s += x[i + j] * x[i + j];
+      const r = Math.sqrt(s / 32);
+      if (r < minWin) minWin = r;
+    }
+    // 接缝局部指标：只看边界前后 ±512 采样（整首看会被素材自带的静音/前奏误导）
+    const b = Math.round(sr * pre), w = 512;
+    let sa = 0, na = 0, mx = 0, sjump = 0, nj = 0;
+    for (let i = Math.max(1, b - w); i < Math.min(x.length, b + w); i++) {
+      sa += x[i] * x[i]; na++;
+      if (Math.abs(x[i]) > mx) mx = Math.abs(x[i]);
+      sjump += Math.abs(x[i] - x[i - 1]); nj++;
+    }
+    const near = { rms: +Math.sqrt(sa / Math.max(1, na)).toFixed(6), maxAbs: +mx.toFixed(6), edgeJump: +Math.abs(x[b] - x[b - 1]).toFixed(6), meanJump: +(sjump / Math.max(1, nj)).toFixed(6) };
+    return { x, sr, boundary: b, minWindowRms: +minWin.toFixed(6), maxZeroRun, near };
+  };
+
+  const out = { base: location.href, context: {}, tracks: [] };
+  const ctx22 = new AudioContext({ sampleRate: 22050 });
+  const ctx48 = new AudioContext();          // 游戏里就是默认采样率（一般 48000）
+  out.context = { nativeRate: ctx22.sampleRate, gameRate: ctx48.sampleRate };
+  log('ctx: ' + JSON.stringify(out.context));
+
+  for (const name of TRACKS) {
+    const rec = { name };
+    const wav = await get(name + '.wav');
+    const mp3 = await get(name + '.mp3');
+    rec.wav = { status: wav.status, ct: wav.ct, bytes: wav.bytes };
+    rec.mp3 = { status: mp3.status, ct: mp3.ct, bytes: mp3.bytes, ratio: +(mp3.bytes / wav.bytes).toFixed(4) };
+
+    const w22 = await dec(ctx22, wav), m22 = await dec(ctx22, mp3);
+    const w48 = await dec(ctx48, wav), m48 = await dec(ctx48, mp3);
+    rec.decodeMs = { wav22: w22.ms, mp322: m22.ms, wav48: w48.ms, mp348: m48.ms };
+    rec.rate = { native: w22.buf.sampleRate, game: w48.buf.sampleRate };
+    rec.len = {
+      native: { wav: w22.buf.length, mp3: m22.buf.length, diff: m22.buf.length - w22.buf.length },
+      game: { wav: w48.buf.length, mp3: m48.buf.length, diff: m48.buf.length - w48.buf.length },
+    };
+    rec.dur = {
+      native: { wav: +w22.buf.duration.toFixed(6), mp3: +m22.buf.duration.toFixed(6), diff: +(m22.buf.duration - w22.buf.duration).toFixed(6) },
+      game: { wav: +w48.buf.duration.toFixed(6), mp3: +m48.buf.duration.toFixed(6), diff: +(m48.buf.duration - w48.buf.duration).toFixed(6) },
+    };
+    rec.seam = {
+      native: { wav: seam(w22.buf.getChannelData(0)), mp3: seam(m22.buf.getChannelData(0)) },
+      game: { wav: seam(w48.buf.getChannelData(0)), mp3: seam(m48.buf.getChannelData(0)) },
+    };
+    rec.alignNative = align(w22.buf.getChannelData(0), m22.buf.getChannelData(0));
+    rec.alignGame = align(w48.buf.getChannelData(0), m48.buf.getChannelData(0));
+    rec.channels = { wav: w22.buf.numberOfChannels, mp3: m22.buf.numberOfChannels };
+
+    // 循环渲染对比：同一条件渲染 wav / mp3，接缝处不应出现掉零或静音空档
+    const lw = await loopRender(w48.buf), lm = await loopRender(m48.buf);
+    let sd = 0, sa = 0, n = 0;
+    for (let i = 0; i < Math.min(lw.x.length, lm.x.length); i++) {
+      const u = lw.x[i], v = lm.x[i], d = u - v;
+      sd += d * d; sa += u * u; n++;
+    }
+    rec.loop = {
+      sr: lw.sr, renderedSamples: lm.x.length, boundary: lm.boundary,
+      wav: { minWindowRms: lw.minWindowRms, maxZeroRun: lw.maxZeroRun, near: lw.near },
+      mp3: { minWindowRms: lm.minWindowRms, maxZeroRun: lm.maxZeroRun, near: lm.near },
+      snrVsWav: +(20 * Math.log10(Math.sqrt(sa / n) / Math.sqrt(sd / n))).toFixed(2),
+      rmsDiff: +Math.sqrt(sd / n).toFixed(6),
+    };
+    out.tracks.push(rec);
+    log(name + '  ' + JSON.stringify({ dur: rec.dur.native, bytes: rec.mp3.bytes, ct: rec.mp3.ct }));
+  }
+
+  await ctx22.close(); await ctx48.close();
+  return out;
+};
+</script>

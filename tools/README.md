@@ -100,6 +100,21 @@ node tools/_bloom_bench.mjs --variant pair       # 同一同步循环里交替�
 测出的提交耗时会被命令队列状态放大/扭曲（同一份实现在不同页面能差 3 倍），不能当依据。
 截图 / 读回会污染 canvas 加速路径，见上一节两个坑。
 
+### D. 素材压缩与网络测量（国内访问优化，1.6.15）
+
+| 脚本 | 用途 |
+| - | - |
+| `optimize_art_webp.py` | 把 `src/art/gen/` 的 PNG/JPG 批量转 WebP（原图保留，引用改成 `.webp`）；`--dry-run` / `--force` / `--strict-gate`，逐张体积与 PSNR 落 `_opt/webp_table.md`、`_opt/webp_report.json` |
+| `optimize_audio_mp3.py` | 三首预渲染 BGM 母版转 MP3（自写 Xing/Info + LAME tag，保证解码时长与循环接缝精确）；`--dry-run` / `--force` / `--mode` / `--bitrate` / `--only` / `--json` |
+| `verify_audio_mp3.mjs` | 起 headless Edge 解码 MP3 vs WAV：时长差、采样数、互相关、真实循环渲染 SNR（页面是 `verify_audio_mp3.html`） |
+| `_opt_art_check.mjs` | WebP 运行时验收：62 张 decode / 尺寸 / MIME / 404 检查 + 游戏内截图 |
+| `gen_modulepreload.py` | 静态解析入口 import 图，生成 `index.html` 的 modulepreload 清单；`--write` 写入、`--check` 只校验 |
+| `_serve_h2.mjs` | 本地 HTTP/2 + gzip 服务（自签证书），做贴近线上的限速 A/B |
+| `_net_probe.mjs` | CDP 冷缓存 + 限速网络探针，输出 nav / 资源 / 失败 JSON；**统计字节数要带 `?nosw=1`**（Service Worker 转发的请求在页面 target 上是 `encoded: 0`） |
+| `_net_whoimg.mjs` | 劫持 `HTMLImageElement.prototype.src` setter 打印赋值栈，定位「这张图是谁在请求」；加 `--enter` 会先进第一面再继续记录（看「进关之后」的请求） |
+
+两个坑：`_serve_h2.mjs` 必须 `createSecureServer(opts)` + `server.on('stream')`（`createSecureServer(opts, handler)` 里的 res 没有 `.respond`）；`_deploy_check.mjs` 的输出目录要先 `mkdir`，否则会静默退出。
+
 ## 四语 i18n 回归
 
 语言运行时在 `src/i18n/`，语言包 `src/i18n/packs/{en,ja,zh-hant}.js` 由
@@ -142,6 +157,6 @@ python tools/_imgdiff.py a.png b.png diff.png
 
 - `_` 前缀 = **一次性/历史脚本**（某轮 QA 或某个 bug 的临时产物），能跑就行，不保证接口稳定，
   也不保证随机数/弹幕/时序完全可复现。
-- 无前缀 = 相对长期维护：`serve_nocache.py`、`shot_cdp.mjs`、`sim_bot.js`、`qa_audio.mjs`、`validate_songs.mjs`。
+- 无前缀 = 相对长期维护：`serve_nocache.py`、`shot_cdp.mjs`、`sim_bot.js`、`qa_audio.mjs`、`validate_songs.mjs`、`optimize_art_webp.py`、`optimize_audio_mp3.py`、`gen_modulepreload.py`。
 - 素材类 `gen_*.py` / `build_*.py` / `cutout.py` / `compose_*.py` 依赖外部图像 API 或本地素材库，
   不适合进 CI；它们生成的是 `assets/` 下的成品，重跑前先看清脚本头部说明。

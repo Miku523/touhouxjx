@@ -1,10 +1,10 @@
 /**
  * AI 生成的游戏内角色帧
  *
- * 资源：src/art/gen/run/<char>_run_<i>.png（4 帧循环）
- *       src/art/gen/run/<char>_idle.png
- *       src/art/gen/run/<char>_jump.png
- *       src/art/gen/run/<char>_fall.png
+ * 资源：src/art/gen/run/<char>_run_<i>.webp（4 帧循环）
+ *       src/art/gen/run/<char>_idle.webp
+ *       src/art/gen/run/<char>_jump.webp
+ *       src/art/gen/run/<char>_fall.webp
  * 缺哪个动作就回退到 run 帧；整张图未就绪时返回 false，由调用方留柔光占位（不画程序化人物）。
  *
  * 加载时会做一次预处理（同源图片可读像素）：
@@ -169,14 +169,14 @@ function ensureSheet(ch, priority = 'low') {
   if (!SUPPORTED.includes(ch)) return null;
   const run = [];
   for (let i = 0; i < FRAME_N; i++) {
-    run.push(loadOne(new URL(ch + '_run_' + i + '.png', BASE).href, priority));
+    run.push(loadOne(new URL(ch + '_run_' + i + '.webp', BASE).href, priority));
   }
   sheet = {
     run,
-    idle: loadOne(new URL(ch + '_idle.png', BASE).href, priority),
-    jump: loadOne(new URL(ch + '_jump.png', BASE).href, priority),
-    fall: loadOne(new URL(ch + '_fall.png', BASE).href, priority),
-    fly: loadOne(new URL(ch + '_fly.png', BASE).href, priority),
+    idle: loadOne(new URL(ch + '_idle.webp', BASE).href, priority),
+    jump: loadOne(new URL(ch + '_jump.webp', BASE).href, priority),
+    fall: loadOne(new URL(ch + '_fall.webp', BASE).href, priority),
+    fly: loadOne(new URL(ch + '_fly.webp', BASE).href, priority),
   };
   SHEETS[ch] = sheet;
   return sheet;

@@ -1,11 +1,12 @@
 /**
  * AI 生成的妖精精灵
  *
- * 素材：src/art/gen/fairy.png（透明底，145×160）
+ * 素材：src/art/gen/fairy.webp（透明底，145×160）
  * 加载不到时 drawGenFairy 返回 false，enemies.js 只铺该色柔光，不回退程序化人物。
  */
+import { preloadWhenIdle } from '../engine/lazy_preload.js';
 
-const BASE = new URL('./gen/fairy.png', import.meta.url);
+const BASE = new URL('./gen/fairy.webp', import.meta.url);
 /** 游戏内显示高度（flyer 包围盒 h=34，画大一点点更饱满） */
 const DRAW_H = 42;
 
@@ -19,33 +20,45 @@ const AURA = {
 };
 
 const COLOR_KEYS = ['blue', 'red', 'green', 'yellow', 'purple'];
-const IMGS = (() => {
-  const map = {};
-  if (typeof Image === 'undefined') return map;
-  for (const k of COLOR_KEYS) {
-    const im = new Image();
-    im.decoding = 'async';
-    im.src = new URL(`./gen/fairy/${k}.png`, import.meta.url).href;
-    map[k] = im;
-  }
-  return map;
-})();
+/** 图片对象懒创建：首屏（标题画面）不抢带宽，见文件末尾的 preloadWhenIdle */
+const IMGS = {};
+let FALLBACK = null;
 
-const FALLBACK = (() => {
-  if (typeof Image === 'undefined') return null;
-  const im = new Image();
-  im.decoding = 'async';
-  im.src = BASE.href;
+function ensureColor(k) {
+  let im = IMGS[k];
+  if (!im) {
+    if (typeof Image === 'undefined') return null;
+    im = new Image();
+    im.decoding = 'async';
+    im.src = new URL(`./gen/fairy/${k}.webp`, import.meta.url).href;
+    IMGS[k] = im;
+  }
   return im;
-})();
+}
+
+function ensureFallback() {
+  if (FALLBACK) return FALLBACK;
+  if (typeof Image === 'undefined') return null;
+  FALLBACK = new Image();
+  FALLBACK.decoding = 'async';
+  FALLBACK.src = BASE.href;
+  return FALLBACK;
+}
 
 /** 按颜色取贴图，取不到时退回通用妖精图 */
 function imageFor(colorKey) {
-  const im = IMGS[colorKey];
+  const im = ensureColor(colorKey);
   if (im && im.naturalWidth) return im;
-  if (FALLBACK && FALLBACK.naturalWidth) return FALLBACK;
+  const fb = ensureFallback();
+  if (fb && fb.naturalWidth) return fb;
   return null;
 }
+
+// 首屏稳定后的空闲时段把六张妖精图下好（弱网受限链路会跳过，进关第一次绘制时按需加载）
+preloadWhenIdle(() => {
+  for (const k of COLOR_KEYS) ensureColor(k);
+  ensureFallback();
+});
 
 /**
  * @param {CanvasRenderingContext2D} ctx 原点在妖精包围盒中心

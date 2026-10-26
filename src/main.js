@@ -32,6 +32,7 @@ import {
 } from './game/story.js';
 import { DIFFICULTY_KEYS, DIFFICULTIES, getDifficulty } from './game/difficulty.js';
 import { ensureCharArt } from './art/genchars.js';
+import { ensureBossArt } from './art/genboss.js';
 import { initLang, tr, localizeDom, getLang, setLang, LANGS, isManualLang, onChange } from './i18n/index.js';
 
 const MAIN_STAGES = () => LEVELS.filter((l) => !l.extra);
@@ -80,7 +81,7 @@ const DIFF_CARDS = {
 
 /**
  * 选择界面的场景底图：每个页面一套独立景别，避免所有子页共用同一块暗紫卡片。
- * img 对应 src/art/gen/bg/*.jpg；mote 是前景粒子（petal 花瓣 / mote 光点 / ember 余烬）；
+ * img 对应 src/art/gen/bg/*.webp；mote 是前景粒子（petal 花瓣 / mote 光点 / ember 余烬）；
  * zh 是画面右缘的竖排题签（简体原文，其余语言走 tr），en 是它下面那行小字。
  */
 const SCENES = {
@@ -194,14 +195,14 @@ class Game {
     this._titleBgImg = new Image();
     this._titleBgImg.decoding = 'async';
     setPriority(this._titleBgImg, 'high');
-    this._titleBgImg.src = new URL('./art/gen/title_bg.jpg', import.meta.url).href;
+    this._titleBgImg.src = new URL('./art/gen/title_bg.webp', import.meta.url).href;
 
     this._titleCharImgs = {};
     for (const key of ['reimu', 'marisa']) {
       const img = new Image();
       img.decoding = 'async';
       setPriority(img, 'high');
-      img.src = new URL(`./art/gen/${key}_title.png`, import.meta.url).href;
+      img.src = new URL(`./art/gen/${key}_title.webp`, import.meta.url).href;
       this._titleCharImgs[key] = img;
     }
     if (typeof window !== 'undefined') {
@@ -417,7 +418,7 @@ class Game {
           const im = new Image();
           im.decoding = 'async';
           setPriority(im, 'low');
-          im.src = new URL(`./art/gen/bg/${s.img}.jpg`, import.meta.url).href;
+          im.src = new URL(`./art/gen/bg/${s.img}.webp`, import.meta.url).href;
         } catch (e) {
           // 预热失败无所谓，_applyScene 里还会再请求一次
         }
@@ -467,7 +468,7 @@ class Game {
     }).join('');
     this._ovBg.dataset.mote = scene.mote;
     // 底图路径必须相对 main.js 解析（index.html 在上一级，故用 import.meta.url）
-    const sceneUrl = new URL(`./art/gen/bg/${scene.img}.jpg`, import.meta.url).href;
+    const sceneUrl = new URL(`./art/gen/bg/${scene.img}.webp`, import.meta.url).href;
     this._ovBg.innerHTML =
       `<div class="ov-bg-img" style="background-image:url('${sceneUrl}')"></div>` +
       '<div class="ov-bg-grade"></div>' +
@@ -1009,12 +1010,12 @@ class Game {
       {
         key: 'reimu', name: tr('博丽灵梦'), en: 'HAKUREI REIMU',
         note: tr('追踪御札 · 符卡「梦想封印」'), digit: '1',
-        tone: '#ff92a8', glow: '255, 120, 145', img: art('reimu_title.png'),
+        tone: '#ff92a8', glow: '255, 120, 145', img: art('reimu_title.webp'),
       },
       {
         key: 'marisa', name: tr('雾雨魔理沙'), en: 'KIRISAME MARISA',
         note: tr('扩散穿透 · 符卡「魔炮」'), digit: '2',
-        tone: '#ffd45e', glow: '255, 205, 110', img: art('marisa_title.png'),
+        tone: '#ffd45e', glow: '255, 205, 110', img: art('marisa_title.webp'),
       },
     ];
 
@@ -1066,12 +1067,12 @@ class Game {
       {
         key: 'reimu', name: tr('博丽灵梦'), en: 'HAKUREI REIMU',
         note: tr('追踪御札 · 符卡「梦想封印」'), digit: '1',
-        tone: '#ff92a8', glow: '255, 120, 145', img: art('reimu_title.png'),
+        tone: '#ff92a8', glow: '255, 120, 145', img: art('reimu_title.webp'),
       },
       {
         key: 'marisa', name: tr('雾雨魔理沙'), en: 'KIRISAME MARISA',
         note: tr('扩散穿透 · 符卡「魔炮」'), digit: '2',
-        tone: '#ffd45e', glow: '255, 205, 110', img: art('marisa_title.png'),
+        tone: '#ffd45e', glow: '255, 205, 110', img: art('marisa_title.webp'),
       },
     ];
 
@@ -1431,6 +1432,12 @@ class Game {
     // 等玩家走到下一面时图早就下完了，5/6 面开场不会再先闪出程序化天空兜底）。
     prefetchStageBg(def.theme);
     if (!isExtra) prefetchStageBg(this._mainStages()[index + 1]?.theme);
+    // 结局素材（约 960KB）在首屏是空闲预取、弱网下会被跳过：进最后两面时提前拉，
+    // 等真正通关（还要再打一两面）时早下完了，结局开场不会空白。
+    if (!isExtra && index >= 4) this.ending?.preloadAssets?.();
+    // 本关 Boss 立绘（每张约 90KB）也在开场就拉：弱网首访时闸门会跳过全量预取，
+    // 若等 Boss 登场才请求，boss.js 的「立绘未就绪暂缓出场」会白等最多 3 秒。
+    if (def?.boss) ensureBossArt(def.boss);
     // 进关后没有菜单页在生效：清掉残留的 _page（否则从暂停/选人页重开后
     // _page 还停在 'paused'/'charselect'，后续靠 _page 判定的分支会读错上下文）
     this._page = '';
@@ -1674,7 +1681,7 @@ class Game {
       case 'bossStart':
         seedReset?.(); // 从开战这一帧把随机序列拨回起点，弹幕才有复现意义
         this.hud.banner(tr(data.name || ''), tr(data.title || ''), 2.0);
-        // EXTRA 连环战：咲夜首次登场放一次全屏 cut-in（tag = BOSS，立绘 sakuya_title.png，
+        // EXTRA 连环战：咲夜首次登场放一次全屏 cut-in（tag = BOSS，立绘 sakuya_title.webp，
         // 无符阵圆环）。第二场（chainIndex 2）她是「再战」，不再重复登场演出。
         if (data && data.chain && data.key === 'sakuya' && (data.chainIndex | 0) === 0) {
           this.cutin.showBoss('sakuya');
