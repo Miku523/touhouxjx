@@ -20,6 +20,8 @@ const PORT = Number(arg('port', 8443));
 const ROOT = resolve(arg('root', '.'));
 const CERT = resolve(arg('cert', '_pt/certs/cert.pem'));
 const KEY = resolve(arg('key', '_pt/certs/key.pem'));
+// 模拟公网 RTT：每个响应先等 LATENCY 毫秒再发（用于 A/B 测 modulepreload 省 RTT 的收益）
+const LATENCY = Number(arg('latency', '0'));
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -91,7 +93,8 @@ function onStream(stream, headers) {
 const server = createSecureServer({ key: readFileSync(KEY), cert: readFileSync(CERT), allowHTTP1: false });
 server.on('stream', (stream, headers) => {
   stream.on('error', () => { /* 客户端中途取消：忽略 */ });
-  onStream(stream, headers);
+  if (LATENCY > 0) setTimeout(() => onStream(stream, headers), LATENCY);
+  else onStream(stream, headers);
 });
 server.on('sessionError', () => { /* TLS/协议错误忽略 */ });
 server.on('error', (e) => { console.error('server error', e.message); process.exit(1); });

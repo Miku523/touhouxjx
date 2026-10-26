@@ -51,6 +51,7 @@ export async function launch(opts = {}) {
     '--window-size=' + W + ',' + H,
   ];
   if (opts.forceDeviceScale) args.push('--force-device-scale-factor=' + opts.forceDeviceScale);
+  if (opts.insecure) args.push('--ignore-certificate-errors'); // 本地 h2 自签证书用
   args.push(`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, opts.url || 'about:blank');
   const logPath = join(profile, 'browser.log');
   const errFd = openSync(logPath, 'a');
