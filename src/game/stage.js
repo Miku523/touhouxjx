@@ -68,15 +68,35 @@ const BG_VARIANTS = {
 const BG_VARIANTS_DEFAULT = 2;
 const _bgCache = new Map();
 
+/** 背景图加载失败后的重试退避（见 _bgEntry）：弱网 / 离线兜底 504 都是暂时的，
+ *  只要网络恢复就还能把厚涂背景补回来，不让整面关卡永久退回程序化天空。 */
+const BG_RETRY_DELAYS = [1200, 3000, 8000, 20000];
+
 function _bgEntry(theme, idx) {
   const key = idx > 0 ? theme + '_' + (idx + 1) : theme;
   let e = _bgCache.get(key);
   if (e) return e;
-  e = { img: typeof Image !== 'undefined' ? new Image() : null, ok: false, failed: false, idx };
+  e = { img: typeof Image !== 'undefined' ? new Image() : null, ok: false, failed: false, idx, tries: 0, src: '' };
   if (e.img) {
-    e.img.onload = () => { e.ok = true; };
-    e.img.onerror = () => { e.failed = true; };
-    e.img.src = new URL('../art/gen/bg/' + key + '.jpg', import.meta.url).href;
+    e.src = new URL('../art/gen/bg/' + key + '.jpg', import.meta.url).href;
+    e.img.decoding = 'async';
+    e.img.onload = () => { e.ok = true; e.failed = false; };
+    // 一次瞬时失败（弱网 / Service Worker 离线兜底返回 504）不该让这一面整局都退回
+    // 程序化天空：退避重试几次，成功之后照常切回厚涂背景（配 draw 里的淡入）。
+    e.img.onerror = () => {
+      e.failed = true;
+      const delay = BG_RETRY_DELAYS[e.tries];
+      if (delay === undefined) return;
+      e.tries += 1;
+      // 带一个一次性查询串，绕开可能被缓存住的失败响应
+      const retrySrc = e.src + (e.src.indexOf('?') >= 0 ? '&' : '?') + 'retry=' + e.tries;
+      setTimeout(() => {
+        if (e.ok) return;
+        e.failed = false;
+        e.img.src = retrySrc;
+      }, delay);
+    };
+    e.img.src = e.src;
   } else {
     e.failed = true;
   }
@@ -90,6 +110,21 @@ function _bgFor(theme) {
   const list = [];
   for (let i = 0; i < n; i++) list.push(_bgEntry(theme, i));
   return list;
+}
+
+/**
+ * 提前请求某主题的厚涂背景（所有变体）。
+ *
+ * 背景图原来是「关卡第一次绘制时」才开始下载的，进关瞬间必然有一段只有程序化天空
+ * 的时间；5/6 面（冥界 / 月都）最明显——玩家会看到「以前的背景图」闪出来，弱网下
+ * 甚至持续几秒。进关前先 warm 一次，图在上一面就下完，开场直接贴厚涂图。
+ * 幂等：_bgCache 按主题+变体缓存，重复调用不会重复下载。
+ *
+ * @param {string} [theme] 关卡主题（nether / moon / …）；空值直接忽略
+ */
+export function prefetchStageBg(theme) {
+  if (!theme) return;
+  try { _bgFor(theme); } catch (e) { /* 预取失败不影响运行 */ }
 }
 
 const smoothstep = (a, b, x) => {
@@ -447,6 +482,9 @@ export class Stage {
     this.time = 0;
     this.state = 'play'; // play | boss | clear | dead
     this.finished = false;
+    // 厚涂背景的淡入进度：1 = 直接贴厚涂图（常态）；图还没就绪时置 0，
+    // 等图到位再从 0 淡回 1，避免「程序化天空 → 厚涂图」硬切一下（见 draw）。
+    this._bgFade = 1;
 
     this.boss = null;
     this.bossStarted = false;
@@ -1603,8 +1641,19 @@ export class Stage {
     return cv;
   }
 
+  /** 程序化天空兜底（厚涂背景还没就绪时画它；图到位后淡入替换，见 draw） */
+  _drawFallbackBg(ctx, theme, cam) {
+    ctx.save();
+    drawSky(ctx, theme, { x: 0, y: 0 }, this.t);
+    ctx.restore();
+
+    ctx.save();
+    drawParallax(ctx, theme, cam, this.t);
+    ctx.restore();
+  }
+
   /* 厚涂背景：cover 裁切 + 随关卡进度横移 + 变体交叉淡入 + 底部压暗 */
-  _drawPaintedBg(ctx, list, cam, theme) {
+  _drawPaintedBg(ctx, list, cam, theme, fade = 1) {
     const W = VIEW_W, H = VIEW_H;
 
     // 预合成每一张可用背景（换段时交叉淡入），每帧只贴图。
@@ -1637,7 +1686,7 @@ export class Stage {
         // 居中固定后各进度看的是同一块构图，配合 per-variant 曝光标定即可整段持平。
         const base = Math.max(0, (layer.width - W) / 2) - 12;
         const sx = Math.round(base + prog * 24);
-        ctx.globalAlpha = alpha;
+        ctx.globalAlpha = alpha * fade;
         ctx.drawImage(layer, sx, 0, W, H, 0, 0, W, H);
       };
       ctx.save();
@@ -1649,7 +1698,7 @@ export class Stage {
         // 过场遮罩：两张图构图不完全一致时，用一层薄暮色盖住重影。
         // 两变体已按同一曝光标定，重影主要是构图差异，遮罩只需要很薄，
         // 原来的 0.34 会让 40%–55% 进度段的画面亮度掉 20+，造成面内亮度断层。
-        const veil = Math.sin(Math.PI * k) * 0.03;
+        const veil = Math.sin(Math.PI * k) * 0.03 * fade;
         if (veil > 0.004) {
           ctx.save();
           ctx.globalAlpha = veil;
@@ -1689,13 +1738,16 @@ export class Stage {
     ctx.save();
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = fade;
     ctx.drawImage(a.img, x, y, iw, ih);
     if (mixK > 0.001 && b !== a && b.ok) {
-      ctx.globalAlpha = mixK;
+      ctx.globalAlpha = mixK * fade;
       ctx.drawImage(b.img, x, y, iw, ih);
       ctx.globalAlpha = 1;
     }
+    // 还在从程序化天空淡入：这一帧只贴图，压暗/色调等 wash 等淡入完成后再叠，
+    // 否则半透明的图会被按满强度压暗、看起来比前后帧更黑。
+    if (fade < 0.999) { ctx.restore(); return; }
 
     // 顶部压暗：让 HUD 文字可读
     const top = ctx.createLinearGradient(0, 0, 0, H * 0.22);
@@ -1873,15 +1925,19 @@ export class Stage {
     const bgs = _bgFor(theme);
     const usable = bgs.filter((e) => e.ok);
     if (usable.length) {
-      this._drawPaintedBg(ctx, usable, cam, theme);
+      // 图刚到位时从程序化天空淡入（约 0.2s），不至于硬切一下；
+      // 进关第一帧就已经有图（预取过）时 _bgFade 是 1，直接贴图、不做淡入。
+      let fade = this._bgFade;
+      if (fade < 1) {
+        this._bgFade = Math.min(1, fade + 0.12);
+        fade = this._bgFade;
+      }
+      if (fade < 1) this._drawFallbackBg(ctx, theme, cam);
+      this._drawPaintedBg(ctx, usable, cam, theme, fade);
     } else {
-      ctx.save();
-      drawSky(ctx, theme, { x: 0, y: 0 }, this.t);
-      ctx.restore();
-
-      ctx.save();
-      drawParallax(ctx, theme, cam, this.t);
-      ctx.restore();
+      // 图还没加载好 / 彻底失败：先用程序化天空顶上，图一到就淡入换掉
+      this._bgFade = 0;
+      this._drawFallbackBg(ctx, theme, cam);
     }
 
     // 世界坐标系

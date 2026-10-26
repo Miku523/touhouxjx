@@ -12,7 +12,7 @@ import { Loop } from './engine/loop.js';
 import { setPriority, preloadWhenIdle } from './engine/lazy_preload.js';
 import { AudioEngine } from './engine/audio.js';
 import { LEVELS } from './assets/levels.js';
-import { Stage, EXTRA_TIMELINE } from './game/stage.js';
+import { Stage, EXTRA_TIMELINE, prefetchStageBg } from './game/stage.js';
 import { prewarmSpriteCache } from './game/bullets.js';
 import { Hud } from './game/hud.js';
 import { SpellCutin } from './game/spellCutin.js';
@@ -1315,6 +1315,9 @@ class Game {
     this.audio.unlock?.();
     this.audio.setMusic?.(this.musicOn !== false);
 
+    // 开场对白这几秒正好让第 1 面的厚涂背景下载完，进关就不会先看到程序化天空
+    prefetchStageBg(this._mainStages()[0]?.theme);
+
     const opening = openingFor(this.char);
     this._playDialogue(opening, () => this.startStage(0));
   }
@@ -1348,6 +1351,8 @@ class Game {
     this.carryExtend = 0;
     this.hudEl?.classList.remove('hidden');
     this.hud.setMaxLives(this.lives, this.char);
+    // EXTRA 的厚涂背景也在开场对白期间先下好（EXTRA 只有一面，没有「上一面」可蹭）
+    prefetchStageBg(EXTRA_STAGE()?.theme);
     this._playDialogue(extraIntroFor(this.char), () => this._startExtraStage());
   }
 
@@ -1419,6 +1424,10 @@ class Game {
 
   _createStage(def, index, isExtra, opts = {}) {
     this._hidePanel();
+    // 厚涂背景现在就请求：本关的（万一还没预取）与下一面的（一关好几分钟，
+    // 等玩家走到下一面时图早就下完了，5/6 面开场不会再先闪出程序化天空兜底）。
+    prefetchStageBg(def.theme);
+    if (!isExtra) prefetchStageBg(this._mainStages()[index + 1]?.theme);
     // 进关后没有菜单页在生效：清掉残留的 _page（否则从暂停/选人页重开后
     // _page 还停在 'paused'/'charselect'，后续靠 _page 判定的分支会读错上下文）
     this._page = '';
