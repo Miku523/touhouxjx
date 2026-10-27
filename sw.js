@@ -5,22 +5,26 @@
       1) 本文件 CACHE_VERSION（下面那一行）
       2) index.html 里 script/link 的 ?v=（platform.js 用 PLATFORM_VERSION）
       3) src/ui/platform.js 的 PLATFORM_VERSION
+      （src/ 里被 import 的内层模块不用进 ?v= 清单：下面走网络优先，见策略）
    ------------------------------------------------------------
    策略：
      - install：预缓存离线壳（./、./index.html、manifest），单个失败不影响安装
      - activate：删掉所有旧版本 cache（hks-* 前缀）+ clients.claim() 立刻接管
      - navigation：network-first（4s 超时），失败回退缓存 index.html
      - 带 ?v= 的静态资源：cache-first（URL 变了缓存自然失效，永不脏）
-     - 其它同源 GET：stale-while-revalidate
+     - 代码资源（.js / .css，含内层 import 的、不带 ?v= 的那些）：network-first，
+       断网回退缓存。stale-while-revalidate 会先吐缓存里的旧模块，部署后第一次
+       刷新就成了「新入口 + 旧内层」，改动要刷两次才生效，所以代码不走它。
+     - 其它同源 GET（图片 / 音频 / manifest 等）：stale-while-revalidate
      - 不碰：非 GET、跨域、range 请求、非 200、chrome-extension://、sw.js 自身
    ============================================================ */
 
-const CACHE_VERSION = 'hks-v1.6.18';
+const CACHE_VERSION = 'hks-v1.6.19';
 const CACHE_PREFIX = 'hks-';
 const OFFLINE_URL = './index.html';
 const NETWORK_TIMEOUT = 4000;
 /** 预缓存离线壳；单个失败（404/网络抖动）不影响安装 */
-const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.6.18'];
+const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.6.19'];
 
 const OFFLINE_HTML =
   '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' +
@@ -92,6 +96,18 @@ function isCacheable(res) {
   return true;
 }
 
+/** 代码资源（脚本 / 样式）：这类请求 SW 走网络优先，保证改完代码一次刷新就生效 */
+function isCodeRequest(request, url) {
+  if (
+    request.destination === 'script' ||
+    request.destination === 'style' ||
+    request.destination === 'worker'
+  ) {
+    return true;
+  }
+  return /\.(?:m?js|css)$/i.test(url.pathname);
+}
+
 function withTimeout(promise, ms) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('timeout')), ms);
@@ -145,6 +161,33 @@ async function staleWhileRevalidate(request) {
   return new Response('', { status: 504, statusText: 'Offline' });
 }
 
+/**
+ * 代码资源（.js / .css，含 main.js 里 import 进来的那些不带 ?v= 的内层模块）：
+ * 网络优先，断网回退缓存。
+ *
+ * 为什么不沿用 stale-while-revalidate：它命中缓存时直接吐旧文件、后台再更新。
+ * 部署后第一次刷新的顺序是「index.html（导航，网络优先）→ main.js?v=新（URL 变了，
+ * 必然走网络）→ main.js 再 import ./engine/audio.js（URL 没变，命中旧缓存）」，
+ * 于是新入口对着旧内层跑，改动要刷新两次才生效。代码文件不大、浏览器还有 HTTP
+ * 校验，每次加载多一轮 304 换「一次刷新生效」是划算的；断网时照样回退缓存。
+ */
+async function networkFirst(request) {
+  const cache = await openCache();
+  try {
+    // cache: 'no-cache' 强制向服务器校验，避免浏览器 HTTP 缓存把旧文件再端回来
+    const res = await withTimeout(fetch(new Request(request, { cache: 'no-cache' })), NETWORK_TIMEOUT);
+    if (res && res.ok) {
+      if (isCacheable(res)) cache.put(request, res.clone()).catch(() => {});
+      return res;
+    }
+    throw new Error('bad status: ' + (res && res.status));
+  } catch (err) {
+    const hit = await cache.match(request);
+    if (hit) return hit;
+    return new Response('', { status: 504, statusText: 'Offline' });
+  }
+}
+
 /** 导航：网络优先（4s 超时），抓不到就回退离线壳 */
 async function navigationHandler(request) {
   try {
@@ -196,6 +239,13 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(navigationHandler(request));
+    return;
+  }
+
+  // 代码资源一律网络优先（带不带 ?v= 都一样）：内层 import 没法逐个进 ?v= 清单，
+  // 靠这个保证「改完代码刷新一次就生效」，而不是先跑一轮旧模块。
+  if (isCodeRequest(request, url)) {
+    event.respondWith(networkFirst(request));
     return;
   }
 
