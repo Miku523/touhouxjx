@@ -4475,7 +4475,8 @@ html[lang="en"] .overlay.screen-mode .set-row-lang .seg b {
 }
 /* ============================================================
    Boss 登场 cut-in（复用符卡 cut-in 的 DOM，.boss 修饰）
-   主色换成冷银蓝；符阵圆环整层隐藏 —— 角色身后不留光环 / 刀圈。
+   主色换成冷银蓝；符阵圆环整层隐藏 —— 角色身后不留光环 / 刀圈；
+   文字层只留名字 + 称号，不放「BOSS」小字。
    ============================================================ */
 .spell-cutin.boss {
   --sc: #cfe0ff;
@@ -4493,11 +4494,9 @@ html[lang="en"] .overlay.screen-mode .set-row-lang .seg b {
     rgba(214, 230, 255, .18) 0deg 1.5deg,
     rgba(214, 230, 255, 0) 1.5deg 11deg);
 }
-.spell-cutin.boss .sc-tag {
-  color: var(--sc);
-  letter-spacing: 0.42em;
-  text-shadow: 0 0 calc(var(--s) * 12px) rgba(160, 196, 255, .55);
-}
+/* Boss 登场不放「BOSS」小字（2026-10-27）：整行连同占位高度一起去掉，
+   文字区只剩名字 + 称号，重新在光带里居中。 */
+.spell-cutin.boss .sc-tag { display: none; }
 .spell-cutin.boss .sc-name {
   text-shadow: 0 0 calc(var(--s) * 26px) rgba(120, 160, 255, .38);
 }

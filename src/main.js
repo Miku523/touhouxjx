@@ -1707,8 +1707,8 @@ class Game {
       case 'bossStart':
         seedReset?.(); // 从开战这一帧把随机序列拨回起点，弹幕才有复现意义
         this.hud.banner(tr(data.name || ''), tr(data.title || ''), 2.0);
-        // EXTRA 连环战：咲夜首次登场放一次全屏 cut-in（tag = BOSS，立绘 sakuya_title.webp，
-        // 无符阵圆环）。第二场（chainIndex 2）她是「再战」，不再重复登场演出。
+        // EXTRA 连环战：咲夜首次登场放一次全屏 cut-in（立绘 sakuya_title.webp，无符阵圆环，
+        // 不放「BOSS」小字，只有名字与称号）。第二场（chainIndex 2）她是「再战」，不再重复登场演出。
         if (data && data.chain && data.key === 'sakuya' && (data.chainIndex | 0) === 0) {
           this.cutin.showBoss('sakuya');
         }

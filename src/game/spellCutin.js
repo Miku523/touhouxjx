@@ -8,8 +8,8 @@
  *   ④ 白光收束、整体退场
  * 总时长 1.15s，期间游戏照常推进（伤害与判定不在这里结算）。
  *
- * Boss 登场复用同一套 DOM：.boss 修饰类把主色换成冷银蓝，并隐藏符阵圆环
- * （角色身后不留任何光环/刀圈，只保留斜光带与速度线）。
+ * Boss 登场复用同一套 DOM：.boss 修饰类把主色换成冷银蓝，并隐藏符阵圆环与
+ * 那行「BOSS」小字（角色身后不留任何光环/刀圈，文字只留名字与称号，只保留斜光带与速度线）。
  */
 
 import { tr } from '../i18n/index.js';
@@ -29,7 +29,7 @@ const SPELLS = {
   ],
 };
 
-/** Boss 登场：立绘 / 名字 / 称号（tag 统一显示 BOSS） */
+/** Boss 登场：立绘 / 名字 / 称号（不放「BOSS」小字，见 style.css 的 .spell-cutin.boss .sc-tag） */
 const BOSSES = {
   sakuya: { name: '十六夜咲夜', sub: '完美而潇洒的从者', img: 'sakuya_title.webp' },
 };
@@ -151,7 +151,8 @@ export class SpellCutin {
 
   /**
    * Boss 登场演出：全屏 cut-in。
-   * 立绘进 src/art/gen/<key>_title.webp，tag 显示 BOSS，主色走 .boss 冷银蓝。
+   * 立绘进 src/art/gen/<key>_title.webp，主色走 .boss 冷银蓝；不放「BOSS」小字
+   * —— tag 留空且整行隐藏（style.css 的 .spell-cutin.boss .sc-tag），文字只有名字与称号。
    * @param {string} key 例：'sakuya'
    * @returns {boolean} 是否有这个 Boss 的配置
    */
@@ -162,7 +163,8 @@ export class SpellCutin {
 
     this.el.classList.remove('marisa');
     this.el.classList.add('boss');
-    if (this.elTag) this.elTag.textContent = 'BOSS';
+    // Boss 登场不显示 tag 那行小字（2026-10-27）；空串而不是留着上一次的 'SPELL CARD'。
+    if (this.elTag) this.elTag.textContent = '';
     this._setName(tr(info.name));
     if (this.elSub) this.elSub.textContent = tr(info.sub);
     this._paint(info.img);
