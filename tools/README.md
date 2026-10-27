@@ -108,9 +108,10 @@ node tools/_bloom_bench.mjs --variant pair       # 同一同步循环里交替�
 | `optimize_audio_mp3.py` | 三首预渲染 BGM 母版转 MP3（自写 Xing/Info + LAME tag，保证解码时长与循环接缝精确）；`--dry-run` / `--force` / `--mode` / `--bitrate` / `--only` / `--json` |
 | `verify_audio_mp3.mjs` | 起 headless Edge 解码 MP3 vs WAV：时长差、采样数、互相关、真实循环渲染 SNR（页面是 `verify_audio_mp3.html`） |
 | `_opt_art_check.mjs` | WebP 运行时验收：62 张 decode / 尺寸 / MIME / 404 检查 + 游戏内截图 |
-| `gen_modulepreload.py` | 静态解析入口 import 图，生成 `index.html` 的 modulepreload 清单；`--write` 写入、`--check` 只校验 |
-| `_serve_h2.mjs` | 本地 HTTP/2 + gzip 服务（自签证书），做贴近线上的限速 A/B |
+| `gen_modulepreload.py` | 静态解析入口 import 图，生成 `index.html` 的 modulepreload 清单；`--write` 写入、`--check` 只校验。`src/` 的 import 关系一变要重跑，否则清单过期 |
+| `_serve_h2.mjs` | 本地 HTTP/2 + gzip 服务（自签证书）；`--latency=N` 给每个响应加固定延迟，模拟公网 RTT，用来 A/B 测 modulepreload 这类「省 RTT」的改动 |
 | `_net_probe.mjs` | CDP 冷缓存 + 限速网络探针，输出 nav / 资源 / 失败 JSON；**统计字节数要带 `?nosw=1`**（Service Worker 转发的请求在页面 target 上是 `encoded: 0`） |
+| `_net_strip.mjs` | 在线 A/B：用 CDP `Fetch` 拦截线上 `index.html` 响应，把 modulepreload 只保留前 `--keep=N` 条再回填，比 DCL——不用发版就能验证并发相关改动。注意拦截本身会引入秒级抖动，只适合看数量级，定论要用本地 `--latency` 的受控 A/B |
 | `_net_whoimg.mjs` | 劫持 `HTMLImageElement.prototype.src` setter 打印赋值栈，定位「这张图是谁在请求」；加 `--enter` 会先进第一面再继续记录（看「进关之后」的请求） |
 
 两个坑：`_serve_h2.mjs` 必须 `createSecureServer(opts)` + `server.on('stream')`（`createSecureServer(opts, handler)` 里的 res 没有 `.respond`）；`_deploy_check.mjs` 的输出目录要先 `mkdir`，否则会静默退出。
