@@ -121,6 +121,49 @@ export function finalHpMulFor(key) {
   return Number.isFinite(override) && override > 0 ? override : BOSS_FINAL_HP_MUL;
 }
 
+/**
+ * 道中血量基准（2026-10-27 第六轮用户口述）：「小头目血量减少 1/2，各个小怪血量增到
+ * 现在小头目的 1/3」。这里的「现在的小头目」= 本轮改动前的 `bossHalfCardHp()`（半张符卡）：
+ *  - 小头目 → 再减半，即「平均伤害符卡血量 × 0.25」（见 boss.js 的 bossHalfCardHp）；
+ *  - 小怪   → 减半前的小头目 ÷3 = 平均伤害符卡血量 × 1/6（基准兵种 fairy），
+ *    其余兵种按 PLATFORM_KINDS.hp 的 6:9:12:15 权重等比放大（见 enemies.js 的 EnemyManager）。
+ * 只有平台面道中走这套；STG 杂兵（stg.js）与 Boss 血量完全不受影响。
+ * 想整体调松紧只改这两个常量。
+ */
+export const MINIBOSS_CARD_SHARE = 0.25;
+export const MOB_CARD_SHARE = 1 / 6;
+
+/**
+ * 该 Boss 所有「承伤符卡」（跳过 survival）运行期血量的平均值。
+ * 逐卡口径与 Boss 构造器完全一致：显式 hp 优先，否则 limit × dps × CARD_HP_ANCHOR，
+ * 再 × finalHpMulFor(key) 并四舍五入。没有符卡数据时返回 0。
+ * 小头目血量（bossHalfCardHp）与小怪血量都以它为基准，保证道中永远跟 Boss 一起缩放。
+ */
+export function cardAvgRuntimeHp(key) {
+  const tune = cardTuningFor(key);
+  const cards = tune && Array.isArray(tune.cards) ? tune.cards : null;
+  if (!cards || !cards.length) return 0;
+  const mul = finalHpMulFor(key);
+  const hps = [];
+  for (const t of cards) {
+    if (!t) continue;
+    if (t.mode === 'survival') continue;
+    const hpOverride = Number(t.hp);
+    const dps = Number(t.dps);
+    const limit = Number(t.limit);
+    let hp = 0;
+    if (Number.isFinite(hpOverride) && hpOverride > 0) {
+      hp = Math.max(1, Math.round(hpOverride));
+    } else if (Number.isFinite(dps) && dps > 0 && Number.isFinite(limit) && limit > 0) {
+      hp = Math.max(1, Math.round(limit * dps * CARD_HP_ANCHOR));
+    }
+    if (hp <= 0) continue;
+    hps.push(Math.max(1, Math.round(hp * mul)));
+  }
+  if (!hps.length) return 0;
+  return hps.reduce((a, b) => a + b, 0) / hps.length;
+}
+
 /** 取档位对应的倍率；非法 / 未填 = 档 3（不改变现有手感） */
 export function tierMultipliers(tier) {
   return CARD_TIER_MUL[Number(tier)] || CARD_TIER_MUL[3];

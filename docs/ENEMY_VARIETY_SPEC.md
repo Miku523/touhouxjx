@@ -12,7 +12,7 @@
 | - | --- | --- |
 | 1 | 小怪数量翻倍（STG 面、EX 面除外） | 平台面 1/2/3/5/6 的生成小怪数 ×2。实现点：`src/assets/levelgen.js` 的 `MONSTER_SPAWN[*].perScreen` ×2（`groundRatio` 不变）。STG（4 面）与 EX 不增加数量。 |
 | 2 | 设置小头目，个数按道中长度 | **仅平台面（1/2/3/5/6）**新增「小头目」：道中沿途数只，按可用道中长度自动定个数（1~3）。不是 STAGE5 妖梦 / EX 蕾米莉亚那种剧情中 Boss；不锁场、不切对话/音乐、不改 stage.state。 |
-| 3 | 血量约等于符卡的一半；打掉 +1/32P | HP = 该面最终 Boss 的「逐卡运行期血量」平均值 × 0.5（不乘难度血量倍率，和符卡口径一致）。击破后直接 `stage._addPower(POWER.pickup)`，即 +4 POWER = 1/32 槽；并弹出 `+1/32P` 漂浮提示。 |
+| 3 | 血量约等于符卡的一半；打掉 +1/32P | HP = 该面最终 Boss 的「逐卡运行期血量」平均值 × 0.25（2026-10-27 第六轮用户要求「小头目血量减少 1/2」，于是把原「半卡」口径再减半；不乘难度血量倍率，和符卡口径一致）。击破后直接 `stage._addPower(POWER.pickup)`，即 +4 POWER = 1/32 槽；并弹出 `+1/32P` 漂浮提示。 |
 | 4 | 攻击方式/弹幕发射方式继续多样化，弹幕轻微复杂化 | 平台杂兵与 STG 杂兵：每种敌人都要有 ≥2 种发射方式（瞄准扇 / 环 / 螺旋 / 连发 / 延迟落雨 / 变速混编等），并新增少量「轻微复杂化」手段（`accel` / `turn` / `wobble` / `speedVar` / 二次齐射）。幅度要求：**同屏弹幕峰值增幅 ≤ 35%**，不得越过既有 bulletBudget 护栏。 |
 | 5 | 进场方式丰富化，不要只从一侧，应用于所有面 | ① 平台杂兵：一部分改为从屏外飞入/天降/闪现登场，而不是全部站桩；② STG 杂兵：除右侧涌入外，新增上/下/斜角/从背后追上等进场；③ 小头目：至少 4 种进场。**7 个面（含 STG 4 面与 EX）都要能观察到多种进场**。 |
 
@@ -128,13 +128,19 @@
 
 新增 `export function bossHalfCardHp(key)`：
 
-- 取 `BOSS_CARD_TUNING[key].cards`；对每张卡按 Boss 构造器同一口径算运行期血量：
-  - `t.hp > 0` → `t.hp`；`mode==='survival'` → 跳过（不参与平均）；
-  - 否则 → `limit * dps * CARD_HP_ANCHOR`；
-  - 结果 × `finalHpMulFor(key)`，四舍五入。
-- 返回 `Math.round(0.5 × 平均(参与卡)血量)`。不乘难度血量倍率（与逐卡口径一致）。
-- 预期值（实现后打印自检，误差 ≤1）：S1 rumia **4593**、S2 wriggle **4978**、S3 cirno **5066**、S5 yuyuko **4983**、S6 kaguya **4379**。
-- 参考：现有 S1 Boss 两卡实测 8251 / 10119 → 半卡 = 4593。
+- 基准值 `avg`：该 Boss 所有承伤符卡（跳过 `mode==='survival'`）运行期血量的平均值，逐卡口径同 Boss 构造器（`t.hp > 0` 用它，否则 `limit * dps * CARD_HP_ANCHOR`，再 × `finalHpMulFor(key)` 四舍五入）。该口径已抽到 `src/game/bossTuning.js` 的 `cardAvgRuntimeHp(key)`，小头目与道中杂兵共用。
+- 返回 `Math.max(1, Math.round(avg × MINIBOSS_CARD_SHARE))`，`MINIBOSS_CARD_SHARE = 0.25`（2026-10-27 第六轮：原为 ×0.5，用户要求「小头目血量减少 1/2」）。不乘难度血量倍率。
+- 当前值（2026-10-27 第六轮后）：S1 rumia **2296**、S2 wriggle **2489**、S3 cirno **2533**、S5 yuyuko **2492**、S6 kaguya **2189**；改前（半卡口径）依次是 4593 / 4978 / 5066 / 4983 / 4379。
+- 参考：S1 Boss 两卡运行期 8251 / 10120 → 平均 9186 → 小头目 2296。
+
+### D1b 道中杂兵血量（2026-10-27 第六轮新增）
+
+用户口述「各个小怪血量增到现在小头目的 1/3」——「现在的小头目」= 本轮改动前的半卡口径，因此：
+
+- 基准 = `avg × MOB_CARD_SHARE`，`MOB_CARD_SHARE = 1/6`（= 半卡 0.5 的 1/3），基准兵种 `fairy`。
+- 兵种之间保留原 6:9:12:15 梯度，按 `PLATFORM_KINDS[kind].hp / PLATFORM_KINDS.fairy.hp` 等比放大：fairy / flyer ×1、weaver ×1.5、lancer / spreader / spinner ×2、bomber ×2.5。
+- 实现：`enemies.js` 的 `EnemyManager` 构造时算出 `mobHpOf(kind)`，传给 `makeFairy`（含 tier≥3 的空中护航）。平台面小怪从此**不再吃 `ENEMY_HP_SCALE`**；STG 杂兵（`src/game/stg.js`）不变。
+- 当前单只血量：S1 1531 / S2 1659 / S3 1689 / S5 1661 / S6 1460（fairy 基准；bomber 分别为 3827 / 4148 / 4221 / 4153 / 3649）。各面道中血量合计见 `docs/BALANCE_TARGETS.md` §2.2。
 
 ### D2 数量与位置（`src/game/miniboss.js` 内实现，stage 只负责创建/驱动）
 

@@ -8,7 +8,7 @@
  *     读 MinibossManager 的布置快照：数量 / 位置 / 原型 / 进场方案 / 血量。
  *  2. 断言：
  *     - 数量 = §6-D2 预期（S1 1 / S2 2 / S3 2 / S5 1 / S6 3）
- *     - halfCardHp = bossHalfCardHp(该面 Boss)（4593 / 4978 / 5066 / 4983 / 4379）
+ *     - halfCardHp = bossHalfCardHp(该面 Boss)（2026-10-27 第六轮后：2296 / 2489 / 2533 / 2492 / 2189）
  *     - 位置在 [60*32, bossArena.left-12*32] 内，且 S5 不落进妖梦中 Boss 舞台
  *     - 同关重开：位置 / 原型 / 进场方案完全一致（确定性）
  *     - 触发距离：阈值扫描（planX-d 处是否开演）+ 模拟走近（tSpawn 瞬间的像素距离），
@@ -61,7 +61,7 @@ const STAGES = String(argv.stages || '1,2,3,5,6')
 /** §6-D2 预期布置数量。 */
 const EXPECT_COUNT = { 1: 1, 2: 2, 3: 2, 5: 1, 6: 3 };
 /** D1 预期血量（bossHalfCardHp）。 */
-const EXPECT_HP = { 1: 4593, 2: 4978, 3: 5066, 5: 4983, 6: 4379 };
+const EXPECT_HP = { 1: 2296, 2: 2489, 3: 2533, 5: 2492, 6: 2189 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

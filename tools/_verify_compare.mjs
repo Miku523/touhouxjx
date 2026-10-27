@@ -72,7 +72,7 @@ const pass = (why) => ({ pass: true, why });
     const bCount = num(b.spawnPerScreen), cCount = num(c.spawnPerScreen);
     const bHpScr = num(b.hpPerScreen), cHpScr = num(c.hpPerScreen);
     const countRatio = bCount && cCount ? cCount / bCount : null;
-    // #1 有效血量口径 = 单怪有效 HP（PLATFORM_KINDS.hp × ENEMY_HP_SCALE），见 BALANCE_TARGETS §2.2
+    // #1 有效血量口径 = 单怪有效 HP（_verify_static 的 hp.total / spawn.count），见 BALANCE_TARGETS §2.2
     const bHp = bCount && bHpScr ? bHpScr / bCount : null;
     const cHp = cCount && cHpScr ? cHpScr / cCount : null;
     const hpRatio = bHp && cHp ? cHp / bHp : null;

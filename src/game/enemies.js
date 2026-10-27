@@ -20,6 +20,7 @@
 import { T } from './level.js';
 import { drawGenFairy } from '../art/genfairy.js';
 import { scaleEnemyHp, scalePlayerDamage } from './balance.js';
+import { cardAvgRuntimeHp, MOB_CARD_SHARE } from './bossTuning.js';
 
 /**
  * 五色宝石色系。
@@ -226,10 +227,13 @@ function assignEntry(e, air, rng) {
   }
 }
 
-function makeFairy(type, x, y, idx, tint, kind = type, rng = null) {
+function makeFairy(type, x, y, idx, tint, kind = type, rng = null, hpOverride = 0) {
   const colorKey = pickFairyColor(tint, idx);
   const info = PLATFORM_KINDS[kind] || PLATFORM_KINDS[type] || PLATFORM_KINDS.fairy;
   const rnd = rng || Math.random;
+  // 血量：平台面由 EnemyManager 按「本面 Boss 平均符卡血量」算出精确值（hpOverride），
+  // 其它调用方（如测试 / 无 Boss 的关卡）退回全局 ENEMY_HP_SCALE 口径。
+  const hpValue = Number(hpOverride) > 0 ? Number(hpOverride) : scaleEnemyHp(info.hp);
   const vx = info.air ? 0 : (kind === 'lancer' ? 42 : kind === 'weaver' ? 46 : 52);
   return {
     type,
@@ -244,8 +248,8 @@ function makeFairy(type, x, y, idx, tint, kind = type, rng = null) {
     vx,
     vy: 0,
     facing: vx >= 0 ? 1 : -1,
-    hp: scaleEnemyHp(info.hp),
-    maxHp: scaleEnemyHp(info.hp),
+    hp: hpValue,
+    maxHp: hpValue,
     alive: true,
     hitFlash: 0,
     baseY: y,
@@ -346,6 +350,17 @@ export class EnemyManager {
     const entryRng = mulberry32(entrySeed || 0x27d4eb2f);
     const used = {};
     const escorts = [];
+    // 道中杂兵血量（2026-10-27 第六轮用户口述）：「各个小怪血量增到现在小头目的 1/3」。
+    // 基准 = 本面 Boss「平均承伤符卡血量」× MOB_CARD_SHARE（1/6，因为小头目 = 平均 ×0.25，
+    // 而「现在的小头目」= 改前半卡 = 平均 ×0.5，其 1/3 正好是平均 ×1/6）。
+    // 兵种之间保留原 6:9:12:15 梯度（PLATFORM_KINDS.hp / fairy.hp 等比放大）。
+    const mobBase = level.boss ? cardAvgRuntimeHp(level.boss) * MOB_CARD_SHARE : 0;
+    const baseKindHp = PLATFORM_KINDS.fairy.hp;
+    const mobHpOf = (kind) => {
+      if (!(mobBase > 0)) return 0;
+      const k = PLATFORM_KINDS[kind] || PLATFORM_KINDS.fairy;
+      return Math.max(1, Math.round(mobBase * k.hp / baseKindHp));
+    };
     for (const e of level.entities) {
       if (e.type !== 'fairy' && e.type !== 'flyer') continue;
       const kind = pickPlatformKind(e.type, tier, rng, used);
@@ -361,7 +376,7 @@ export class EnemyManager {
         while (level.rectHitsSolid(x, y, info.w, info.h) && y > T * 1.5 && guard < 30) { y -= 8; guard++; }
       }
       // 进场方案在 build 时确定（站桩 / 侧滑 / 天降 / 闪现 / 俯冲）
-      const unit = makeFairy(e.type, x, y, i++, tint, kind, rng);
+      const unit = makeFairy(e.type, x, y, i++, tint, kind, rng, mobHpOf(kind));
       assignEntry(unit, info.air, entryRng);
       this.list.push(unit);
 
@@ -371,7 +386,7 @@ export class EnemyManager {
         const ey = Math.max(T * 1.5, y - 38);
         if (ex > T * 2 && !level.rectHitsSolid(ex, ey, 30, 34)) {
           const ek = rng() < 0.5 ? 'spreader' : 'spinner';
-          const es = makeFairy('flyer', ex, ey, i++, tint, ek, rng);
+          const es = makeFairy('flyer', ex, ey, i++, tint, ek, rng, mobHpOf(ek));
           assignEntry(es, true, entryRng);
           escorts.push(es);
         }

@@ -23,7 +23,7 @@ import { drawGenBoss, ensureBossArt, bossArtHeight, bossArtReady } from '../art/
 import { getDifficulty, bossPhasesFor, scaleBossHp, stageDensityOf } from './difficulty.js';
 import { scalePlayerDamage } from './balance.js';
 // 逐卡限时 / 生存模式 / 卡面数据（43 张符卡的目标时长与创作数据）
-import { cardTuningFor, tierMultipliers, CARD_HP_ANCHOR, finalHpMulFor } from './bossTuning.js';
+import { cardTuningFor, tierMultipliers, CARD_HP_ANCHOR, finalHpMulFor, cardAvgRuntimeHp, MINIBOSS_CARD_SHARE } from './bossTuning.js';
 // 创造模式弹幕设计（每卡专属 pattern 表 + 自定义弹型注册表）
 import { patternsFor } from './bossPatternDesigns.js';
 import { CUSTOM_PATTERNS } from './bossBullets.js';
@@ -3301,46 +3301,22 @@ export class Boss {
 }
 
 /**
- * 小头目血量（docs/ENEMY_VARIETY_SPEC.md §6-D1）：该 Boss「半张符卡」的血量。
+ * 小头目血量（docs/ENEMY_VARIETY_SPEC.md §6-D1）：现在取「半张符卡」的一半。
  *
- * 口径与 Boss 构造器逐卡血量完全一致（boss.js 里的 tuneCards 循环）：
- *   - 显式 t.hp > 0：用它；
- *   - survival 卡：跳过（不承伤，不是血量）；
- *   - 其余伤害卡 / 双条件卡：limit × dps × CARD_HP_ANCHOR；
- * 逐卡乘 finalHpMulFor(key) 并四舍五入（与构造器 :1204-1207 同一步），
- * 再取所有伤害卡的平均值 × 0.5（半张卡）四舍五入。
+ * 2026-10-27 第六轮用户口述「小头目血量减少 1/2」，于是在原「半卡」口径上再减半：
+ *   血量 = 所有承伤符卡运行期血量的平均值 × MINIBOSS_CARD_SHARE（0.25）
  *
- * 因此它天然跟着 CARD_HP_ANCHOR / BOSS_FINAL_HP_MUL 一起变，道中小头目永远
- * 是「该面 Boss 一张卡的一半肉」，不需要另立一张数值表。
+ * 逐卡口径（显式 t.hp > 0 优先 / 否则 limit × dps × CARD_HP_ANCHOR / 跳过 survival /
+ * × finalHpMulFor(key) 四舍五入）由 bossTuning.js 的 cardAvgRuntimeHp 统一提供，
+ * 道中杂兵（enemies.js）也吃同一个平均值，因此小头目与杂兵永远跟着 Boss 一起缩放。
  *
  * @param {string} key BOSS_DEFS 的键（'rumia' | 'wriggle' | 'cirno' | 'yuyuko' | 'kaguya' …）
  * @returns {number} 血量（整数，至少 1）
  */
 export function bossHalfCardHp(key) {
-  const tune = cardTuningFor(key);
-  const cards = tune && Array.isArray(tune.cards) ? tune.cards : null;
-  if (!cards || !cards.length) return 1;
-  const mul = finalHpMulFor(key);
-  const hps = [];
-  for (const t of cards) {
-    if (!t) continue;
-    const mode = t.mode === 'survival' ? 'survival' : (t.mode === 'both' ? 'both' : 'damage');
-    if (mode === 'survival') continue;
-    const hpOverride = Number(t.hp);
-    const dps = Number(t.dps);
-    const limit = Number(t.limit);
-    let hp = 0;
-    if (Number.isFinite(hpOverride) && hpOverride > 0) {
-      hp = Math.max(1, Math.round(hpOverride));
-    } else if (Number.isFinite(dps) && dps > 0 && Number.isFinite(limit) && limit > 0) {
-      hp = Math.max(1, Math.round(limit * dps * CARD_HP_ANCHOR));
-    }
-    if (hp <= 0) continue;
-    hps.push(Math.max(1, Math.round(hp * mul)));
-  }
-  if (!hps.length) return 1;
-  const avg = hps.reduce((a, b) => a + b, 0) / hps.length;
-  return Math.max(1, Math.round(avg * 0.5));
+  const avg = cardAvgRuntimeHp(key);
+  if (!(avg > 0)) return 1;
+  return Math.max(1, Math.round(avg * MINIBOSS_CARD_SHARE));
 }
 
 /**

@@ -112,7 +112,7 @@ function surfaceYAt(level, x) {
  *   level         当前 Level（取 cols / rows / bossArena / midbossArena / gen.seed）
  *   difficulty    'E'|'N'|'H'|'L'|'EX'，用于缩放弹量与弹速
  *   stageNumber   第几面（1 起，仅用于日志/确定性种子）
- *   halfCardHp    单只血量（= bossHalfCardHp(stage.def.boss)）
+ *   halfCardHp    单只血量（= bossHalfCardHp(stage.def.boss)；2026-10-27 第六轮起 = 平均符卡血量 ×0.25）
  *   rngSeed       可选：覆盖确定性 RNG 种子（重开一致性验证用）
  */
 export class MinibossManager {

@@ -5,7 +5,8 @@
  * 口径（BALANCE_TARGETS.md §2.2）：
  *  - 数量：level.entities 里 ENTITY_CHARS 's'(fairy) / 'f'(flyer) 的个数；
  *          另用 EnemyManager 实际生成的 list（含高面数空中护航）做交叉核对。
- *  - 血量：PLATFORM_KINDS[kind].hp × ENEMY_HP_SCALE(0.9)，即 EnemyManager 里 enemies 的 hp 之和。
+ *  - 血量：直接累加 EnemyManager 里 enemies 的 hp（平台面 2026-10-27 第六轮起 = 本面 Boss 平均
+ *          承伤符卡血量 × MOB_CARD_SHARE × 兵种权重，不再吃 ENEMY_HP_SCALE；STG 杂兵仍走 0.9）。
  *  - 「每屏」= 1280px 宽（画面宽），每屏数 = 总数 / (level.w / 1280)。
  *
  * 用法：

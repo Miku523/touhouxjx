@@ -59,7 +59,10 @@ node tools/_sim_player.mjs --stage 0 --diff N --god 1 --maxSteps 60000 --out _pt
 ### 2.2 小怪数量 / 血量
 - 数量：`node tools/_mapdump.mjs`（检查点/地形）或写纯 Node 脚本 `buildLevelRows(gen)` 后统计
   `'s'`/`'f'` 字形（`level.js` 的 `ENTITY_CHARS`：`s`=fairy、`f`=flyer）。
-- 血量：`enemies.js` 的 `PLATFORM_KINDS[kind].hp × scaleEnemyHp(1)`（`balance.js` 的 `ENEMY_HP_SCALE = 0.9`）。
+- 血量：2026-10-27 第六轮起分两套口径——
+  - 平台面小怪（1/2/3/5/6 面）：本面 Boss 的「平均承伤符卡运行期血量」× `MOB_CARD_SHARE`（`bossTuning.js`，= 1/6）× 兵种权重（`PLATFORM_KINDS[kind].hp / PLATFORM_KINDS.fairy.hp`，即 6:9:12:15），实际生成时由 `enemies.js` 的 `EnemyManager` 逐只算好，**不再乘 `ENEMY_HP_SCALE`**。
+  - STG 杂兵（4 面）：`stg.js` 的 `ENEMY_KINDS[*].hp × scaleEnemyHp(1)`（`balance.js` 的 `ENEMY_HP_SCALE = 0.9`）。
+- 平台面道中血量合计（N 难度、含空中护航；`node _pt/mobhp_check.mjs` 实测）：S1 116,356（62 只）/ S2 142,693（65 只）/ S3 219,527（87 只）/ S5 25,746（11 只）/ S6 329,888（156 只）；小头目单只 2296 / 2489 / 2533 / 2492 / 2189。
 
 ### 2.3 亮度（#3）
 - 用 `tools/_shot_stage.mjs --stage N --url http://127.0.0.1:8138/index.html` 抓多个进度点（可传 `--frames`），

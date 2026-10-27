@@ -11,7 +11,7 @@
  * 版本：改动本文件后记得同步 index.html 里的 ?v= 与 sw.js 的 CACHE_VERSION。
  */
 
-export const PLATFORM_VERSION = '1.6.17';
+export const PLATFORM_VERSION = '1.6.18';
 
 const VERSION = PLATFORM_VERSION;
 /** 只在同一个 origin + 安全上下文里注册（GitHub Pages / 本地 8138 都满足） */
@@ -948,7 +948,7 @@ export function initPlatform(opts = {}) {
 /* ============================================================
    12) 自动初始化
    index.html 只要引这一个模块就能用：
-     <script type="module" src="./src/ui/platform.js?v=1.6.17"></script>
+     <script type="module" src="./src/ui/platform.js?v=1.6.18"></script>
    业务需要 onBack 时，再调一次 initPlatform({ onBack })（幂等，只更新回调）。
    测试若想「只 import 不生效」，先设 window.__HKS_PLATFORM_NO_AUTO = true。
    ============================================================ */
