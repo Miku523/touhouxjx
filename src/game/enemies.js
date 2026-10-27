@@ -350,9 +350,9 @@ export class EnemyManager {
     const entryRng = mulberry32(entrySeed || 0x27d4eb2f);
     const used = {};
     const escorts = [];
-    // 道中杂兵血量（2026-10-27 第六轮用户口述）：「各个小怪血量增到现在小头目的 1/3」。
-    // 基准 = 本面 Boss「平均承伤符卡血量」× MOB_CARD_SHARE（1/6，因为小头目 = 平均 ×0.25，
-    // 而「现在的小头目」= 改前半卡 = 平均 ×0.5，其 1/3 正好是平均 ×1/6）。
+    // 道中杂兵血量（2026-10-27 第八轮用户口述）：「小怪血量削去 1/2，小头目削去 1/3」。
+    // 基准 = 本面 Boss「平均承伤符卡血量」× MOB_CARD_SHARE（1/12 = 第六轮 1/6 再乘 1/2，
+    // 正好是小头目（平均 ×1/6）的一半）。
     // 兵种之间保留原 6:9:12:15 梯度（PLATFORM_KINDS.hp / fairy.hp 等比放大）。
     const mobBase = level.boss ? cardAvgRuntimeHp(level.boss) * MOB_CARD_SHARE : 0;
     const baseKindHp = PLATFORM_KINDS.fairy.hp;
