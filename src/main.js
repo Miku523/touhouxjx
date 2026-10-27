@@ -1426,6 +1426,29 @@ class Game {
     this._createStage(all[index], index, false, { skipIntro: true });
   }
 
+  /**
+   * EXTRA 连环战切曲：同一首战斗曲再次登场时接着上次的位置放。
+   * 咲夜第一场放 ex_pre，蕾米莉亚登场换成 ex_mid 时把 ex_pre 停在第几秒记下来；
+   * 咲夜第二场又要 ex_pre → 从记下的那一段接着放（紧跟第一次结束后的部分），不从头上重来。
+   * 记账放在 this._chainMusicPos（曲目 key → 本圈内的秒数），重开本关 / 续关随 _createStage 重置。
+   * @param {string} name 曲目 key
+   */
+  _playChainMusic(name) {
+    if (!name) return;
+    const pos = this._chainMusicPos || (this._chainMusicPos = new Map());
+    const cur = this.audio?.currentSong;
+    const prog = this.audio?.musicProgress;
+    // 换下去的曲目先记账；同一首（第一场刚开打就是它）不用记，也别把它掐断重播
+    if (cur && cur !== name && prog) pos.set(cur, prog.elapsed);
+    const from = pos.get(name);
+    if (from == null) {
+      this.audio.playMusic?.(name);
+      return;
+    }
+    pos.delete(name); // 只用一次：之后这场再被切走会重新记账
+    this.audio.playMusic?.(name, { from });
+  }
+
   _createStage(def, index, isExtra, opts = {}) {
     this._hidePanel();
     // 厚涂背景现在就请求：本关的（万一还没预取）与下一面的（一关好几分钟，
@@ -1460,6 +1483,9 @@ class Game {
     // 本次进关还没切到 Boss 曲；resumeBoss 时下面的 beginBoss() 会同步把它翻成 true，
     // 稍后的播曲那里就不会把道中曲再盖上去。
     this._bossMusicSwitched = false;
+    // EXTRA 连环战：每首战斗曲「上次放到第几秒」。换下去时记一笔，同一首再次登场
+    // （咲夜第二场的 ex_pre）就接着那段放，不从头上重来；重开本关 / 续关都从零开始。
+    this._chainMusicPos = new Map();
     this.stage = new Stage({
       def,
       index,
@@ -1696,13 +1722,14 @@ class Game {
         {
           const lm = this._levelMusic;
           if (this.inExtra && data.chain) {
-            // 连环战：每场按 EXTRA_CHAIN.music 选曲（咲夜 ex_pre / 蕾米 ex_mid / 芙兰 extra）
+            // 连环战：每场按 EXTRA_CHAIN.music 选曲（咲夜 ex_pre / 蕾米 ex_mid / 芙兰 extra）。
+            // 同一首再次登场（咲夜第二场）不从头重播，接着第一次被换下去的位置继续。
             this._extraChainIdx = data.chainIndex | 0;
             const slot = data.music === 'mid' ? 'mid' : data.music === 'boss' ? 'boss' : 'pre';
             const wanted = (lm && lm[slot]) || (lm && lm.pre) || (lm && lm.boss);
             if (wanted) {
               this._bossMusicSwitched = true;
-              this.audio.playMusic?.(wanted);
+              this._playChainMusic(wanted);
             }
           } else if (lm && lm.mid && data.midboss) {
             this._bossMusicSwitched = true;

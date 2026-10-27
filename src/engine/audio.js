@@ -61,6 +61,7 @@ export class AudioEngine {
     this._events = null;       // 展平并按时间排序的事件表
     this._eventCache = new Map(); // key → events，切歌不用重排
     this._songStart = 0;       // 本轮循环的绝对起始时间（ctx 时间）
+    this._startFrom = 0;       // 下一次起播的偏移（秒，本圈内）：见 playMusic(name, {from})
     this._songIdx = 0;         // 事件指针
     this._songLoop = 0;        // 已循环轮数
     this._songPlayOut = 0;     // >0 = 本轮放完后渐出（秒数），见 playOutMusic()
@@ -175,13 +176,21 @@ export class AudioEngine {
    * 切换 BGM 曲目。name 必须是曲库 key
    * （title / stage1..stage6 / extra / gameover / ending / endingW）。
    * 音乐开关关闭时只记住曲目，等 setMusic(true) 再播。
+   *
+   * opts.from：从这首曲子的第几秒开始放（缺省 0 = 从头）。EXTRA 连环战里同一首战斗曲
+   * 再次登场时用它接着上次被换下去的位置，而不是从头重来。偏移按「本圈内」折算，
+   * 循环曲目同样适用（超过曲长取模）。
    * @param {string} name
+   * @param {{from?: number}} [opts]
    */
-  playMusic(name) {
+  playMusic(name, opts) {
     if (!name || typeof name !== 'string') return;
-    // 同一首且正在播就直接返回；但正在渐出收尾时不算「在播」，要重新起播把它拉回来
+    // 同一首且正在播就直接返回；但正在渐出收尾时不算「在播」，要重新起播把它拉回来。
+    // 已经在放的这首不用再摆位置：从中间接上的请求本来就该落在它现在的位置附近。
     if (this._songName === name && this._musicOn && this._fadeTimer === null) return;
+    const from = opts && Number.isFinite(opts.from) ? Math.max(0, opts.from) : 0;
     this._songName = name;
+    this._startFrom = from; // 起播偏移：_startMusic 消费一次就清掉
     // 正在播就立刻换：先掐掉旧曲排期的节点，避免两首叠在一起。
     // 「放完渐出」留下的尾音也归这里管——换曲时照样收干净。
     if (this._musicOn || this._musicVoices.size) this._stopMusic();
@@ -738,6 +747,10 @@ export class AudioEngine {
   }
 
   _startMusic() {
+    // 起播偏移（playMusic(name, {from})）只对这一次起播有效：先取走再判断，
+    // 免得「曲目数据缺失 / 已在放」这几种提前返回把偏移留到下一次莫名其妙的起播上
+    const from = Math.max(0, Number(this._startFrom) || 0);
+    this._startFrom = 0;
     if (!this.ctx || this._musicOn) return; // 幂等守卫：绝不叠音
     // 显式「静音进关」状态（silenceMusic 把曲目留空）：没有待播曲目就保持安静，
     // 别把空曲目当成标题曲放出来。
@@ -748,14 +761,14 @@ export class AudioEngine {
     this._songPlayOut = 0; // 起播一律从「循环」开始，收尾由 playOutMusic() 现点
     // 带 audio 字段的曲目直接播音频文件（离线渲染的成品），合成数据留作加载失败时的回退
     if (song.audio) {
-      this._startAudioMusic(name, song);
+      this._startAudioMusic(name, song, from);
       return;
     }
-    this._startSynthMusic(name, song);
+    this._startSynthMusic(name, song, from);
   }
 
-  /** 走音频文件的 BGM：fetch → decodeAudioData → 无缝循环播放 */
-  _startAudioMusic(name, song) {
+  /** 走音频文件的 BGM：fetch → decodeAudioData → 无缝循环播放。from = 从第几秒起播（默认 0） */
+  _startAudioMusic(name, song, from = 0) {
     if (!this.ctx || this._musicOn || this._audioPending === name) return;
     const url = song.audio;
     const begin = (buf) => {
@@ -769,9 +782,13 @@ export class AudioEngine {
         src.loop = true;
         src.connect(this._musicOut());
         const when = this.ctx.currentTime + 0.06;
-        src.start(when);
+        // 从中间接上时直接从对应采样位置起播；_songStart 前推同样的偏移，
+        // 进度条 / 循环计数 / playOutMusic 的「这一轮还剩多久」仍然按整首算
+        const dur = Number(buf.duration) || Number(song.duration) || 0;
+        const offset = dur > 0 ? ((from % dur) + dur) % dur : 0;
+        src.start(when, offset);
         this._song = Object.assign({}, song, { duration: buf.duration });
-        this._songStart = when;
+        this._songStart = when - offset;
         this._songIdx = 0;
         this._songLoop = 0;
         this._events = [];
@@ -800,7 +817,7 @@ export class AudioEngine {
     if (typeof fetch !== 'function') {
       // 老环境没有 fetch：直接回退合成，别让 BGM 空着
       this._audioPending = null;
-      this._startSynthMusic(name, song);
+      this._startSynthMusic(name, song, from);
       return;
     }
     fetch(url)
@@ -816,12 +833,12 @@ export class AudioEngine {
       .catch(() => {
         // 文件缺失 / 解码失败：回退到合成器版本
         this._audioPending = null;
-        if (this._songName === name && this._musicRequested) this._startSynthMusic(name, song);
+        if (this._songName === name && this._musicRequested) this._startSynthMusic(name, song, from);
       });
   }
 
-  /** 走实时合成的 BGM（曲库音符事件表 + 前瞻调度） */
-  _startSynthMusic(name, song) {
+  /** 走实时合成的 BGM（曲库音符事件表 + 前瞻调度）。from = 从第几秒起播（默认 0） */
+  _startSynthMusic(name, song, from = 0) {
     if (!this.ctx || this._musicOn) return;
     this._song = song;
     this._songSoft = !!song.soft;
@@ -831,11 +848,33 @@ export class AudioEngine {
     // 真正开始发声时才算「听见」：音乐关着时切歌不会误解锁回忆室里的曲目
     this.onSongStart?.(name);
 
-    this._songStart = this.ctx.currentTime + 0.06;
-    this._songIdx = 0;
-    this._songLoop = 0;
+    // 从中间接上：跳过偏移之前的事件，起播点前推同样的时间（进度 / 循环 / 渐出仍按整首算）。
+    // 偏移可能落在最后一个事件之后——那就直接从下一圈的第一个事件排起，别让常驻静音。
+    const dur = Number(song.duration) || 0;
+    const offset = dur > 0 ? ((from % dur) + dur) % dur : 0;
+    let idx = this._eventIndexAt(this._events, offset);
+    let loop = 0;
+    if (idx >= this._events.length) {
+      idx = 0;
+      loop = 1;
+    }
+    this._songStart = this.ctx.currentTime + 0.06 - offset;
+    this._songIdx = idx;
+    this._songLoop = loop;
     this._musicOn = true;
     this._musicTick();
+  }
+
+  /** 事件表里第一个时间 ≥ t 的下标（从曲中接上时定位起播点用） */
+  _eventIndexAt(events, t) {
+    let lo = 0;
+    let hi = events.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (events[mid][0] < t) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
   }
 
   _stopMusic() {
