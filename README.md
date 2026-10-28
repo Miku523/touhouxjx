@@ -310,7 +310,8 @@ git push origin main   # 推送后 Pages 自动重建，约 1 分钟生效
 ```
 
 - 线上入口只依赖 `index.html`、`manifest.webmanifest`、`sw.js` 和 `src/`；`docs/`、`tools/` 只留在仓库，不影响加载。`.nojekyll` 关闭 Jekyll 处理，避免下划线开头的目录被吞。
-- 改动 `src/` 里任意脚本或样式后，三处版本串必须一起升：`index.html` 的 5 个 `?v=`、`src/ui/platform.js` 的 `PLATFORM_VERSION`、`sw.js` 的 `CACHE_VERSION`（以及 `PRECACHE` 里的 `platform.css?v=`）。入口文件自身也有 10 分钟 CDN 缓存，版本串能让旧访客立刻拿到新代码，不会出现「新 HTML + 旧 JS」的错配，也不会被旧 Service Worker 缓存套住。`src/` 里那些被 import、不在 `?v=` 清单里的内层模块（如 `src/engine/audio.js`）由 Service Worker 兜底：JS / CSS 请求一律网络优先、断网才回退缓存，所以发版后刷新一次就是新代码；不要改回 `stale-while-revalidate`，那会先吐旧模块、要刷两次才更新，正好造成「新 HTML + 旧模块」的错配。
+- 改动 `src/` 里任意脚本或样式后，三处版本串必须一起升：`index.html` 的 10 个 `?v=`（8 个样式表 + `main.js` 的 modulepreload 与入口 `<script>`）、`src/ui/platform.js` 的 `PLATFORM_VERSION`、`sw.js` 的 `CACHE_VERSION`（以及 `PRECACHE` 里的 `platform.css?v=`）。入口文件自身也有 10 分钟 CDN 缓存，版本串能让旧访客立刻拿到新代码，不会出现「新 HTML + 旧 JS」的错配，也不会被旧 Service Worker 缓存套住。`src/` 里那些被 import、不在 `?v=` 清单里的内层模块（如 `src/engine/audio.js`）由 Service Worker 兜底：JS / CSS 请求一律网络优先、断网才回退缓存，所以发版后刷新一次就是新代码；不要改回 `stale-while-revalidate`，那会先吐旧模块、要刷两次才更新，正好造成「新 HTML + 旧模块」的错配。
+- **同一个版本串绝不发布两次**：入口 URL 里的 `?v=` 就是缓存键，带 `?v=` 的资源在 Service Worker 里走 `cacheFirst`（`sw.js` 里 `versioned ? cacheFirst(request) : staleWhileRevalidate(request)`），老访客手上那份旧模块会一直命中缓存——现象是「代码明明推上去了，线上却一点没变」，强刷也常被 SW 拦住。所以哪怕只改 `main.js` / CSS 的内容、不新增文件，也必须换一个新号（例如 1.6.29 → 1.6.30）；升号要全量替换，改完用 `git grep -n '1\.6\.'` 确认没有旧号残留。2026-10 的秘籍上线就撞过这个坑：1.6.29 已被另一批改动先发出去，秘籍只改了 `main.js` 内容而入口仍是 `main.js?v=1.6.29`，线上一直给旧模块，最后升到 1.6.30 才生效。
 - 改素材时别手写二进制：`src/art/gen/` 的图片按 `python tools/optimize_art_webp.py` 重新生成 `.webp`（代码里引用 `.webp`），三首预渲染曲按 `python tools/optimize_audio_mp3.py` 重新转码；`src/` 的 import 关系一变，还要重跑 `python tools/gen_modulepreload.py --write`，否则 `index.html` 里的 modulepreload 清单会过期。国内访问的现状、实测数据与复测方法见 `docs/NETWORK_CN.md`。
 - 线上响应头是 `Cache-Control: max-age=600`；核对线上是否已是新版本，可直接对比哈希：
 
