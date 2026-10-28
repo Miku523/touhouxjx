@@ -129,20 +129,21 @@
 新增 `export function bossHalfCardHp(key)`：
 
 - 基准值 `avg`：该 Boss 所有承伤符卡（跳过 `mode==='survival'`）运行期血量的平均值，逐卡口径同 Boss 构造器（`t.hp > 0` 用它，否则 `limit * dps * CARD_HP_ANCHOR`，再 × `finalHpMulFor(key)` 四舍五入）。该口径已抽到 `src/game/bossTuning.js` 的 `cardAvgRuntimeHp(key)`，小头目与道中杂兵共用。
-- 返回 `Math.max(1, Math.round(avg × MINIBOSS_CARD_SHARE))`，`MINIBOSS_CARD_SHARE = 1 / 6`（2026-10-27 第八轮：用户要求「小头目削去 1/3」，在第六轮 ×0.25 的基础上再 ×2/3）。不乘难度血量倍率。
-- 当前值（2026-10-27 第八轮后）：S1 rumia **1531**、S2 wriggle **1659**、S3 cirno **1689**、S5 yuyuko **1661**、S6 kaguya **1460**；第六轮（×0.25）依次是 2296 / 2489 / 2533 / 2492 / 2189，半卡口径是 4593 / 4978 / 5066 / 4983 / 4379。
-- 参考：S1 Boss 两卡运行期 8251 / 10120 → 平均约 9185 → 小头目 1531。
+- 返回 `Math.max(1, Math.round(avg × MINIBOSS_CARD_SHARE))`，`MINIBOSS_CARD_SHARE = 2 / 15`（2026-10-27 第九轮：用户要求「小头目砍 1/5」，在第八轮 ×1/6 的基础上再 ×4/5）。不乘难度血量倍率。
+- 当前值（2026-10-27 第九轮后）：S1 rumia **1225**、S2 wriggle **1327**、S3 cirno **1351**、S5 yuyuko **1329**、S6 kaguya **1168**；第八轮（×1/6）依次是 1531 / 1659 / 1689 / 1661 / 1460，第六轮（×0.25）是 2296 / 2489 / 2533 / 2492 / 2189，半卡口径是 4593 / 4978 / 5066 / 4983 / 4379。
+- 参考：S1 Boss 两卡运行期 8251 / 10120 → 平均约 9185 → 小头目 1225。
 
-### D1b 道中杂兵血量（2026-10-27 第六轮新增，第八轮再收一刀）
+### D1b 道中杂兵血量（2026-10-27 第六轮新增，第八、九轮各再收一刀）
 
 第六轮用户口述「各个小怪血量增到现在小头目的 1/3」——「现在的小头目」= 本轮改动前的半卡口径；
-第八轮用户口述「小怪血量削去 1/2，小头目削去 1/3」——在第六轮数值上再收一刀：
+第八轮用户口述「小怪血量削去 1/2，小头目削去 1/3」；
+第九轮用户口述「小怪再砍 1/2，小头目砍 1/5」——在上一轮数值上再收：
 
-- 基准 = `avg × MOB_CARD_SHARE`，`MOB_CARD_SHARE = 1/12`（第六轮 1/6 再 ×1/2），基准兵种 `fairy`。
-  小头目同时变成 `avg × 1/6`，因此**小怪血量正好是小头目的一半**（1/12 : 1/6 = 1 : 2）。
+- 基准 = `avg × MOB_CARD_SHARE`，`MOB_CARD_SHARE = 1/24`（第六轮 1/6 → 第八轮 1/12 → 第九轮再 ×1/2），基准兵种 `fairy`。
+  小头目同时是 `avg × 2/15`，因此**小怪约为小头目的 5/16（≈31%）**。
 - 兵种之间保留原 6:9:12:15 梯度，按 `PLATFORM_KINDS[kind].hp / PLATFORM_KINDS.fairy.hp` 等比放大：fairy / flyer ×1、weaver ×1.5、lancer / spreader / spinner ×2、bomber ×2.5。
 - 实现：`enemies.js` 的 `EnemyManager` 构造时算出 `mobHpOf(kind)`，传给 `makeFairy`（含 tier≥3 的空中护航）。平台面小怪从此**不再吃 `ENEMY_HP_SCALE`**；STG 杂兵（`src/game/stg.js`）不变。
-- 当前单只血量：S1 765 / S2 830 / S3 844 / S5 831 / S6 730（fairy 基准；bomber 分别为 1914 / 2074 / 2111 / 2076 / 1825）。各面道中血量合计见 `docs/BALANCE_TARGETS.md` §2.2。
+- 当前单只血量：S1 383 / S2 415 / S3 422 / S5 415 / S6 365（fairy 基准；weaver 574 / 622 / 633 / 623 / 547，lancer / spreader / spinner 765 / 830 / 844 / 831 / 730，bomber 957 / 1037 / 1055 / 1038 / 912）。各面道中血量合计见 `docs/BALANCE_TARGETS.md` §2.2。
 
 ### D2 数量与位置（`src/game/miniboss.js` 内实现，stage 只负责创建/驱动）
 

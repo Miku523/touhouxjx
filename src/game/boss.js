@@ -3302,11 +3302,11 @@ export class Boss {
 }
 
 /**
- * 小头目血量（docs/ENEMY_VARIETY_SPEC.md §6-D1）：现在取「平均承伤符卡血量」的 1/6。
+ * 小头目血量（docs/ENEMY_VARIETY_SPEC.md §6-D1）：现在取「平均承伤符卡血量」的 2/15。
  *
  * 2026-10-27 第六轮用户口述「小头目血量减少 1/2」→ 半卡再减半（×0.25）；
- * 第八轮「小头目削去 1/3」→ 再乘 2/3，即：
- *   血量 = 所有承伤符卡运行期血量的平均值 × MINIBOSS_CARD_SHARE（1/6）
+ * 第八轮「小头目削去 1/3」→ 再乘 2/3；第九轮「小头目砍 1/5」→ 再乘 4/5，即：
+ *   血量 = 所有承伤符卡运行期血量的平均值 × MINIBOSS_CARD_SHARE（2/15）
  *
  * 逐卡口径（显式 t.hp > 0 优先 / 否则 limit × dps × CARD_HP_ANCHOR / 跳过 survival /
  * × finalHpMulFor(key) 四舍五入）由 bossTuning.js 的 cardAvgRuntimeHp 统一提供，
