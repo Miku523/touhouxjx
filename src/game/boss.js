@@ -1423,6 +1423,10 @@ export class Boss {
           // CARD_HP_ANCHOR：保底火力从「满火力 Lv4」下调到「Lv2 / Lv3」（见 bossTuning.js）。
           ph.hp = Math.max(1, Math.round(limit * dps * CARD_HP_ANCHOR));
         }
+        // 单卡血量微调（2026-10-28 第十二轮新增 hpAdjust，默认 1）：
+        // 乘在逐卡基础血量之后、finalHpMulFor 之前，和 bossTuning.js 的 cardAvgRuntimeHp 同口径。
+        const hpAdjust = Number(t.hpAdjust) > 0 ? Number(t.hpAdjust) : 1;
+        if (hpAdjust !== 1) ph.hp = Math.max(1, Math.round(ph.hp * hpAdjust));
         ph.mode = mode;
         ph.limit = Number.isFinite(limit) && limit > 0 ? limit : null;
         ph.fx = t.fx || null;
@@ -3302,11 +3306,12 @@ export class Boss {
 }
 
 /**
- * 小头目血量（docs/ENEMY_VARIETY_SPEC.md §6-D1）：现在取「平均承伤符卡血量」的 2/15。
+ * 小头目血量（docs/ENEMY_VARIETY_SPEC.md §6-D1）：现在取「平均承伤符卡血量」的 1/10。
  *
  * 2026-10-27 第六轮用户口述「小头目血量减少 1/2」→ 半卡再减半（×0.25）；
- * 第八轮「小头目削去 1/3」→ 再乘 2/3；第九轮「小头目砍 1/5」→ 再乘 4/5，即：
- *   血量 = 所有承伤符卡运行期血量的平均值 × MINIBOSS_CARD_SHARE（2/15）
+ * 第八轮「小头目削去 1/3」→ 再乘 2/3；第九轮「小头目砍 1/5」→ 再乘 4/5；
+ * 第十三轮（2026-10-28）「小头目血量再下降 1/4」→ 再乘 3/4，即：
+ *   血量 = 所有承伤符卡运行期血量的平均值 × MINIBOSS_CARD_SHARE（1/10）
  *
  * 逐卡口径（显式 t.hp > 0 优先 / 否则 limit × dps × CARD_HP_ANCHOR / 跳过 survival /
  * × finalHpMulFor(key) 四舍五入）由 bossTuning.js 的 cardAvgRuntimeHp 统一提供，

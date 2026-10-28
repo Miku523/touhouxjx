@@ -22,6 +22,8 @@
  *           运行期血量 = Math.max(1, Math.round(limit * dps * CARD_HP_ANCHOR))，不乘难度血量系数。
  *           survival 卡不承伤、不参与血量反推 → null。
  * - hp      可选：直接钉死该卡基础血量，优先于 limit × dps × CARD_HP_ANCHOR（EXTRA 12 张里的击破 / 双条件卡走这条）。
+ * - hpAdjust 可选：该卡专属血量微调倍率（默认 1），乘在 limit × dps × CARD_HP_ANCHOR（或显式 hp）之后、
+ *           finalHpMulFor(key) 之前；只用于 1% 以内的单卡微调，不动限时 / dps 标定。
  * - densityMul / speedMul  该卡自身的基础密度 / 弹速倍率（默认 1），会与 tier 相乘。
  * - name    与 src/game/boss.js 里 BOSS_DEFS[key].phases[i].name 完全一致，仅供数据校验 / 调试；
  *           运行期卡名仍以 BOSS_DEFS 为准。
@@ -137,12 +139,14 @@ export function finalHpMulFor(key) {
  *  - 第十一轮用户口述：「这是最高血量的小怪，但是现在我不想小怪都是这个血量，这样太难打了」
  *    → 小怪改成分层：普通兵 = 基准 × 1/2（很脆，绝大多数），精英兵 = 基准 × 2（少数），
  *    每只按 MOB_ELITE_CHANCE 抽精英（独立随机流，不影响种类/进场分布）。
+ *  - 第十二轮用户口述：「全部小怪小头目血量再下降 1/4 且小怪血量随机性延续」
+ *    → 小头目 ×2/15 再 ×3/4 = 平均 × 1/10；小怪 ×1/48 再 ×3/4 = 平均 × 1/64，分层与随机性保持不变。
  * 其余兵种仍按 PLATFORM_KINDS.hp 的 6:9:12:15 权重等比放大（见 enemies.js 的 EnemyManager）。
  * 只有平台面道中走这套；STG 杂兵（stg.js）与 Boss 血量完全不受影响。
  * 想整体调松紧只改这几个常量。
  */
-export const MINIBOSS_CARD_SHARE = 2 / 15;
-export const MOB_CARD_SHARE = 1 / 48;
+export const MINIBOSS_CARD_SHARE = 1 / 10;
+export const MOB_CARD_SHARE = 1 / 64;
 /**
  * 道中小怪血量分层（2026-10-28 第十一轮）：
  *  - 普通兵 = 基准 × MOB_TRASH_SCALE（1/2）→ 很脆，占绝大多数
@@ -162,7 +166,8 @@ export const MOB_ELITE_SIZE_SCALE = 1.2;
 /**
  * 该 Boss 所有「承伤符卡」（跳过 survival）运行期血量的平均值。
  * 逐卡口径与 Boss 构造器完全一致：显式 hp 优先，否则 limit × dps × CARD_HP_ANCHOR，
- * 再 × finalHpMulFor(key) 并四舍五入。没有符卡数据时返回 0。
+ * 再乘该卡 hpAdjust（默认 1），最后 × finalHpMulFor(key)，每步都四舍五入。
+ * 没有符卡数据时返回 0。
  * 小头目血量（bossHalfCardHp）与小怪血量都以它为基准，保证道中永远跟 Boss 一起缩放。
  */
 export function cardAvgRuntimeHp(key) {
@@ -184,6 +189,8 @@ export function cardAvgRuntimeHp(key) {
       hp = Math.max(1, Math.round(limit * dps * CARD_HP_ANCHOR));
     }
     if (hp <= 0) continue;
+    const adjust = Number(t.hpAdjust) > 0 ? Number(t.hpAdjust) : 1;
+    if (adjust !== 1) hp = Math.max(1, Math.round(hp * adjust));
     hps.push(Math.max(1, Math.round(hp * mul)));
   }
   if (!hps.length) return 0;
@@ -204,11 +211,13 @@ export const BOSS_CARD_TUNING = {
         name: '宵暗「月之暗面」', note: '黑暗氛围',
         limit: 50, mode: 'damage', tier: 3, fx: 'moon', accent: '#b48cff',
         effect: 'none', dps: 235.7,
+        hpAdjust: 0.992, // 2026-10-28 第十二轮：第一面第一张卡血量 −0.8%
       },
       {
         name: '暗符「黑暗吞噬」', note: '黑暗吞噬氛围；被漩涡吸住',
         limit: 60, mode: 'damage', tier: 3, fx: 'night', accent: '#8f6bd8',
         effect: 'devourPull', dps: 240.9,
+        hpAdjust: 0.982, // 2026-10-28 第十二轮：第一面第二张卡血量 −1.8%
       },
     ],
   },
