@@ -554,6 +554,16 @@ export class Stage {
         this.stg.reachedBoss = true;
         this.stg.waves = [];
         this.stg.waveIdx = 0;
+        // 竞技场小头目（§6-D3）：连环战里「打蕾米前 / 打完蕾米后」各一只，悬浮可绕过。
+        // 没有道中几何，`_build` 在 stg 关卡会直接返回，落点由 _triggerChain 显式给。
+        // 血量取蕾米莉亚的平均承伤符卡血量 × MINIBOSS_CARD_SHARE（和她一样是 1.6.27 之后的口径）。
+        this.minibosses = new MinibossManager({
+          level: this.level,
+          difficulty: this.difficulty,
+          stageNumber: 0,
+          halfCardHp: bossHalfCardHp('remilia'),
+          rngSeed: 0x5eed0b1e,
+        });
       }
       this.camera.x = 0;
       this.camera.y = 0;
@@ -1029,6 +1039,12 @@ export class Stage {
         this.onEvent('enemyKill');
       },
     });
+    // EXTRA 竞技场小头目：和 Boss 战并行推进（平台关是「Boss 战冻结」，这里刻意不同）。
+    // 它们不锁场、不算 Boss、不进检查点：打掉是资源，绕过去也不影响连环战。
+    if (this.extraChain && this.minibosses) {
+      this.minibosses.update(dt, this);
+      this.minibosses.damageWithShots(this.shots, this.fx, () => this.onEvent('shotHit'));
+    }
     p.update(dt, input, this.stg.scroll);
 
     // EXTRA：全程固定场地固定镜头（四场 Boss 都站在 scroll + 900），不推进地图
@@ -1118,22 +1134,23 @@ export class Stage {
   }
 
   /**
-   * 伴战小怪：只有咲夜两场。每 10~15 秒一波、每波 3~6 架，进场方式由 stg 自己轮换
+   * 伴战小怪：只有咲夜两场。每 9~13 秒一波、每波 4~7 架，进场方式由 stg 自己轮换
    * （edgeR / top / bottom / chase / corner 全套），混进 Boss 弹幕里当压力源。
-   * 场上已有 10 架就不再补，免得玩家不打就堆满屏。
+   * 场上已有 12 架就不再补，免得玩家不打就堆满屏。
+   * 第十四轮「EX 面略微增加」：由 10~15 秒 / 3~6 架 / 上限 10 各上调一档。
    */
   _updateChainMinions(dt) {
     const enc = EXTRA_CHAIN[this.chainIdx];
     if (!enc || !enc.minions || !this.stg) return;
-    if (this.stg.enemies.length >= 10) return;
+    if (this.stg.enemies.length >= 12) return;
     this.chainMinionT -= dt;
     if (this.chainMinionT > 0) return;
-    this.chainMinionT = 10 + Math.random() * 5;
+    this.chainMinionT = 9 + Math.random() * 4;
     const kinds = ['scout', 'gunner', 'diver', 'sniper', 'spinner'];
     const forms = ['v', 'arc', 'line', 'column'];
     this.stg._spawnWave({
       kind: kinds[(Math.random() * kinds.length) | 0],
-      count: 3 + ((Math.random() * 4) | 0),   // 3~6 架
+      count: 4 + ((Math.random() * 4) | 0),   // 4~7 架
       form: forms[(Math.random() * forms.length) | 0],
       gapY: (Math.random() < 0.5 ? -1 : 1) * (20 + Math.random() * 50),
     }, this.player);
@@ -1568,8 +1585,10 @@ export class Stage {
     this.bossStarted = true;
     this.bossPending = false;
     this.state = 'boss';
-    // Boss 战期间小头目不更新也不该留在场上：全部撤回待机（不锁场、不改 Boss 流程）
-    this.minibosses?.clearActive();
+    // Boss 战期间小头目不更新也不该留在场上：平台关撤回待机（下一次道中还能再遇），
+    // EXTRA 则整批撤下——竞技场小头目只在各自那一场的窗口里存在（见 spawnExMiniboss）。
+    if (this.extraChain) this.minibosses?.removeAll();
+    else this.minibosses?.clearActive();
 
     // EXTRA 连锁战：key / 是否中途 都取当前场次的配置（resumeExtraChain 后也走这里）
     const chainEnc = this.extraChain ? EXTRA_CHAIN[this.chainIdx] : null;
@@ -1613,6 +1632,9 @@ export class Stage {
     // 本场第一张卡在整张卡表里的偏移：1UP 奖励 / 卡号都靠它换算
     this.cardGlobalFrom = (this.boss && this.boss.cardGlobalFrom) || (chainEnc ? (chainEnc.cardFrom || 0) : 0);
     this.boss.x = Math.max(300, Math.min(this.boss.x, this.level.w - 200));
+    // EXTRA：本场窗口里的小头目（§6-D3）。放在 beginBoss 里而不是 _triggerChain，
+    // 是因为 beginBoss 开头的 removeAll/clearActive 会把场上清空，入场必须在清场之后。
+    if (this.extraChain) this.spawnExMiniboss(this.chainIdx);
     // 读档重试 / 触发瞬间人在场地外：先拉回场地内并同步检查点，保证这一场打不出去
     this._snapPlayerIntoBossArena();
     // 平台关近战的演出计数（首次触发不重复播）
@@ -1634,6 +1656,27 @@ export class Stage {
       chainLimit: chainEnc ? (chainEnc.cap || null) : null,
       music: chainEnc ? chainEnc.music : null,
     });
+  }
+
+  /**
+   * EXTRA 连环战的竞技场小头目（§6-D3）：两只，夹着蕾米莉亚那一场。
+   *
+   *   · 第 0 场（咲夜初战 = 打蕾米前）：左侧一只 sniper，从屏幕外滑入；
+   *   · 第 2 场（蕾米击破后的咲夜再登场 = 打完蕾米后）：右侧一只 bomber。
+   *
+   * 它们不锁场、不算 Boss、不进检查点/存档：打掉是资源，绕过去也不影响下一场。
+   * 血量 = bossHalfCardHp('remilia')，和台上那位同一套「平均承伤符卡 × MINIBOSS_CARD_SHARE」口径。
+   * 换场时由 beginBoss 开头的 removeAll() 清掉，所以每只只活在自己那一场的窗口里。
+   *
+   * @param {number} idx 当前连战场次
+   */
+  spawnExMiniboss(idx) {
+    if (!this.minibosses) return;
+    if (idx === 0) {
+      this.minibosses.spawnAt({ tag: 'ex-pre-remilia', x: 620, y: 268, archetype: 'sniper', entry: 'slideL' });
+    } else if (idx === 2) {
+      this.minibosses.spawnAt({ tag: 'ex-post-remilia', x: 1100, y: 252, archetype: 'bomber', entry: 'slideR' });
+    }
   }
 
   _onMidbossDefeated() {

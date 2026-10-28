@@ -188,23 +188,26 @@
 ```js
 export class MinibossManager {
   constructor({ level, difficulty, stageNumber, halfCardHp, rngSeed })
+  spawnAt({ x, y, tag?, archetype?, entry?, hp?, enterNow? })  // EXTRA 显式落点（§6-D6）
   update(dt, stage)                 // stage 提供 player/bullets/fx/_addPower/onEvent
   damageWithShots(shots, fx, onHit) // 玩家子弹结算
-  draw(ctx, cam)                    // 本体 + HP 条
-  clearActive()                     // Boss 开场/关卡结束
+  draw(ctx, cam)                    // 本体 + 头顶原型标签
+  clearActive()                     // Boss 开场/关卡结束：未击破者退回待机（平台关）
+  removeAll()                       // EXTRA 换场：整批撤下
   onPlayerRespawn()                 // 复活后重置未击破者
   get activeCount()
   get defeatedCount()
 }
 ```
 
-`stage.js` 只在平台模式：
-- 构造器创建 `this.minibosses = new MinibossManager({...})`；
+`stage.js` 的集成：
+- 平台模式构造器创建 `this.minibosses = new MinibossManager({...})`（EXTRA 也创建，但 `_build` 在 stg 关卡直接返回，靠 `spawnAt` 落点）；
 - `_updatePlatform` 里 `state==='play'` 时 `this.minibosses.update(dt, this)`；
 - 玩家子弹结算处紧接着 `enemies.damageWithShots(...)` 之后调用 `minibosses.damageWithShots(...)`；
 - `enemies.draw(...)` 之后调用 `minibosses.draw(ctx, cam)`；
-- `beginBoss` 开头 `this.minibosses?.clearActive()`；
-- `_respawn` 成功后 `this.minibosses?.onPlayerRespawn()`。
+- `beginBoss` 开头：平台关 `this.minibosses?.clearActive()`；EXTRA 用 `removeAll()` 换场清理；
+- `_respawn` 成功后 `this.minibosses?.onPlayerRespawn()`；
+- EXTRA：`beginBoss` 建完 Boss 后 `spawnExMiniboss(chainIdx)`，`_updateStg` 里 `stg.update()` 之后 update + damage（见 §6-D6）。
 - 不改 boss 触发/检查点/存档字段。
 
 ### D5 验收
@@ -213,6 +216,27 @@ export class MinibossManager {
 - 自写探针 `tools/_probe_miniboss.mjs`（miniboss 负责）：强制传送到每只小头目位置，输出 `{stage, index, x, halfCardHp, entry, archetype, tSpawn, tDeath, defeated, powerBefore, powerAfter}`，并截图 1 张（HP 条 + 本体）。
 - 断言：击破后 `power` 增加 4（=1/32P 槽）；同关重开位置/原型一致；S5 不落在妖梦舞台内。
 - 断言：小头目存在时不会出现「玩家被锁住不能前进」的情况（不锁场）。
+
+### D6 EXTRA 竞技场小头目（2026-10-28 第十四轮新增）
+
+用户口述「EX 面不变还要略微增加小怪数量」→ 伴战小怪波次加密（见 §6 的其他条目）；
+随后追加「增加 2 个小 boss，打蕾米前一个打完蕾米后一个」，澄清为**可用强化妖精小头目**（`sniper`/`dancer`/`bomber`，悬浮、可绕过）。
+
+- 为什么不能复用 `_build`：EXTRA 是 `mode:'stg'` 的固定竞技场，没有道中列距离可算，`_build()` 在 stg 关卡直接返回。
+  改为**显式落点** `MinibossManager.spawnAt({ x, y, archetype, entry, tag })`：不依赖地形（`y` 由调用方给，
+  不走 `surfaceYAt`），落点后立即 `_startEntry` 进场（不按「玩家走近 700px」触发，否则落在玩家右侧的那只永远 idle）。
+- 落点与窗口（`stage.js` 的 `spawnExMiniboss(chainIdx)`，在 `beginBoss` 建完 Boss 之后调用）：
+  - 第 0 场咲夜初战（= 打蕾米前）：`x 620, y 268` 的 `sniper`，`slideL` 从屏外滑入；
+  - 第 2 场蕾米击破后的咲夜再登场（= 打完蕾米后）：`x 1100, y 252` 的 `bomber`，`slideR`；
+  - 血量统一 `bossHalfCardHp('remilia')` = 1092（= 蕾米平均承伤符卡 10,922 × `MINIBOSS_CARD_SHARE` 1/10），与台上那位同口径。
+- 换场清理：`beginBoss` 开头对 EXTRA 调 `minibosses.removeAll()`（平台关仍是 `clearActive()` 退回待机）——
+  每只只在「自己那一场」的窗口里存在，蕾米登场/芙兰登场时上一只直接撤下，不会跨场叠怪。
+  `spawnAt` 的 `tag` 去重保证读档续战、复活重打不会叠出第三只。
+- 更新与受击走 stg 路径：`_updateStg` 里 `stg.update()` 之后调用 `minibosses.update(dt, this)` +
+  `damageWithShots(this.shots, ...)`（EXTRA 的 Boss 战里也在跑，和平台关「Boss 战冻结」刻意不同）。
+  不锁场、不计入 `chainCleared`、不影响 `advanceChain`，打掉只是 +1/32P 与清弹的喘息。
+- 探针：`_pt/ex_miniboss_probe.mjs` 直接切场（`__next(idx)`），断言 idx0 有 sniper、idx1/idx3 无、idx2 有 bomber，
+  截图 `_pt/ex_mb_1.png` / `_pt/ex_mb_2.png`。
 
 ## 7. 验收协议（lead 统一跑）
 

@@ -9,6 +9,8 @@
  *    打过就多一份资源，打不过就跑，和 Boss 战/存档/结算完全解耦。
  *  - 三种原型（sniper / dancer / bomber）各带两套弹幕循环，进场方案 5 选 1，
  *    同一关每次进入的位置/原型/进场方式固定（关卡 gen.seed 派生的确定性 RNG）。
+ *  - EXTRA 竞技场（§6-D6）：没有道中地形，改用 `spawnAt()` 显式落点——连环战里
+ *    「打蕾米前 / 打完蕾米后」各一只，换场时由 Stage 调 `removeAll()` 整批撤下。
  *
  * 生命周期：
  *   idle ──(玩家接近)──▶ enter ──(0.8~1.5s 无敌)──▶ fight ⇄ (远离 1600px 2s) ──▶ leave ──▶ retired
@@ -251,12 +253,54 @@ export class MinibossManager {
     this.list.forEach((m, i) => { m.index = i; });
   }
 
-  _makeMini(index, planX, rng, archOff, entryOff) {
-    const archetype = ARCHETYPES[(index + archOff) % ARCHETYPES.length];
-    const entry = ENTRIES[(index + entryOff) % ENTRIES.length];
+  /**
+   * 显式在场地里落一只小头目（EXTRA 用）。
+   *
+   * EXTRA 是 stg 模式的固定竞技场，没有道中地形可供 `_build` 按列距离布置，
+   * 所以位置/原型/进场方式/血量都由调用方（Stage 的连环战调度）给定。
+   * 与平台关小头目共用同一套状态机、弹幕、受击与击破奖励，只是存活窗口不同：
+   * 平台关在 Boss 战开始时全部撤回（`clearActive`），EXTRA 的小头目则要跨场存活
+   * ——它们就是「打蕾米前 / 打完蕾米后」各一只的骚扰点，玩家可以绕过去。
+   *
+   * @param {{x:number, y:number, tag?:string, archetype?:string, entry?:string, hp?:number,
+   *          enterNow?:boolean}} spec
+   * @returns {object|null} 新建的小头目；参数非法或同一 tag 已落过时返回 null
+   */
+  spawnAt(spec = {}) {
+    const x = Number(spec.x);
+    const y = Number(spec.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    if (spec.tag && this.list.some((m) => m.spawnTag === spec.tag)) return null;
+    this._explicitSeed = (((this._explicitSeed || 0x9e3779b9) * 1664525) + 1013904223) >>> 0;
+    const m = this._makeMini(this.list.length, x, mulberry32(this._explicitSeed || 1), 0, 0, {
+      ...spec,
+      x,
+      y,
+    });
+    m.explicit = true;
+    m.spawnTag = spec.tag || null;
+    m.index = this.list.length;
+    this.list.push(m);
+    // EXTRA 场地固定、镜头不跟随：进场只看调度时机，不按「玩家走近 700px」触发，
+    // 否则落点在玩家右侧时它会一直 idle 不出场。
+    if (spec.enterNow !== false) this._startEntry(m);
+    return m;
+  }
+
+  _makeMini(index, planX, rng, archOff, entryOff, spec = null) {
+    const archetype = (spec && ARCHETYPES.includes(spec.archetype))
+      ? spec.archetype
+      : ARCHETYPES[(index + archOff) % ARCHETYPES.length];
+    const entry = (spec && ENTRIES.includes(spec.entry))
+      ? spec.entry
+      : ENTRIES[(index + entryOff) % ENTRIES.length];
     const look = ARCH_LOOK[archetype] || ARCH_LOOK.sniper;
     const groundY = surfaceYAt(this.level, planX);
-    const baseY = clamp(groundY - HOVER_ABOVE_GROUND, 150, Math.max(150, this.level.h - 150));
+    // 平台关默认贴地悬停；显式落点（EXTRA 竞技场）直接用调用方给的 y。
+    const baseY = (spec && Number.isFinite(Number(spec.y)))
+      ? Number(spec.y)
+      : clamp(groundY - HOVER_ABOVE_GROUND, 150, Math.max(150, this.level.h - 150));
+    const hpVal = (spec && Number(spec.hp) > 0) ? Math.round(Number(spec.hp)) : this.halfCardHp;
     const entryDur = ENTRY_INVULN_MIN + rng() * (ENTRY_INVULN_MAX - ENTRY_INVULN_MIN);
     return {
       index,
@@ -273,8 +317,8 @@ export class MinibossManager {
       w: BODY.w,
       h: BODY.h,
       // 战斗数据
-      hp: this.halfCardHp,
-      maxHp: this.halfCardHp,
+      hp: hpVal,
+      maxHp: hpVal,
       state: 'idle',
       stateT: 0,
       entryDur,
@@ -751,6 +795,13 @@ export class MinibossManager {
     }
     this._pendingKills.length = 0;
     this.floaters.length = 0;
+  }
+
+  /** 直接把场上所有小头目撤下（不结算、不退回待机）。EXTRA 换场时用。 */
+  removeAll() {
+    this.list.length = 0;
+    this.floaters.length = 0;
+    this._pendingKills.length = 0;
   }
 
   /** 供探针/调试读取的结构化快照。 */
