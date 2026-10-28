@@ -17,15 +17,152 @@
   <meta name="apple-mobile-web-app-title" content="东方新纪行" />
   <link rel="icon" type="image/png" sizes="128x128" href="./src/art/favicon.png" />
   <link rel="apple-touch-icon" href="./src/art/apple-touch-icon.png" />
+  <!-- ===== 样式表不阻塞首绘（1.6.26） =====
+      国内弱网首次访问时，4 份样式表（合计 42 KiB gzip）要走完 1~3 个 RTT，而 <head>
+      里的样式表是渲染阻塞资源 —— 页面在那段时间就是一片白。这里改成 media="print"
+      先按「打印样式」在后台加载（不进渲染关键路径），load 后切回 all；4 份全部落地
+      才挂 html.css-ready 撤掉下面的首绘兜底。兜底规则只在 html 没有 .css-ready 时
+      匹配，撤掉后一条都不生效，绝不可能和 style.css 抢规则。 -->
+  <style id="boot-fallback">
+    /* 深色夜空 + 启动幕：保证「第一个像素」就已经是游戏画面，而不是白屏/裸文字 */
+    html:not(.css-ready) { background: #05030a; }
+    html:not(.css-ready) body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #05030a;
+      color: #f2e9d8;
+      font-family: "Noto Serif SC", "Songti SC", "SimSun", serif;
+    }
+    /* 主样式表到齐之前，除了启动幕什么都别露 */
+    html:not(.css-ready) #ui > *:not(#boot) { display: none; }
+    html:not(.css-ready) #boot {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-bottom: 26px;
+      background:
+        radial-gradient(ellipse 74% 64% at 50% 36%, rgba(86, 46, 132, .5) 0%, rgba(32, 16, 58, .86) 46%, rgba(5, 3, 12, .98) 78%),
+        #05030a;
+    }
+    html:not(.css-ready) #boot .boot-sky,
+    html:not(.css-ready) #boot .boot-rule-top,
+    html:not(.css-ready) #boot .boot-rule,
+    html:not(.css-ready) #boot .bm-head { display: none; }
+    html:not(.css-ready) #boot .boot-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    html:not(.css-ready) #boot .boot-logo {
+      display: flex;
+      align-items: baseline;
+      font-size: clamp(26px, 7vw, 62px);
+      font-weight: 600;
+      line-height: 1.1;
+      color: #ffe4b0;
+    }
+    html:not(.css-ready) #boot .boot-logo .bl-ch { display: inline-block; padding: 0 .09em; }
+    html:not(.css-ready) #boot .boot-sub {
+      margin-top: .6em;
+      font-size: 12px;
+      letter-spacing: .3em;
+      color: rgba(255, 216, 166, .82);
+    }
+    html:not(.css-ready) #boot .boot-meter {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      width: min(64vw, 460px);
+      margin-top: 32px;
+    }
+    html:not(.css-ready) #boot .bm-load,
+    html:not(.css-ready) #boot .bm-pct {
+      flex: none;
+      font-size: 9px;
+      letter-spacing: .22em;
+      color: rgba(242, 233, 216, .52);
+      font-variant-numeric: tabular-nums;
+    }
+    html:not(.css-ready) #boot .bm-track {
+      position: relative;
+      flex: 1;
+      height: 3px;
+      border-radius: 2px;
+      background: rgba(255, 226, 178, .1);
+    }
+    html:not(.css-ready) #boot .bm-clip {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      border-radius: inherit;
+    }
+    html:not(.css-ready) #boot .bm-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 8%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, rgba(232, 54, 79, .72) 0%, #f2d24b 58%, #fff6da 100%);
+    }
+    html:not(.css-ready) #boot .bm-scan {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 32%;
+      background: linear-gradient(90deg, rgba(255, 246, 220, 0), rgba(255, 246, 220, .38), rgba(255, 246, 220, 0));
+      animation: bf-scan 1.9s linear infinite;
+    }
+    html:not(.css-ready) #boot .boot-pray {
+      margin-top: 20px;
+      font-size: 11px;
+      letter-spacing: .2em;
+      color: rgba(242, 233, 216, .45);
+    }
+    @keyframes bf-scan {
+      from { transform: translateX(-120%); }
+      to { transform: translateX(330%); }
+    }
+  </style>
+  <script>
+    /* 样式表 load 回调：切回正常媒体，4 份全部到齐后撤掉首绘兜底。
+       8s 硬兜底 —— 极端慢网下宁可露出未排版内容，也不能让整页一直被兜底挡住。 */
+    (function () {
+      var pending = 4;
+      var done = false;
+      function ready() {
+        if (done) return;
+        done = true;
+        document.documentElement.classList.add('css-ready');
+      }
+      window.__hksCss = function (link) {
+        link.media = 'all';
+        if (--pending <= 0) ready();
+      };
+      setTimeout(ready, 8000);
+    })();
+  </script>
   <!-- 入口样式 / 脚本带 ?v= 缓存版本串：改动 src/ 后递增（见 README「部署」），
-       旧访客的缓存会立刻失效，不必等 GitHub Pages 的 10 分钟 CDN 缓存到期 -->
-  <link rel="stylesheet" href="./src/style.css?v=1.6.25" />
+        旧访客的缓存会立刻失效，不必等 GitHub Pages 的 10 分钟 CDN 缓存到期 -->
+  <link rel="stylesheet" href="./src/style.css?v=1.6.26" media="print" onload="__hksCss(this)" onerror="__hksCss(this)" />
   <!-- 标题开屏动画：单独成文件，只读 .overlay.title-mode.intro 下的入场状态，
-       不动 style.css 里既有的标题版式，方便整体回滚。 -->
-  <link rel="stylesheet" href="./src/title-intro.css?v=1.6.25" />
+        不动 style.css 里既有的标题版式，方便整体回滚。 -->
+  <link rel="stylesheet" href="./src/title-intro.css?v=1.6.26" media="print" onload="__hksCss(this)" onerror="__hksCss(this)" />
   <!-- 触屏虚拟手柄样式：只有 body.hks-pad-on 时才生效，桌面端零影响 -->
-  <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.25" />
-  <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.25" />
+  <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.26" media="print" onload="__hksCss(this)" onerror="__hksCss(this)" />
+  <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.26" media="print" onload="__hksCss(this)" onerror="__hksCss(this)" />
+  <noscript>
+    <link rel="stylesheet" href="./src/style.css?v=1.6.26" />
+    <link rel="stylesheet" href="./src/title-intro.css?v=1.6.26" />
+    <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.26" />
+    <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.26" />
+  </noscript>
   <!-- Boss 符卡计时行 / survival 血条的追加样式：只新增 id/类，不覆盖 style.css 里既有 Boss 血条规则。
        放这里是为了让「HUD 计时」这一处改动自成一块，改完可整段删除回滚。 -->
   <style>
@@ -73,12 +210,14 @@
         inset 0 1px 0 rgba(255, 255, 255, .7);
     }
   </style>
-  <!-- 标题画面三张图是首屏必需素材：预加载 + 高优先级，配合启动幕保证同帧出现 -->
-  <link rel="preload" as="image" type="image/webp" href="./src/art/gen/title_bg.webp" fetchpriority="high" />
-  <link rel="preload" as="image" type="image/webp" href="./src/art/gen/reimu_title.webp" fetchpriority="high" />
-  <link rel="preload" as="image" type="image/webp" href="./src/art/gen/marisa_title.webp" fetchpriority="high" />
+  <!-- 标题画面三张图是首屏必需素材：预加载 + 高优先级，配合启动幕保证同帧出现。
+       AVIF 优先（体积约为 WebP 的 62%~87%）；type="image/avif" 让不支持 AVIF 的旧浏览器
+       直接跳过这条 preload，由 src/art/img.js 的 onerror 回退到 .webp，不会白下一个 404 之外的浪费。 -->
+  <link rel="preload" as="image" type="image/avif" href="./src/art/gen/title_bg.avif" fetchpriority="high" />
+  <link rel="preload" as="image" type="image/avif" href="./src/art/gen/reimu_title.avif" fetchpriority="high" />
+  <link rel="preload" as="image" type="image/avif" href="./src/art/gen/marisa_title.avif" fetchpriority="high" />
 <!-- modulepreload:start（tools/gen_modulepreload.py 生成，勿手改） -->
-  <link rel="modulepreload" href="./src/main.js?v=1.6.25" />
+  <link rel="modulepreload" href="./src/main.js?v=1.6.26" />
   <link rel="modulepreload" href="./src/engine/renderer.js" />
   <link rel="modulepreload" href="./src/engine/input.js" />
   <link rel="modulepreload" href="./src/ui/platform.js" />
@@ -101,6 +240,7 @@
   <link rel="modulepreload" href="./src/game/difficulty.js" />
   <link rel="modulepreload" href="./src/art/genchars.js" />
   <link rel="modulepreload" href="./src/art/genboss.js" />
+  <link rel="modulepreload" href="./src/art/img.js" />
   <link rel="modulepreload" href="./src/i18n/index.js" />
   <link rel="modulepreload" href="./src/engine/songs/index.js" />
   <link rel="modulepreload" href="./src/game/level.js" />
@@ -119,30 +259,13 @@
   <link rel="modulepreload" href="./src/game/cardEffects.js" />
   <link rel="modulepreload" href="./src/game/bulletArt/index.js" />
   <link rel="modulepreload" href="./src/game/musicTracks.js" />
-  <link rel="modulepreload" href="./src/engine/songs/touhou.js" />
-  <link rel="modulepreload" href="./src/engine/songs/original.js" />
-  <link rel="modulepreload" href="./src/engine/songs/extra_ending.js" />
+  <link rel="modulepreload" href="./src/art/avif_manifest.js" />
   <link rel="modulepreload" href="./src/engine/songs/title_full.js" />
-  <link rel="modulepreload" href="./src/engine/songs/honou_pre1.js" />
-  <link rel="modulepreload" href="./src/engine/songs/youma_stage1.js" />
-  <link rel="modulepreload" href="./src/engine/songs/eurobeat_pre2.js" />
-  <link rel="modulepreload" href="./src/engine/songs/merge_stage2.js" />
-  <link rel="modulepreload" href="./src/engine/songs/yuuhei_pre3.js" />
-  <link rel="modulepreload" href="./src/engine/songs/ateam_stage3.js" />
-  <link rel="modulepreload" href="./src/engine/songs/fall_pre4.js" />
-  <link rel="modulepreload" href="./src/engine/songs/aya_stage4_b.js" />
-  <link rel="modulepreload" href="./src/engine/songs/tillwhen_pre5.js" />
-  <link rel="modulepreload" href="./src/engine/songs/voyage_pre6.js" />
-  <link rel="modulepreload" href="./src/engine/songs/yuuga_stage5.js" />
-  <link rel="modulepreload" href="./src/engine/songs/kaguya_stage6.js" />
-  <link rel="modulepreload" href="./src/engine/songs/un_mad.js" />
-  <link rel="modulepreload" href="./src/engine/songs/sakuya_ex.js" />
-  <link rel="modulepreload" href="./src/engine/songs/septette_ex.js" />
   <link rel="modulepreload" href="./src/assets/levelgen.js" />
   <link rel="modulepreload" href="./src/art/hitbox.js" />
   <link rel="modulepreload" href="./src/art/genfairy.js" />
-  <link rel="modulepreload" href="./src/art/roster.js" />
   <link rel="modulepreload" href="./src/game/bossTuning.js" />
+  <link rel="modulepreload" href="./src/art/roster.js" />
   <link rel="modulepreload" href="./src/game/bossPatternDesigns.js" />
   <link rel="modulepreload" href="./src/game/bossBullets.js" />
   <link rel="modulepreload" href="./src/game/bulletArt/cardSkins.js" />
@@ -279,7 +402,7 @@
           </div>
         </div>
         <div class="title-deco" aria-hidden="true">
-          <span class="title-ver">Chronicle of Gensokyo · ver 1.6.25</span>
+          <span class="title-ver">Chronicle of Gensokyo · ver 1.6.26</span>
         </div>
       </div>
 
@@ -376,6 +499,6 @@
     </div>
   </div>
 
-  <script type="module" src="./src/main.js?v=1.6.25"></script>
+  <script type="module" src="./src/main.js?v=1.6.26"></script>
 </body>
 </html>

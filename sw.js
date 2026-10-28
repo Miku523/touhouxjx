@@ -12,19 +12,22 @@
      - activate：删掉所有旧版本 cache（hks-* 前缀）+ clients.claim() 立刻接管
      - navigation：network-first（4s 超时），失败回退缓存 index.html
      - 带 ?v= 的静态资源：cache-first（URL 变了缓存自然失效，永不脏）
-     - 代码资源（.js / .css，含内层 import 的、不带 ?v= 的那些）：network-first，
-       断网回退缓存。stale-while-revalidate 会先吐缓存里的旧模块，部署后第一次
-       刷新就成了「新入口 + 旧内层」，改动要刷两次才生效，所以代码不走它。
+     - 代码资源（.js / .css，含内层 import 的、不带 ?v= 的那些）：
+       同一发布版本内 cache-first（复访 0 个网络往返，国内弱网感知最强），版本令牌
+       变了就自动失效并整包从网络重抓（见下面「发布版本令牌」）。stale-while-revalidate
+       会先吐缓存里的旧模块，部署后第一次刷新就成了「新入口 + 旧内层」，改动要刷两次
+       才生效，所以代码不走它；而同一版本内代码不可能变，缓存优先既安全又最快。
+       断网时回退缓存，离线壳照旧可用。
      - 其它同源 GET（图片 / 音频 / manifest 等）：stale-while-revalidate
      - 不碰：非 GET、跨域、range 请求、非 200、chrome-extension://、sw.js 自身
    ============================================================ */
 
-const CACHE_VERSION = 'hks-v1.6.25';
+const CACHE_VERSION = 'hks-v1.6.26';
 const CACHE_PREFIX = 'hks-';
 const OFFLINE_URL = './index.html';
 const NETWORK_TIMEOUT = 4000;
 /** 预缓存离线壳；单个失败（404/网络抖动）不影响安装 */
-const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.6.25'];
+const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.6.26'];
 
 const OFFLINE_HTML =
   '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' +
@@ -84,6 +87,74 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+/* ------------------------------------------------------------
+   发布版本令牌
+   ------------------------------------------------------------
+   index.html 里入口 script/link 都带 ?v=<版本>。导航抓到 HTML 时把版本号记下来：
+     · 同版本 → 代码资源可以安全吃缓存（复访几乎 0 个网络往返）
+     · 换版本 → 清掉缓存里的 .js / .css，本次加载全部从网络重抓，保证「一次刷新就生效」
+   万一发布时漏改版本串（违反三处同升的纪律），最多混用到下一次升级；SW 脚本本身
+   换 CACHE_VERSION 时 activate 会整包重建，属于兜底。
+   ------------------------------------------------------------ */
+
+const TOKEN_KEY = new URL('./__hks_version__', self.location.href).href;
+
+/** SW 生命周期内缓存版本令牌，避免每个代码请求都读一次 Cache */
+let tokenMemo = null;
+
+async function readVersionToken() {
+  if (tokenMemo !== null) return tokenMemo;
+  try {
+    const cache = await openCache();
+    const res = await cache.match(TOKEN_KEY);
+    tokenMemo = res ? (await res.text()).trim() : '';
+  } catch (err) {
+    tokenMemo = '';
+  }
+  return tokenMemo;
+}
+
+async function writeVersionToken(token) {
+  tokenMemo = token;
+  try {
+    const cache = await openCache();
+    await cache.put(
+      TOKEN_KEY,
+      new Response(token, {
+        headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' },
+      })
+    );
+  } catch (err) {
+    /* 写不进去就退化成 network-first，功能不受影响 */
+  }
+}
+
+/** 从 index.html 里读发布版本：入口 script/style 的 ?v= 就是本次发布号 */
+function parseVersionToken(html) {
+  const m = /(?:main\.js|style\.css|platform\.js)\?v=([0-9A-Za-z._-]+)/.exec(html || '');
+  return m ? m[1] : '';
+}
+
+/** 发布版本变了：清掉旧代码，逼本次加载从网络重抓（图片 / 音频 / 离线壳不动） */
+async function purgeCodeCache() {
+  try {
+    const cache = await openCache();
+    const keys = await cache.keys();
+    await Promise.all(
+      keys.map((req) => {
+        let pathname = '';
+        try {
+          pathname = new URL(req.url).pathname;
+        } catch (err) {
+          return null;
+        }
+        return /\.(?:m?js|css)$/i.test(pathname) ? cache.delete(req).catch(() => {}) : null;
+      })
+    );
+  } catch (err) {
+    /* 清不掉最多多吃一次旧代码，下次升级整包重建 */
+  }
+}
 /* ------------------------------------------------------------
    工具
    ------------------------------------------------------------ */
@@ -169,7 +240,8 @@ async function staleWhileRevalidate(request) {
  * 部署后第一次刷新的顺序是「index.html（导航，网络优先）→ main.js?v=新（URL 变了，
  * 必然走网络）→ main.js 再 import ./engine/audio.js（URL 没变，命中旧缓存）」，
  * 于是新入口对着旧内层跑，改动要刷新两次才生效。代码文件不大、浏览器还有 HTTP
- * 校验，每次加载多一轮 304 换「一次刷新生效」是划算的；断网时照样回退缓存。
+ * 校验，发布换版本那次多一轮 304 换「一次刷新生效」是划算的；同版本内由 codeHandler
+ * 直接吃缓存，不需要这里兜底。断网时照样回退缓存。
  */
 async function networkFirst(request) {
   const cache = await openCache();
@@ -188,6 +260,22 @@ async function networkFirst(request) {
   }
 }
 
+/**
+ * 代码资源：同一发布版本内缓存优先，跨版本 / 无缓存时网络优先。
+ *
+ * 复访时几十个入口模块全部命中 SW 缓存 → 启动只剩 1 个导航往返（弱网下省 2~3 个 RTT，
+ * 也不会在弱网里反复等 85 个 304）。版本令牌变了 → purgeCodeCache 已清空 .js/.css，
+ * 这里自然全部走网络；断网时 networkFirst 内部回退缓存，离线壳照旧可用。
+ */
+async function codeHandler(request) {
+  const token = await readVersionToken();
+  if (token) {
+    const cache = await openCache();
+    const hit = await cache.match(request);
+    if (hit) return hit;
+  }
+  return networkFirst(request);
+}
 /** 导航：网络优先（4s 超时），抓不到就回退离线壳 */
 async function navigationHandler(request) {
   try {
@@ -196,6 +284,19 @@ async function navigationHandler(request) {
       const cache = await openCache();
       // 顺手把最新 index.html 存成离线壳
       cache.put(OFFLINE_URL, res.clone()).catch(() => {});
+      // 记下本次发布的版本令牌；版本变了就清掉旧代码（本次加载全部从网络重抓）
+      try {
+        const token = parseVersionToken(await res.clone().text());
+        if (token) {
+          const prev = await readVersionToken();
+          if (prev !== token) {
+            await writeVersionToken(token);
+            if (prev) await purgeCodeCache();
+          }
+        }
+      } catch (err) {
+        /* 解析失败不影响导航 */
+      }
       return res;
     }
     throw new Error('bad status: ' + (res && res.status));
@@ -242,10 +343,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 代码资源一律网络优先（带不带 ?v= 都一样）：内层 import 没法逐个进 ?v= 清单，
-  // 靠这个保证「改完代码刷新一次就生效」，而不是先跑一轮旧模块。
+  // 代码资源：同一发布版本内缓存优先（复访 0 往返）；换版本后 network-first 重抓，
+  // 保证「改完代码刷新一次就生效」，而不是先跑一轮旧模块。
   if (isCodeRequest(request, url)) {
-    event.respondWith(networkFirst(request));
+    event.respondWith(codeHandler(request));
     return;
   }
 

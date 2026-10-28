@@ -14,6 +14,7 @@
 
 import { tr } from '../i18n/index.js';
 import { preloadWhenIdle } from '../engine/lazy_preload.js';
+import { artUrl, onArtError } from '../art/img.js';
 
 const BASE = new URL('../art/gen/', import.meta.url);
 
@@ -65,12 +66,14 @@ export class SpellCutin {
     if (!entry) {
       const img = new Image();
       entry = { img, ready: false };
+      const webp = new URL(file, BASE).href;
       img.onload = () => {
         entry.ready = true;
         // 立绘往往在第一次放符卡时才加载完，赶上了就立刻补画
         if (this._last === file && this.el?.classList.contains('show')) this._paint(file);
       };
-      img.src = new URL(file, BASE).href;
+      img.onerror = () => onArtError(img, webp);
+      img.src = artUrl(webp);
       this._imgs.set(file, entry);
     }
     return entry;

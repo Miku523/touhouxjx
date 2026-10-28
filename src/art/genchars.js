@@ -15,6 +15,7 @@
  */
 
 import { preloadWhenIdle, setPriority } from '../engine/lazy_preload.js';
+import { artUrl, onArtError } from './img.js';
 
 const BASE = new URL('./gen/run/', import.meta.url);
 const FRAME_N = 4;
@@ -149,9 +150,13 @@ function loadOne(src, priority = 'low') {
       if (f) { holder.frame = f; resolve(true); }
       else { holder.failed = true; resolve(false); }
     };
-    img.onerror = () => { holder.failed = true; resolve(false); };
+    img.onerror = () => {
+      if (onArtError(img, src)) return; // AVIF 失败：先退回 .webp，只回退一次
+      holder.failed = true;
+      resolve(false);
+    };
   });
-  img.src = src;
+  img.src = artUrl(src);
   return holder;
 }
 

@@ -33,6 +33,7 @@ import {
 import { DIFFICULTY_KEYS, DIFFICULTIES, getDifficulty } from './game/difficulty.js';
 import { ensureCharArt } from './art/genchars.js';
 import { ensureBossArt } from './art/genboss.js';
+import { artUrl, onArtError } from './art/img.js';
 import { initLang, tr, localizeDom, getLang, setLang, LANGS, isManualLang, onChange } from './i18n/index.js';
 
 const MAIN_STAGES = () => LEVELS.filter((l) => !l.extra);
@@ -192,17 +193,22 @@ class Game {
 
     /* ---------- 标题画面素材：插画背景 + 两套主角立绘 ---------- */
     // 这三张是首屏唯一必需的图：给最高优先级，其余预加载会自动让路（见 engine/lazy_preload.js）
+    const titleBg = new URL('./art/gen/title_bg.webp', import.meta.url).href;
     this._titleBgImg = new Image();
     this._titleBgImg.decoding = 'async';
     setPriority(this._titleBgImg, 'high');
-    this._titleBgImg.src = new URL('./art/gen/title_bg.webp', import.meta.url).href;
+    // AVIF 优先；不支持 AVIF 的浏览器在 onerror 里退回 .webp（只回退一次）
+    this._titleBgImg.onerror = () => onArtError(this._titleBgImg, titleBg);
+    this._titleBgImg.src = artUrl(titleBg);
 
     this._titleCharImgs = {};
     for (const key of ['reimu', 'marisa']) {
       const img = new Image();
       img.decoding = 'async';
       setPriority(img, 'high');
-      img.src = new URL(`./art/gen/${key}_title.webp`, import.meta.url).href;
+      const webp = new URL(`./art/gen/${key}_title.webp`, import.meta.url).href;
+      img.onerror = () => onArtError(img, webp);
+      img.src = artUrl(webp);
       this._titleCharImgs[key] = img;
     }
     if (typeof window !== 'undefined') {
@@ -418,7 +424,9 @@ class Game {
           const im = new Image();
           im.decoding = 'async';
           setPriority(im, 'low');
-          im.src = new URL(`./art/gen/bg/${s.img}.webp`, import.meta.url).href;
+          const webp = new URL(`./art/gen/bg/${s.img}.webp`, import.meta.url).href;
+          im.onerror = () => onArtError(im, webp);
+          im.src = artUrl(webp);
         } catch (e) {
           // 预热失败无所谓，_applyScene 里还会再请求一次
         }
@@ -468,7 +476,8 @@ class Game {
     }).join('');
     this._ovBg.dataset.mote = scene.mote;
     // 底图路径必须相对 main.js 解析（index.html 在上一级，故用 import.meta.url）
-    const sceneUrl = new URL(`./art/gen/bg/${scene.img}.webp`, import.meta.url).href;
+    const sceneWebp = new URL(`./art/gen/bg/${scene.img}.webp`, import.meta.url).href;
+    const sceneUrl = artUrl(sceneWebp);
     this._ovBg.innerHTML =
       `<div class="ov-bg-img" style="background-image:url('${sceneUrl}')"></div>` +
       '<div class="ov-bg-grade"></div>' +
@@ -478,6 +487,17 @@ class Game {
       `<div class="ov-bg-caption"><span>${captionJp}</span></div>` +
       '<span class="ov-corner tl"></span><span class="ov-corner tr"></span>' +
       '<span class="ov-corner bl"></span><span class="ov-corner br"></span>';
+    // CSS 背景拿不到 onerror：用同一张 AVIF 做探针，不支持 AVIF 的浏览器上把背景改回 WebP。
+    // 图已在 _warmScenes 里预热过，探针通常直接命中缓存，不会多一次网络请求。
+    if (sceneUrl !== sceneWebp) {
+      const probe = new Image();
+      probe.onerror = () => {
+        if (this._sceneId !== id) return;
+        const el = this._ovBg?.querySelector('.ov-bg-img');
+        if (el) el.style.backgroundImage = `url("${sceneWebp}")`;
+      };
+      probe.src = sceneUrl;
+    }
   }
 
   /** 菜单选中态（键盘 / 鼠标共用），自动跳过 .info 纯文本行、disabled 项与 noSelect 项 */
@@ -1025,7 +1045,7 @@ class Game {
       glow: c.glow,
       hotkey: `Digit${c.digit}`,
       html:
-        '<span class="cc-portrait"><img src="' + c.img + '" alt="" decoding="async" draggable="false" /></span>' +
+        '<span class="cc-portrait"><img src="' + artUrl(c.img) + '" data-art-webp="' + c.img + '" alt="" decoding="async" draggable="false" /></span>' +
         '<span class="cc-key">' + c.digit + '</span>' +
         '<span class="cc-body">' +
           '<span class="cc-en">' + c.en + '</span>' +
@@ -1087,7 +1107,7 @@ class Game {
         feedback: !on,
         html:
           (on ? '' : '<span class="cc-lock">' + tr('未解锁') + '</span>') +
-          '<span class="cc-portrait"><img src="' + c.img + '" alt="" decoding="async" draggable="false" /></span>' +
+          '<span class="cc-portrait"><img src="' + artUrl(c.img) + '" data-art-webp="' + c.img + '" alt="" decoding="async" draggable="false" /></span>' +
           '<span class="cc-key">' + c.digit + '</span>' +
           '<span class="cc-body">' +
             '<span class="cc-en">' + c.en + '</span>' +
@@ -1142,6 +1162,8 @@ class Game {
       if (img.dataset.artBound === '1') continue;
       img.dataset.artBound = '1';
       img.addEventListener('error', () => {
+        // AVIF 加载失败先静默退回 .webp（只回退一次），别把它当成真正的加载失败
+        if (onArtError(img, img.dataset.artWebp)) return;
         if (img.dataset.artRetried === '1') {
           console.warn('[charselect] 立绘重试仍失败：', img.src);
           return;

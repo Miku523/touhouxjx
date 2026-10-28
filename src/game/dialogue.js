@@ -12,6 +12,7 @@
  */
 import { preloadWhenIdle } from '../engine/lazy_preload.js';
 import { tr } from '../i18n/index.js';
+import { artUrl, onArtError } from '../art/img.js';
 
 /* ---------------- AI 立绘（Seedream 生成，tools/cutout.py 抠图） ---------------- */
 const AI_PORTRAITS = {
@@ -46,14 +47,18 @@ function loadPortrait(key, priority = 'high') {
   img.decoding = 'async';
   // 对话立绘比场景预热更急：进关卡时就按 high 抢带宽，避免 Boss 战前还在下载
   img.fetchPriority = priority;
+  const webp = new URL(file, AI_BASE).href;
   aiPending[key] = new Promise((resolve) => {
     img.onload = () => {
       aiImages[key] = img;
       resolve(img);
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => {
+      if (onArtError(img, webp)) return; // AVIF 不可用：先退回 .webp，不当成缺图
+      resolve(null);
+    };
   });
-  img.src = new URL(file, AI_BASE).href;
+  img.src = artUrl(webp);
   return aiPending[key];
 }
 

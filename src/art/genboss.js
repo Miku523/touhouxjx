@@ -11,6 +11,7 @@
  */
 
 import { preloadWhenIdle, setPriority } from '../engine/lazy_preload.js';
+import { artUrl, onArtError } from './img.js';
 
 const BASE = new URL('./gen/boss/', import.meta.url);
 const KEYS = ['rumia', 'wriggle', 'cirno', 'aya', 'yuyuko', 'kaguya', 'flandre', 'remilia', 'youmu', 'sakuya'];
@@ -122,7 +123,9 @@ function loadOne(src) {
   setPriority(img, 'low');
   const holder = { art: null };
   img.onload = () => { holder.art = prep(img); };
-  img.src = src;
+  // src 一直是 .webp 地址：AVIF 加载失败就回退到它（prep 读不到像素时 holder.art 保持 null）
+  img.onerror = () => onArtError(img, src);
+  img.src = artUrl(src);
   return holder;
 }
 
@@ -147,11 +150,13 @@ export function ensureBossArt(key) {
       LOADING.delete(key);
       resolve(!!art);
     };
+    const webp = new URL(key + '.webp', BASE).href;
     img.onerror = () => {
+      if (onArtError(img, webp)) return; // AVIF 不可用：先退回 .webp，不算失败
       LOADING.delete(key);
       resolve(false);
     };
-    img.src = new URL(key + '.webp', BASE).href;
+    img.src = artUrl(webp);
   });
   LOADING.set(key, p);
   return p;

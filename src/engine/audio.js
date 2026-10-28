@@ -8,7 +8,8 @@
  *    例外：曲目数据里带 audio 字段时（如 EX 曲），改为 fetch + decodeAudioData 播放
  *    离线渲染好的音频文件并无缝循环，加载失败时自动回退到合成数据。
  * 3. BGM 曲库来自 ./songs/index.js（每关 BOSS 的原作主题曲 + 标题/失败/结局原创曲），
- *    每首曲子是「按秒排好的音符事件表」，前瞻调度、无缝循环。
+ *    每首曲子是「按秒排好的音符事件表」，前瞻调度、无缝循环。曲库按名字懒加载：
+ *    首访只带标题曲，_startMusic 发现曲目不在就先 ensureSong()，到货后再起播。
  * 4. 曲目切换：playMusic(name) 立即换曲（先掐掉旧曲已排期的节点，不会叠音）；
  *    setMusic(false) 清定时器并停掉所有音乐节点；setMusic(true) 恢复当前曲目；
  *    playOutMusic() 让当前曲目把这一轮放完，再用 5 秒渐出（fadeOutMusic）收尾。
@@ -18,7 +19,7 @@
  *    分别作用于两条总线，静音（muted）作用于 master，互不干扰。
  */
 
-import { SONGS } from './songs/index.js';
+import { getSong, ensureSong } from './songs/index.js';
 
 /** MIDI 音高 → 频率（Hz） */
 function midiToFreq(m) {
@@ -79,6 +80,10 @@ export class AudioEngine {
     this._musicVoices = new Set(); // BGM 节点，切歌/关闭时强制 stop
     this._audioCache = new Map();  // 音频文件曲目：url → AudioBuffer（解码一次复用）
     this._audioPending = null;     // 正在加载的音频曲目 key，防重复请求
+    this._songLoadToken = 0;       // 曲库懒加载的批次号：切歌/关音乐时自增，作废未完成的加载
+    this._songLoadPending = null;  // 正在等曲库模块的曲目 { token, name }
+    this._songLoadFrom = 0;        // 等模块期间记下的起播偏移，见 _queueSongLoad()
+    this._warnedSongs = new Set(); // 曲目加载失败只警告一次，不刷屏
   }
 
   /* ------------------------------------------------------------------ */
@@ -746,17 +751,32 @@ export class AudioEngine {
     return this._musicGain;
   }
 
-  _startMusic() {
+  /** 起播当前曲目。fromOverride 只给「曲库懒加载到货后重入」用，平时走 _startFrom */
+  _startMusic(fromOverride) {
     // 起播偏移（playMusic(name, {from})）只对这一次起播有效：先取走再判断，
     // 免得「曲目数据缺失 / 已在放」这几种提前返回把偏移留到下一次莫名其妙的起播上
-    const from = Math.max(0, Number(this._startFrom) || 0);
+    const from = fromOverride !== undefined
+      ? Math.max(0, Number(fromOverride) || 0)
+      : Math.max(0, Number(this._startFrom) || 0);
     this._startFrom = 0;
     if (!this.ctx || this._musicOn) return; // 幂等守卫：绝不叠音
     // 显式「静音进关」状态（silenceMusic 把曲目留空）：没有待播曲目就保持安静，
     // 别把空曲目当成标题曲放出来。
     const name = this._songName;
     if (!name) return;
-    const song = SONGS[name];
+    const song = getSong(name);
+    if (!song) {
+      // 曲库懒加载：这首还没到（首次到某关、回忆室点未加载曲目）。先取模块，
+      // 到货后回到这里起播；异步期间的切歌 / 关音乐 / 静音都会让它作废。
+      this._queueSongLoad(name, from);
+      return;
+    }
+    this._beginSong(name, song, from);
+  }
+
+  /** 曲目数据已就位时的真正起播（原 _startMusic 的同步部分，语义不变） */
+  _beginSong(name, song, from) {
+    if (!this.ctx || this._musicOn) return; // 幂等守卫：绝不叠音
     if (!song || !(song.duration || song.audio)) return; // 没有曲目数据就保持安静
     this._songPlayOut = 0; // 起播一律从「循环」开始，收尾由 playOutMusic() 现点
     // 带 audio 字段的曲目直接播音频文件（离线渲染的成品），合成数据留作加载失败时的回退
@@ -765,6 +785,49 @@ export class AudioEngine {
       return;
     }
     this._startSynthMusic(name, song, from);
+  }
+
+  /**
+   * 曲库懒加载：等 ensureSong() 到货后重新进入 _startMusic。
+   * 竞态守卫：加载期间的切歌 / 关音乐 / silenceMusic 都会让 _songLoadToken 自增
+   * （见 _stopMusic 与 _queueSongLoad），旧请求回来发现 token 变了就直接丢弃，
+   * 绝不会起播旧曲；到货时再核一遍曲名 / 意图 / ctx / 是否已经在放。
+   */
+  _queueSongLoad(name, from) {
+    const pending = this._songLoadPending;
+    if (pending && pending.name === name) {
+      // 同一首的重复请求（playMusic 之后紧跟 setMusic(true)）：共用一次加载，
+      // 只把明确 >0 的定位升级进去，别把带偏移的起播降回 0
+      if (from > 0) this._songLoadFrom = from;
+      return;
+    }
+    const token = ++this._songLoadToken;
+    this._songLoadPending = { token, name };
+    this._songLoadFrom = from;
+    ensureSong(name).then((song) => {
+      if (token !== this._songLoadToken) return; // 已被切歌 / 关音乐 / 静音作废
+      this._songLoadPending = null;
+      if (!song) {
+        this._warnMissingSong(name);
+        return;
+      }
+      if (this._songName !== name) return;
+      if (!this._musicRequested || !this.ctx || this._musicOn) return;
+      const nextFrom = this._songLoadFrom;
+      this._songLoadFrom = 0;
+      this._startMusic(nextFrom);
+    });
+  }
+
+  /** 曲目加载失败 / 曲库没有这个名字：保持安静，只警告一次，不抛错、不刷屏 */
+  _warnMissingSong(name) {
+    if (!name || this._warnedSongs.has(name)) return;
+    this._warnedSongs.add(name);
+    try {
+      console.warn('[audio] 曲目不可用，保持安静：' + name);
+    } catch (e) {
+      // 忽略
+    }
   }
 
   /** 走音频文件的 BGM：fetch → decodeAudioData → 无缝循环播放。from = 从第几秒起播（默认 0） */
@@ -814,8 +877,9 @@ export class AudioEngine {
       begin(cached);
       return;
     }
-    if (typeof fetch !== 'function') {
-      // 老环境没有 fetch：直接回退合成，别让 BGM 空着
+    if (typeof fetch !== 'function' || typeof this.ctx.decodeAudioData !== 'function') {
+      // 老环境没有 fetch、或 AudioContext 不支持解码（离线测试用的假 context）：
+      // 别把 BGM 空着，直接用曲库里的合成数据播
       this._audioPending = null;
       this._startSynthMusic(name, song, from);
       return;
@@ -878,6 +942,9 @@ export class AudioEngine {
   }
 
   _stopMusic() {
+    // 让还在路上的曲库懒加载作废：停音乐 / 切歌 / silence 之后到货的模块不许再起播
+    this._songLoadToken++;
+    this._songLoadPending = null;
     this._musicOn = false;
     this._audioPending = null;
     this._songPlayOut = 0;

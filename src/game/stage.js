@@ -18,6 +18,7 @@ import { EnemyManager } from './enemies.js';
 import { MinibossManager } from './miniboss.js';
 import { Boss, bossHalfCardHp } from './boss.js';
 import { getDifficulty, enemyStageDensityOf } from './difficulty.js';
+import { artUrl, onArtError } from '../art/img.js';
 import { scalePlayerDamage } from './balance.js';
 import { StgPlayer, StgStage } from './stg.js';
 import { POWER, powerLevel, cardClearPower, cardNoHitPower } from './power.js';
@@ -97,6 +98,8 @@ function _bgEntry(theme, idx) {
     // 一次瞬时失败（弱网 / Service Worker 离线兜底返回 504）不该让这一面整局都退回
     // 程序化天空：退避重试几次，成功之后照常切回厚涂背景（配 draw 里的淡入）。
     e.img.onerror = () => {
+      // AVIF 不可用/加载失败：先退回 .webp（只回退一次），别把一次 AVIF 失败算进退避重试
+      if (onArtError(e.img, e.src)) return;
       e.failed = true;
       const delay = BG_RETRY_DELAYS[e.tries];
       if (delay === undefined) return;
@@ -109,7 +112,7 @@ function _bgEntry(theme, idx) {
         e.img.src = retrySrc;
       }, delay);
     };
-    e.img.src = e.src;
+    e.img.src = artUrl(e.src);
   } else {
     e.failed = true;
   }

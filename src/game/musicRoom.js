@@ -6,7 +6,8 @@
  * 背景（拱窗 / 月光 / 唱片架 / 留声机 / 落樱）由 2D canvas 一次性画好。
  *
  * 与游戏的约定：
- *  - 曲目数据只来自 musicTracks.js（key 必须能在 SONGS 里找到）；
+ *  - 曲目静态资料（标题/曲长/分类）来自 musicTracks.js；BPM 这类曲库数据按需加载，
+ *    选中未加载的曲目时 ensureSong() 拉到后再起播，见 _startTrack()；
  *  - 播放全部交给 AudioEngine.playMusic / setMusic，不自己造音频；
  *  - 是否「听过」由宿主（main.js）通过 isHeard / markHeard 提供，
  *    未知曲目在播放前会弹一次确认框，确认后才揭晓曲名并记入回忆；
@@ -14,7 +15,7 @@
  */
 
 import { MUSIC_TRACKS } from './musicTracks.js';
-import { SONGS } from '../engine/songs/index.js';
+import { getSong, ensureSong } from '../engine/songs/index.js';
 import { tr as i18n, localizeDom, getLang } from '../i18n/index.js';
 
 const EQ_BARS = 18;
@@ -57,11 +58,9 @@ export class MusicRoom {
     this.onExit = onExit || (() => {});
     this.onMute = onMute || (() => {});
 
-    // 曲长 / BPM 以曲库里真实的数据为准，避免两处手写数值漂移
-    this.tracks = MUSIC_TRACKS.map((tr) => ({
-      ...tr,
-      bpm: SONGS[tr.key]?.bpm || null,
-    }));
+    // 曲长 / 标题等静态资料来自 musicTracks.js；BPM 只有曲库模块到了才有，
+    // 所以不在这里缓存一份，显示时再问 getSong()，见 _bpmOf()。
+    this.tracks = MUSIC_TRACKS.map((tr) => ({ ...tr }));
     this.index = 0;
     this.visible = false;
 
@@ -73,6 +72,7 @@ export class MusicRoom {
     this._previewDone = false;
     this._acc = 0;
     this._hideTimer = 0;
+    this._playToken = 0;   // 起播批次号：连点/离场让旧的懒加载回调作废，不串曲
   }
 
   /* ============================================================
@@ -107,6 +107,7 @@ export class MusicRoom {
   hide() {
     if (!this.el || !this.visible) return;
     this.visible = false;
+    this._playToken++; // 离场：还没加载完的曲目到货后不许再起播
     this._preview = null;
     this._previewDone = false;
     if (this.d?.cut) this.d.cut.classList.add('hidden');
@@ -231,17 +232,57 @@ export class MusicRoom {
     const same = this.audio.currentSong === tr.key;
     if (same && this.audio.musicOn) {
       // 再按一次 = 停：留声机抬针
+      this._playToken++; // 顺带作废还没到货的加载
       this.audio.setMusic(false);
       this.audio.play?.('menu');
-    } else {
-      this.audio.play?.('select');
-      this.audio.playMusic(tr.key);
-      this.audio.setMusic(true);
+      this.markHeard(tr.key);
+      this._paint();
+      this._paintList();
+      this._syncStatus();
+      return;
     }
+    this.audio.play?.('select');
     this.markHeard(tr.key);
+    // 先把「选中/待机」状态上屏，曲目模块到货后再真正起播（BPM 等数据也会随之补上）
     this._paint();
     this._paintList();
     this._syncStatus();
+    this._startTrack(tr);
+  }
+
+  /**
+   * 起播某首曲目（懒加载版）：已加载就直接放，否则 ensureSong() 拉模块。
+   * 竞态守卫：每起播一次 _playToken++，回调只认最后一次——快速连点 A→B→C 时
+   * 只有 C 会响，慢到货的 A/B 一律丢弃；离开房间（hide）也会让回调作废。
+   */
+  _startTrack(tr) {
+    const token = ++this._playToken;
+    const start = (song) => {
+      if (token !== this._playToken || !this.visible) return;
+      if (!song) {
+        // 曲目加载失败：保持安静，不抛错（audio 侧会警告一次）
+        this._syncStatus();
+        return;
+      }
+      this.audio.playMusic(tr.key);
+      this.audio.setMusic(true);
+      this._paint();
+      this._paintList();
+      this._syncStatus();
+    };
+    const cached = getSong(tr.key);
+    if (cached) {
+      start(cached);
+      return;
+    }
+    ensureSong(tr.key).then(start, () => start(null));
+  }
+
+  /** 曲目 BPM：未加载时返回 null（界面显示「—」），加载后自动变成真实数值 */
+  _bpmOf(tr) {
+    const song = getSong(tr.key);
+    const bpm = song ? Number(song.bpm) : Number(tr.bpm);
+    return Number.isFinite(bpm) && bpm > 0 ? bpm : null;
   }
 
   /** T：30 秒试听；已经在试听同一首时则收针 */
@@ -249,6 +290,7 @@ export class MusicRoom {
     const tr = this.tracks[this.index];
     if (!tr) return;
     if (this._preview && this._preview.key === tr.key) {
+      this._playToken++; // 收针：作废还没到货的懒加载
       this.audio.setMusic(false);
       this._preview = null;
       this._previewDone = false;
@@ -269,19 +311,37 @@ export class MusicRoom {
     const at = this.tracks.indexOf(tr);
     if (at >= 0) this.index = at;
     this.audio.play?.('select');
-    this.audio.playMusic(tr.key);
-    this.audio.setMusic(true);
     this.markHeard(tr.key);
-    this._preview = { key: tr.key, left: PREVIEW_SEC };
-    this._previewDone = false;
+    const token = ++this._playToken;
+    const start = (song) => {
+      // 到货时已经换了曲目 / 收了针 / 离开了房间：这次试听作废，绝不串曲
+      if (token !== this._playToken || !this.visible) return;
+      if (!song) {
+        this._syncStatus();
+        return;
+      }
+      this.audio.playMusic(tr.key);
+      this.audio.setMusic(true);
+      this._preview = { key: tr.key, left: PREVIEW_SEC };
+      this._previewDone = false;
+      this._paint();
+      this._paintList();
+      // 进度条上标出「30 秒试听」到哪儿结束
+      if (this.d.cut && tr.time) {
+        this.d.cut.style.left = `${Math.min(100, (PREVIEW_SEC / tr.time) * 100).toFixed(1)}%`;
+        this.d.cut.classList.remove('hidden');
+      }
+      this._syncStatus();
+    };
+    const cached = getSong(tr.key);
+    if (cached) {
+      start(cached);
+      return;
+    }
     this._paint();
     this._paintList();
-    // 进度条上标出「30 秒试听」到哪儿结束
-    if (this.d.cut && tr.time) {
-      this.d.cut.style.left = `${Math.min(100, (PREVIEW_SEC / tr.time) * 100).toFixed(1)}%`;
-      this.d.cut.classList.remove('hidden');
-    }
     this._syncStatus();
+    ensureSong(tr.key).then(start, () => start(null));
   }
 
   _exit() {
@@ -441,7 +501,8 @@ export class MusicRoom {
     d.discName.textContent = known ? i18n(tr.title) : unknownMarks(3);
     d.disc.style.setProperty('--dtone', tr.tone);
     d.disc.style.setProperty('--dglow', tr.glow);
-    d.bpm.textContent = known && tr.bpm ? String(Math.round(tr.bpm)) : '—';
+    const bpm = known ? this._bpmOf(tr) : null;
+    d.bpm.textContent = bpm ? String(Math.round(bpm)) : '—';
     d.len.textContent = known ? fmtTime(tr.time) : '--:--';
     d.code.textContent = known
       ? `No.${tr.no} / ${String(this.tracks.length).padStart(2, '0')}`

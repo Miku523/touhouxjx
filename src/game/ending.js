@@ -14,6 +14,7 @@ import { preloadWhenIdle, setPriority } from '../engine/lazy_preload.js';
 import { ENDINGS } from './endings.js';
 import { getLang, tr } from '../i18n/index.js';
 import { CHAR_NAMES } from './dialogue.js';
+import { artUrl, onArtError } from '../art/img.js';
 
 const BG_BASE = new URL('../art/gen/bg/', import.meta.url);
 const ART_BASE = new URL('../art/gen/', import.meta.url);
@@ -113,14 +114,18 @@ export class Ending {
       const img = new Image();
       img.decoding = 'async';
       setPriority(img, 'low');
-      img.src = new URL(`${name}.webp`, BG_BASE).href;
+      const webp = new URL(`${name}.webp`, BG_BASE).href;
+      img.onerror = () => onArtError(img, webp);
+      img.src = artUrl(webp);
       this.bgImgs.set(name, img);
     }
     for (const key of chars) {
       const img = new Image();
       img.decoding = 'async';
       setPriority(img, 'low');
-      img.src = new URL(`${key}.webp`, ART_BASE).href;
+      const webp = new URL(`${key}.webp`, ART_BASE).href;
+      img.onerror = () => onArtError(img, webp);
+      img.src = artUrl(webp);
       this.charImgs.set(key, img);
     }
   }

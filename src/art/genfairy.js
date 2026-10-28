@@ -5,6 +5,7 @@
  * 加载不到时 drawGenFairy 返回 false，enemies.js 只铺该色柔光，不回退程序化人物。
  */
 import { preloadWhenIdle } from '../engine/lazy_preload.js';
+import { artUrl, onArtError } from './img.js';
 
 const BASE = new URL('./gen/fairy.webp', import.meta.url);
 /** 游戏内显示高度（flyer 包围盒 h=34，画大一点点更饱满） */
@@ -30,7 +31,10 @@ function ensureColor(k) {
     if (typeof Image === 'undefined') return null;
     im = new Image();
     im.decoding = 'async';
-    im.src = new URL(`./gen/fairy/${k}.webp`, import.meta.url).href;
+    // AVIF 优先；不支持 AVIF 的浏览器 onerror 里退回 .webp（只回退一次）
+    const webp = new URL(`./gen/fairy/${k}.webp`, import.meta.url).href;
+    im.onerror = () => onArtError(im, webp);
+    im.src = artUrl(webp);
     IMGS[k] = im;
   }
   return im;
@@ -41,7 +45,8 @@ function ensureFallback() {
   if (typeof Image === 'undefined') return null;
   FALLBACK = new Image();
   FALLBACK.decoding = 'async';
-  FALLBACK.src = BASE.href;
+  FALLBACK.onerror = () => onArtError(FALLBACK, BASE.href);
+  FALLBACK.src = artUrl(BASE.href);
   return FALLBACK;
 }
 
