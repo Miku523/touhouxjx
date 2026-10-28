@@ -17,7 +17,7 @@
   <meta name="apple-mobile-web-app-title" content="东方新纪行" />
   <link rel="icon" type="image/png" sizes="128x128" href="./src/art/favicon.png" />
   <link rel="apple-touch-icon" href="./src/art/apple-touch-icon.png" />
-  <!-- ===== 样式表不阻塞首绘（1.6.30） =====
+  <!-- ===== 样式表不阻塞首绘（1.6.31） =====
       国内弱网首次访问时，4 份样式表（合计 42 KiB gzip）要走完 1~3 个 RTT，而 <head>
       里的样式表是渲染阻塞资源 —— 页面在那段时间就是一片白。这里改成 media="print"
       先按「打印样式」在后台加载（不进渲染关键路径），load 后切回 all；4 份全部落地
@@ -150,18 +150,18 @@
   </script>
   <!-- 入口样式 / 脚本带 ?v= 缓存版本串：改动 src/ 后递增（见 README「部署」），
         旧访客的缓存会立刻失效，不必等 GitHub Pages 的 10 分钟 CDN 缓存到期 -->
-  <link rel="stylesheet" href="./src/style.css?v=1.6.30" media="print" onload="__hksCss(this)" onerror="__hksCss(this)" />
+  <link rel="stylesheet" href="./src/style.css?v=1.6.31" media="print" onload="__hksCss(this)" onerror="__hksCss(this)" />
   <!-- 标题开屏动画：单独成文件，只读 .overlay.title-mode.intro 下的入场状态，
         不动 style.css 里既有的标题版式，方便整体回滚。 -->
-  <link rel="stylesheet" href="./src/title-intro.css?v=1.6.30" media="print" onload="__hksCss(this)" onerror="__hksCss(this)" />
+  <link rel="stylesheet" href="./src/title-intro.css?v=1.6.31" media="print" onload="__hksCss(this)" onerror="__hksCss(this)" />
   <!-- 触屏虚拟手柄样式：只有 body.hks-pad-on 时才生效，桌面端零影响 -->
-  <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.30" media="print" onload="__hksCss(this)" onerror="__hksCss(this)" />
-  <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.30" media="print" onload="__hksCss(this)" onerror="__hksCss(this)" />
+  <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.31" media="print" onload="__hksCss(this)" onerror="__hksCss(this)" />
+  <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.31" media="print" onload="__hksCss(this)" onerror="__hksCss(this)" />
   <noscript>
-    <link rel="stylesheet" href="./src/style.css?v=1.6.30" />
-    <link rel="stylesheet" href="./src/title-intro.css?v=1.6.30" />
-    <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.30" />
-    <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.30" />
+    <link rel="stylesheet" href="./src/style.css?v=1.6.31" />
+    <link rel="stylesheet" href="./src/title-intro.css?v=1.6.31" />
+    <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.31" />
+    <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.31" />
   </noscript>
   <!-- Boss 符卡计时行 / survival 血条的追加样式：只新增 id/类，不覆盖 style.css 里既有 Boss 血条规则。
        放这里是为了让「HUD 计时」这一处改动自成一块，改完可整段删除回滚。 -->
@@ -217,7 +217,7 @@
   <link rel="preload" as="image" type="image/avif" href="./src/art/gen/reimu_title.avif" fetchpriority="high" />
   <link rel="preload" as="image" type="image/avif" href="./src/art/gen/marisa_title.avif" fetchpriority="high" />
 <!-- modulepreload:start（tools/gen_modulepreload.py 生成，勿手改） -->
-  <link rel="modulepreload" href="./src/main.js?v=1.6.30" />
+  <link rel="modulepreload" href="./src/main.js?v=1.6.31" />
   <link rel="modulepreload" href="./src/engine/renderer.js" />
   <link rel="modulepreload" href="./src/engine/input.js" />
   <link rel="modulepreload" href="./src/ui/platform.js" />
@@ -402,7 +402,7 @@
           </div>
         </div>
         <div class="title-deco" aria-hidden="true">
-          <span class="title-ver">Chronicle of Gensokyo · ver 1.6.30</span>
+          <span class="title-ver">Chronicle of Gensokyo · ver 1.6.31</span>
         </div>
       </div>
 
@@ -499,6 +499,6 @@
     </div>
   </div>
 
-  <script type="module" src="./src/main.js?v=1.6.30"></script>
+  <script type="module" src="./src/main.js?v=1.6.31"></script>
 </body>
 </html>

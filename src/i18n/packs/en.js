@@ -2164,12 +2164,4 @@ export default {
   "EXTRA 中段。圆舞曲，一转一转地逼过来。主旋律一个音没改，改的是脚下的重量：原本只有钢琴的弱前奏，我把整个乐队塞进去，开场就贴脸；中间她让开一小段，只剩钢琴打转，然后弦乐和管风琴一起压下来。一圈跳完，够她把那句谎说完。\n——雷米莉亚：「圆舞要跳完。你站着不动，我才难办。」": "Extra midpoint theme. A waltz, closing in one turn at a time. Not one note of the main melody was changed; what changed is the weight underneath. The original's soft, piano-only intro now has the whole orchestra crammed into it, in your face from the first bar. In the middle she steps aside for a stretch and only the piano keeps spinning, then strings and organ bear down together. One full turn is enough time for her to finish the lie.\n— Remilia: \"A waltz must be danced to the end. If you just stand there, it makes things difficult for me.\"",
   "EXTRA Boss 曲。芙兰朵露把音量开到最大，说这样才听得见曲子里的心跳。鼓一推到底，踩镲像鞭子。最后砸下去的那个和弦，没回到该回的地方。她在门里待了四百九十五年，没有第二个晚上可以回。\n——芙兰朵露：「回去？回哪儿去？」": "Extra boss theme. Flandre turned the volume all the way up, saying that is the only way to hear the heartbeat inside the song. Drums pushed to the ceiling, hi-hats like a whip. The last chord, slammed down, never returns to where it belongs. She stayed behind that door for four hundred and ninety-five years; there is no second night to go back to.\n— Flandre: \"Go back? Go back where?\"",
   "GPU 加速": "GPU accelerated",
-  "解锁 EXTRA": "Unlock EXTRA",
-  "输对有音效提示": "a sound plays when it matches",
-  "输入位置": "Where to enter",
-  "标题画面 / 本页：依次按下数字键": "Title screen / this page: press the digits in order",
-  "已解锁：两位主角都能进 EXTRA": "Unlocked: both heroines can enter EXTRA",
-  "秘籍": "Secret Code",
-  "秘籍生效：EXTRA 已解锁（两位主角都能进）": "Secret code accepted — EXTRA unlocked (both heroines)",
-  "秘籍生效：EXTRA 本来就是解锁状态": "Secret code accepted — EXTRA was already unlocked",
 };

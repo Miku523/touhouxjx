@@ -1554,19 +1554,6 @@ body {
   color: rgba(242, 233, 216, .40);
   white-space: nowrap;
 }
-/* 操作说明 · 秘籍卡：16 位数字串塞不进三栏，整行铺开、两行竖排（挤一行时
-   「输对有音效提示」会和下一行的「输入位置」粘在一起读） */
-.overlay.screen-mode .help-grid > .set-group[data-g="help-secret"] {
-  grid-column: 1 / -1;
-}
-.overlay.screen-mode .help-grid > .set-group[data-g="help-secret"] > .set-rows {
-  display: grid;
-  grid-template-columns: 1fr;
-}
-.overlay.screen-mode .help-code {
-  letter-spacing: .14em;
-  font-variant-numeric: tabular-nums;
-}
 
 /* ---------- 角色选择：两张立绘卡 ---------- */
 .overlay.screen-mode .cc-grid {

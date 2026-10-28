@@ -1262,17 +1262,6 @@ class Game {
       row('help-sys', tr('界面'), '<span class="help-tip">' + tr('↑↓ 选择 · ENTER 确认') + '</span>'),
       row('help-sys', tr('静音'), cap('mute')),
       row('help-sys', tr('退出游戏'), cap('quit')),
-      // 秘籍卡：整行铺开（16 位数字串塞不进三栏）。玩家看到就能直接在说明页上按。
-      {
-        ...row('help-secret', tr('解锁 EXTRA'),
-          '<span class="keycap help-code">' + SECRET_EXTRA_CODE + '</span>' +
-          '<span class="help-tip">' + tr('输对有音效提示') + '</span>'),
-        groupTitle: tr('秘籍'), glyph: '秘',
-      },
-      row('help-secret', tr('输入位置'),
-        '<span class="help-tip">' +
-          (this.unlockedExtra ? tr('已解锁：两位主角都能进 EXTRA') : tr('标题画面 / 本页：依次按下数字键')) +
-        '</span>'),
       { label: tr('返回'), cls: 'set-foot-btn back-ghost', key: 'ESC', back: true, group: 'help-foot', onPick: () => this.showTitle() },
     ];
 
@@ -1459,11 +1448,10 @@ class Game {
    * 秘籍命中：EXTRA 直接解锁。
    * 秘籍与「用哪位主角达成真结局」无关，所以两位主角一起开；写进 hks.progress.v1，
    * 和真结局解锁的记录等价（设置页「重置进度」会一起清掉）。
-   * 反馈顺序：先播专属提示音（需求里的「输对有音效提示」），再弹平台 toast，
-   * 最后按当前页重绘——说明页的秘籍卡变成「已解锁」，标题页的 EXTRA 从灰显变可点。
+   * 反馈只给音效（需求：「输对有音效提示」）：不弹 toast、也不在说明页写秘籍卡，
+   * 彩蛋不贴到明面上。解锁后按当前页重绘一次，标题画面的 EXTRA 立刻从灰显变可点。
    */
   _onSecretCode() {
-    const already = this.unlockedExtra && CHAR_KEYS.every((k) => this._extraUnlockedFor(k));
     this.unlockedExtra = true;
     this.extraChars = { reimu: true, marisa: true };
     // 旧格式只认 extraChar：给个合法值，滚回旧版也不会读到不认识的主角
@@ -1472,12 +1460,8 @@ class Game {
     }
     this._saveProgress();
     this.audio?.play?.('secret');
-    const msg = already
-      ? tr('秘籍生效：EXTRA 本来就是解锁状态')
-      : tr('秘籍生效：EXTRA 已解锁（两位主角都能进）');
-    try { platform.showToast?.(msg, 3600); } catch (e) { /* toast 失败也不影响解锁 */ }
     if (this._page === 'help') this.showHelp();
-    else this.showTitle(msg);
+    else this.showTitle();
   }
 
   /**
