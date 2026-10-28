@@ -62,7 +62,8 @@ node tools/_sim_player.mjs --stage 0 --diff N --god 1 --maxSteps 60000 --out _pt
 - 血量：2026-10-28 第十一轮起分两套口径——
   - 平台面小怪（1/2/3/5/6 面）：基准 = 本面 Boss 的「平均承伤符卡运行期血量」× `MOB_CARD_SHARE`（`bossTuning.js`，= 1/64）× 兵种权重（`PLATFORM_KINDS[kind].hp / PLATFORM_KINDS.fairy.hp`，即 6:9:12:15），实际生成时由 `enemies.js` 的 `EnemyManager` 逐只算好，**不再乘 `ENEMY_HP_SCALE`**。基准再分两档：普通兵 ×`MOB_TRASH_SCALE`（1/2，多数、很脆）、精英兵 ×`MOB_ELITE_SCALE`（2，少数，外观同时放大 `MOB_ELITE_SIZE_SCALE` = 1.2×，碰撞框不变），每只按 `MOB_ELITE_CHANCE`（0.15）抽（独立随机流，不动配比/站位）。小头目 = 平均 ×1/10（`MINIBOSS_CARD_SHARE`；第十三轮与小怪一起再 ×3/4）。
   - STG 杂兵（4 面）：`stg.js` 的 `ENEMY_KINDS[*].hp × scaleEnemyHp(1)`（`balance.js` 的 `ENEMY_HP_SCALE = 0.9`）。
-- 平台面道中血量合计（N 难度、含空中护航；`node _pt/mobhp_check.mjs` 实测）：S1 7,092（62 只，精英 6）/ S2 8,572（65 只，精英 5）/ S3 15,862（87 只，精英 15）/ S5 1,675（11 只，精英 2）/ S6 23,965（156 只，精英 29）；小头目单只 906 / 996 / 1013 / 997 / 876（第十三轮：小怪与小头目都 ×3/4）。
+- 数量与弹幕密度（2026-10-28 第十四轮）：`balance.js` 新增 `MOB_COUNT_SCALE = 0.9` 与 `MOB_FIRE_SCALE = 0.9`——平台面在 `EnemyManager` 生成时按「本体序号」跳过约 10% 的小怪（护航随本体一起跳），STG 关（4 面）每波人数 ×0.9（每波至少 1 只）、敌机开火间隔再 ÷0.9（慢 11%）。平台面 mob 数量 62/65/87/11/156 → **53/60/80/8/142**；STG 4 面波次 189 → **174 只**（`_pt/stg_waves.mjs` 实测 45 波）。小头目、Boss 弹幕、Boss 血量均不受影响。
+- 平台面道中血量合计（N 难度、含空中护航；`node _pt/mobhp_check.mjs` 实测，第十四轮口径）：S1 6,170（53 只，精英 5）/ S2 7,948（60 只，精英 5）/ S3 14,399（80 只，精英 14）/ S5 1,597（8 只，精英 2）/ S6 22,291（142 只，精英 27）；小头目单只 906 / 996 / 1013 / 997 / 876（第十三轮：小怪与小头目都 ×3/4，第十四轮只减数量、单只血量不变）。
 
 ### 2.3 亮度（#3）
 - 用 `tools/_shot_stage.mjs --stage N --url http://127.0.0.1:8138/index.html` 抓多个进度点（可传 `--frames`），

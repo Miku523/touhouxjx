@@ -141,6 +141,7 @@
 第十轮用户口述「小怪再削 1/2」；
 第十一轮用户口述「这是最高血量的小怪，但是现在我不想小怪都是这个血量，这样太难打了」——改成分层：
 第十三轮用户口述「全部小怪小头目血量再下降 1/4 且小怪血量随机性延续」——分层与抽取不变，整体再 ×3/4：
+第十四轮用户口述「第四面第四个符卡增血量3%，小怪整体略减少数量和减小弹幕密度」——单只血量不再动，改为**数量**与**弹幕密度**各 ×0.9（见文末「数量与密度」）：
 
 - 基准 = `avg × MOB_CARD_SHARE`，`MOB_CARD_SHARE = 1/64`（第六轮 1/6 → 第八轮 1/12 → 第九轮 1/24 → 第十轮 1/48 → 第十三轮再 ×3/4），基准兵种 `fairy`。小头目 `avg × 1/10`。
 - 2026-10-28 第十一轮起，基准之上再分两档：普通兵 ×`MOB_TRASH_SCALE`（1/2，很脆，占绝大多数）、精英兵 ×`MOB_ELITE_SCALE`（2，少数硬骨头），每只按 `MOB_ELITE_CHANCE`（0.15）抽取。精英标记挂在 `unit.elite`；精英的外观比同兵种普通兵大 `MOB_ELITE_SIZE_SCALE`（1.2×，只放大 `drawGenFairy` 的绘制尺寸，碰撞框 `w/h` 与击破判定不变）。
@@ -148,7 +149,8 @@
 - 兵种之间保留原 6:9:12:15 梯度，按 `PLATFORM_KINDS[kind].hp / PLATFORM_KINDS.fairy.hp` 等比放大：fairy / flyer ×1、weaver ×1.5、lancer / spreader / spinner ×2、bomber ×2.5。
 - 实现：`enemies.js` 的 `EnemyManager` 构造时算出 `mobHpOf(kind, scale)`，传给 `makeFairy`（含 tier≥3 的空中护航）。平台面小怪从此**不再吃 `ENEMY_HP_SCALE`**；STG 杂兵（`src/game/stg.js`）不变。
 - 当前单只血量（普通 / 精英）：fairy·flyer S1 71 / 283、S2 78 / 311、S3 79 / 317、S5 78 / 311、S6 68 / 274；weaver 106 / 425、117 / 467、119 / 475、117 / 467、103 / 411；lancer·spreader·spinner 142 / 566、156 / 622、158 / 633、156 / 623、137 / 547；bomber 177 / 708、194 / 778、198 / 792、195 / 779、171 / 684。
-- 实测（`node _pt/mobhp_check.mjs`）：精英实际占比 S1 6/62、S2 5/65、S3 15/87、S5 2/11、S6 29/156；各面道中血量合计见 `docs/BALANCE_TARGETS.md` §2.2。
+- 实测（`node _pt/mobhp_check.mjs`）：第十四轮起平台面 mob 数量 S1 53、S2 60、S3 80、S5 8、S6 142（较第十三轮约 −10%，跳过逻辑见下）；精英占比 S1 5/53、S2 5/60、S3 14/80、S5 2/8、S6 27/142；各面道中血量合计见 `docs/BALANCE_TARGETS.md` §2.2。
+- **数量与密度（第十四轮）**：`balance.js` 新增 `MOB_COUNT_SCALE = 0.9` / `MOB_FIRE_SCALE = 0.9`。平台面 `EnemyManager` 用 `countRng`（种子 = `gen.seed ^ hashStr(id) ^ 0x6a09e667`）逐只掷骰、按 ≥10% 概率跳过「本体」，随本体生成的空中护航一并不生成；STG 关（4 面）每波人数 `Math.max(1, round(count × 0.9))`、`enemyFireScale` 再 ÷0.9。两者都不动兵种配比权重、站位表与 Boss。
 
 ### D2 数量与位置（`src/game/miniboss.js` 内实现，stage 只负责创建/驱动）
 

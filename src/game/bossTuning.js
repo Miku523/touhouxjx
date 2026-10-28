@@ -297,6 +297,7 @@ export const BOSS_CARD_TUNING = {
         name: '风神「天狗颪」', note: '2026-10-24 用户改为 80s（原 90）',
         limit: 80, mode: 'damage', tier: 4, fx: 'wind', accent: '#ff6b6b',
         effect: 'none', dps: 322.6,
+        hpAdjust: 1.03, // 2026-10-28 第十四轮：用户「第四面第四个符卡增血量 3%」
       },
       {
         name: '「幻想风靡」',

@@ -19,7 +19,7 @@
  */
 import { T } from './level.js';
 import { drawGenFairy } from '../art/genfairy.js';
-import { scaleEnemyHp, scalePlayerDamage } from './balance.js';
+import { scaleEnemyHp, scalePlayerDamage, MOB_COUNT_SCALE, MOB_FIRE_SCALE } from './balance.js';
 import { cardAvgRuntimeHp, MOB_CARD_SHARE, MOB_TRASH_SCALE, MOB_ELITE_SCALE, MOB_ELITE_CHANCE, MOB_ELITE_SIZE_SCALE } from './bossTuning.js';
 
 /**
@@ -354,6 +354,11 @@ export class EnemyManager {
     // 保证「只改血量分层」不会顺带改变敌人配比与站位。
     const hpSeed = (((Number(level.def?.gen?.seed) || 0) ^ hashStr(String(level.def?.id || 'stage'))) ^ 0x2545f491) >>> 0;
     const hpRng = mulberry32(hpSeed || 0x3c6ef372);
+    // 数量削减（2026-10-28 第十四轮「小怪整体略减少数量」）同样单开一条随机流：
+    // 只决定「这只小怪要不要保留」，不消耗种类 / 精英 / 进场的随机序列，
+    // 所以保留下来的小怪种类分布与原来逐只一致，精英分布也不会被重排。
+    const countSeed = (((Number(level.def?.gen?.seed) || 0) ^ hashStr(String(level.def?.id || 'stage'))) ^ 0x7f4a7c15) >>> 0;
+    const countRng = mulberry32(countSeed || 0x51ed270b);
     const used = {};
     const escorts = [];
     // 道中杂兵血量（2026-10-28 第十一轮用户口述）：「这是最高血量的小怪，但是现在我不想
@@ -375,6 +380,9 @@ export class EnemyManager {
     const rollElite = () => mobBase > 0 && hpRng() < MOB_ELITE_CHANCE;
     for (const e of level.entities) {
       if (e.type !== 'fairy' && e.type !== 'flyer') continue;
+      // 第十四轮「小怪整体略减少数量」：只有带 Boss 的平台面道中按 MOB_COUNT_SCALE 抽保留，
+      // 抽签走独立随机流，种类 / 精英 / 进场序列都不受影响。
+      if (mobBase > 0 && countRng() >= MOB_COUNT_SCALE) continue;
       const kind = pickPlatformKind(e.type, tier, rng, used);
       used[kind] = (used[kind] || 0) + 1;
       const info = PLATFORM_KINDS[kind] || PLATFORM_KINDS[e.type];
@@ -414,7 +422,8 @@ export class EnemyManager {
     const d = opts.diff || null;
     // 分面密度：2–6 面道中更稀（齐射发数变少、开火间隔变长）；Extra 传 0 → 1.00
     const dens = Math.min(1.5, Math.max(0.4, Number(opts.stageDensity) || 1));
-    this.fireScale = (Number(d?.enemyFireScale) || this.bulletCooldownMul) / dens;
+    // 第十四轮「减小弹幕密度」：开火间隔再乘 1/MOB_FIRE_SCALE（0.9 → 慢 11%）
+    this.fireScale = (Number(d?.enemyFireScale) || this.bulletCooldownMul) / dens / MOB_FIRE_SCALE;
     // 分面开火递增：1 面保持基准（别太变态），越往后射速越快（最多快 20%）
     this.tierMul = Math.max(0.8, 1 - 0.05 * (Math.max(1, tier) - 1));
     this.bulletCooldownMul = this.fireScale;

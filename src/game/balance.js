@@ -20,6 +20,15 @@ export const PLAYER_ATK_SCALE = 2.6;
 /** 敌人血量倍率（STG 杂兵；平台面小怪改由 bossTuning.js 的 MOB_CARD_SHARE 推导，不吃这里） */
 export const ENEMY_HP_SCALE = 0.9;
 
+/**
+ * 道中小怪（2026-10-28 第十四轮用户口述「小怪整体略减少数量和减小弹幕密度」）：
+ *   - MOB_COUNT_SCALE：生成时的保留比例，平台面逐只按独立随机流抽、STG 波次按编队人数折算。
+ *   - MOB_FIRE_SCALE ：弹幕密度倍率（= 开火间隔 ×1/该值），平台面与 STG 道中同时生效。
+ * 只影响道中杂兵，Boss / 小头目（独自成段、血条与弹幕）完全不动。
+ */
+export const MOB_COUNT_SCALE = 0.9;
+export const MOB_FIRE_SCALE = 0.9;
+
 /** 玩家造成伤害时统一走这里缩放 */
 export function scalePlayerDamage(dmg) {
   return dmg * PLAYER_ATK_SCALE;

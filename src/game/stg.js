@@ -12,7 +12,7 @@ import { drawGenChar, drawCharAura, DRAW_H, POSE_RATIO } from '../art/genchars.j
 import { drawGenFairy } from '../art/genfairy.js';
 import { drawHitbox } from '../art/hitbox.js';
 import { POWER, powerLevel, canSpell, spendPower } from './power.js';
-import { scaleEnemyHp, scalePlayerDamage } from './balance.js';
+import { scaleEnemyHp, scalePlayerDamage, MOB_COUNT_SCALE, MOB_FIRE_SCALE } from './balance.js';
 
 const SPEED = 340;
 const ACCEL = 3200;
@@ -967,7 +967,8 @@ export class StgStage {
 
     // 道中敌机的难度倍率：弹速 / 开火间隔 / 每次齐射发数
     this.enemyBulletScale = Number(diff?.enemyBulletScale) || 1;
-    this.enemyFireScale = (Number(diff?.enemyFireScale) || 1) / dens;
+    // 第十四轮「小怪整体减小弹幕密度」：开火间隔再乘 1/MOB_FIRE_SCALE（0.9 → 慢 11%）
+    this.enemyFireScale = (Number(diff?.enemyFireScale) || 1) / dens / MOB_FIRE_SCALE;
     this.enemySpeedCap = Number(diff?.bulletSpeedCap) || 520;
     const budget = Number(diff?.bulletBudget) || 950;
     this.enemyBulletBudget = Math.min(1250, Math.max(300, budget * 0.88));
@@ -1064,6 +1065,8 @@ export class StgStage {
       }
       n++;
     }
+    // 第十四轮「小怪整体略减少数量」：每波保留比例 = MOB_COUNT_SCALE（每波至少 1 只）
+    for (const w of this.waves) w.count = Math.max(1, Math.round(w.count * MOB_COUNT_SCALE));
   }
 
   /** 进场方式抽签：确定性 rng，同一关每次一致（复现 / 验收可比） */
