@@ -264,6 +264,14 @@ CDP_PORT=9397 node tools/_deploy_check.mjs http://127.0.0.1:8138/ _pt/after2/dep
 
 输出 `ok:true`、`errors/consoleErrors/httpErrors` 全空，并落 `_pt/after2/deploy_title.png`（标题）与 `_pt/after2/deploy_stage.png`（第一面）。注意输出目录要存在，否则脚本会静默退出。
 
+**（2b）线上冒烟（跨境，必须放宽等待）**：
+
+```bash
+DEPLOY_WAIT_STEPS=900 CDP_PORT=9377 node tools/_deploy_check.mjs 'https://mikuascendlog.com/touhouxjx/index.html?nosw=1' _pt/live
+```
+
+脚本默认只等 20 s（100 × 200 ms）的 `window.__game`；本机到 japaneast 的 69 个模块约 600 KiB 经常要 30–60 s 才 boot 完，等太短会得到 `ok:false / booted:false / resources≈31` 的**假失败**（1.6.26 上线首测就踩过这个坑，改等待后同一 URL 立刻通过）。`DEPLOY_WAIT_STEPS` 单位是 200 ms。1.6.26 线上终测：`booted:true`、第一面 `state:dialogue / level:STAGE 1`、三组错误全空、`resources:73`，标题与第一面截图正常。
+
 **（3）定位某张图是谁在请求**：`node tools/_net_whoimg.mjs --url=… --rtt=220 --down=8`，它劫持 `src` setter 打印赋值栈。
 
 ## 5. 取舍与未做的事
