@@ -392,7 +392,7 @@ class Game {
       }
       if (b.feedback) {
         // 例如锁着的 EXTRA：`.btn.locked` 默认 pointer-events:none，
-        // 这里只放开点击（视觉仍为 locked），用来弹出解锁条件提示。
+        // 这里只放开点击（视觉仍为 locked），点了给一条「尚未解锁」提示。
         // aria-disabled 让读屏 / Tab 走查也知道它现在不可进入。
         el.style.pointerEvents = 'auto';
         el.style.cursor = 'pointer';
@@ -919,9 +919,10 @@ class Game {
    * EXTRA 还锁着时的统一反馈。
    * 底部提示行在深色背景里只有 12px 半透明字，锁着的菜单项又不参与选中，
    * 玩家点了以后很容易以为什么都没发生——所以再叠一条平台 toast（桌面 / 手机都可见）。
+   * 只报「尚未解锁」这一句状态：解锁方式（N / H / L 不续命通关）不写在提示里。
    */
   _extraLockedFeedback() {
-    const msg = tr('EXTRA 尚未解锁：用 N / H / L 难度不续命通关即可开启');
+    const msg = tr('EXTRA 尚未解锁');
     try { platform.showToast?.(msg, 3200); } catch (e) { /* toast 失败也不能挡住标题 */ }
     this.showTitle(msg);
   }
@@ -960,7 +961,7 @@ class Game {
         ? { label: tr('门内的祭典'), en: 'EXTRA', key: 'E', hotkey: 'KeyE', cls: 'extra', onPick: () => this.showExtraCharSelect() }
         : {
           // 锁着也给出反馈：保留 locked 视觉（样式表 pointer-events:none 由 feedback 覆盖），
-          // 点击 / 按 E 都能问出解锁条件，而不是毫无反应。noSelect 保证它不参与 ↑↓ 与 Enter 默认选中。
+          // 点击 / 按 E 只提示「EXTRA 尚未解锁」，不再展开解锁条件。noSelect 保证它不参与 ↑↓ 与 Enter 默认选中。
           label: tr('门内的祭典'), en: 'EXTRA', key: 'E', hotkey: 'KeyE',
           cls: 'extra locked', noSelect: true, feedback: true,
           onPick: () => this._extraLockedFeedback(),
