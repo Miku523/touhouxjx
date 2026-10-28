@@ -59,10 +59,10 @@ node tools/_sim_player.mjs --stage 0 --diff N --god 1 --maxSteps 60000 --out _pt
 ### 2.2 小怪数量 / 血量
 - 数量：`node tools/_mapdump.mjs`（检查点/地形）或写纯 Node 脚本 `buildLevelRows(gen)` 后统计
   `'s'`/`'f'` 字形（`level.js` 的 `ENTITY_CHARS`：`s`=fairy、`f`=flyer）。
-- 血量：2026-10-27 第十轮起分两套口径——
-  - 平台面小怪（1/2/3/5/6 面）：本面 Boss 的「平均承伤符卡运行期血量」× `MOB_CARD_SHARE`（`bossTuning.js`，= 1/48；第九轮 1/24 → 第十轮再削 1/2）× 兵种权重（`PLATFORM_KINDS[kind].hp / PLATFORM_KINDS.fairy.hp`，即 6:9:12:15），实际生成时由 `enemies.js` 的 `EnemyManager` 逐只算好，**不再乘 `ENEMY_HP_SCALE`**。小头目 = 平均 ×2/15（`MINIBOSS_CARD_SHARE`，本轮未动），小怪约为小头目的 5/32。
+- 血量：2026-10-28 第十一轮起分两套口径——
+  - 平台面小怪（1/2/3/5/6 面）：基准 = 本面 Boss 的「平均承伤符卡运行期血量」× `MOB_CARD_SHARE`（`bossTuning.js`，= 1/48）× 兵种权重（`PLATFORM_KINDS[kind].hp / PLATFORM_KINDS.fairy.hp`，即 6:9:12:15），实际生成时由 `enemies.js` 的 `EnemyManager` 逐只算好，**不再乘 `ENEMY_HP_SCALE`**。基准再分两档：普通兵 ×`MOB_TRASH_SCALE`（1/2，多数、很脆）、精英兵 ×`MOB_ELITE_SCALE`（2，少数），每只按 `MOB_ELITE_CHANCE`（0.15）抽（独立随机流，不动配比/站位）。小头目 = 平均 ×2/15（`MINIBOSS_CARD_SHARE`，本轮未动）。
   - STG 杂兵（4 面）：`stg.js` 的 `ENEMY_KINDS[*].hp × scaleEnemyHp(1)`（`balance.js` 的 `ENEMY_HP_SCALE = 0.9`）。
-- 平台面道中血量合计（N 难度、含空中护航；`node _pt/mobhp_check.mjs` 实测）：S1 14,530（62 只）/ S2 17,823（65 只）/ S3 27,438（87 只）/ S5 3,219（11 只）/ S6 41,204（156 只）；小头目单只 1225 / 1327 / 1351 / 1329 / 1168（未动）。
+- 平台面道中血量合计（N 难度、含空中护航；`node _pt/mobhp_check.mjs` 实测）：S1 9,578（62 只，精英 6）/ S2 11,417（65 只，精英 5）/ S3 21,171（87 只，精英 15）/ S5 2,234（11 只，精英 2）/ S6 31,942（156 只，精英 29）；小头目单只 1225 / 1327 / 1351 / 1329 / 1168（未动）。
 
 ### 2.3 亮度（#3）
 - 用 `tools/_shot_stage.mjs --stage N --url http://127.0.0.1:8138/index.html` 抓多个进度点（可传 `--frames`），

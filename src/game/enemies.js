@@ -20,7 +20,7 @@
 import { T } from './level.js';
 import { drawGenFairy } from '../art/genfairy.js';
 import { scaleEnemyHp, scalePlayerDamage } from './balance.js';
-import { cardAvgRuntimeHp, MOB_CARD_SHARE } from './bossTuning.js';
+import { cardAvgRuntimeHp, MOB_CARD_SHARE, MOB_TRASH_SCALE, MOB_ELITE_SCALE, MOB_ELITE_CHANCE } from './bossTuning.js';
 
 /**
  * 五色宝石色系。
@@ -348,19 +348,28 @@ export class EnemyManager {
     // 保证敌人种类分布与改动前逐只一致（进场多样性不影响数值/配比）
     const entrySeed = (((Number(level.def?.gen?.seed) || 0) ^ hashStr(String(level.def?.id || 'stage'))) ^ 0x9e3779b9) >>> 0;
     const entryRng = mulberry32(entrySeed || 0x27d4eb2f);
+    // 精英抽取同样单独走一条随机流：不改动种类 / 护航 / 进场序列，
+    // 保证「只改血量分层」不会顺带改变敌人配比与站位。
+    const hpSeed = (((Number(level.def?.gen?.seed) || 0) ^ hashStr(String(level.def?.id || 'stage'))) ^ 0x2545f491) >>> 0;
+    const hpRng = mulberry32(hpSeed || 0x3c6ef372);
     const used = {};
     const escorts = [];
-    // 道中杂兵血量（2026-10-27 第十轮用户口述）：「小怪再削 1/2」。
-    // 基准 = 本面 Boss「平均承伤符卡血量」× MOB_CARD_SHARE（1/48 = 第九轮 1/24 再乘 1/2），
-    // 约为小头目（平均 ×2/15）的 5/32。
-    // 兵种之间保留原 6:9:12:15 梯度（PLATFORM_KINDS.hp / fairy.hp 等比放大）。
+    // 道中杂兵血量（2026-10-28 第十一轮用户口述）：「这是最高血量的小怪，但是现在我不想
+    // 小怪都是这个血量，这样太难打了」——改成分层：
+    //  - 基准 = 本面 Boss「平均承伤符卡血量」× MOB_CARD_SHARE（1/48）× 兵种权重（6:9:12:15）；
+    //  - 普通兵 = 基准 × MOB_TRASH_SCALE（1/2，很脆，占绝大多数）；
+    //  - 精英兵 = 基准 × MOB_ELITE_SCALE（2，少数硬骨头），每只按 MOB_ELITE_CHANCE 抽。
+    // 精英标记挂在 unit.elite 上，供后续做视觉区分；血量以外的一切（种类/站位/进场）不变。
     const mobBase = level.boss ? cardAvgRuntimeHp(level.boss) * MOB_CARD_SHARE : 0;
     const baseKindHp = PLATFORM_KINDS.fairy.hp;
-    const mobHpOf = (kind) => {
+    /** 该兵种的「基准」血量（未分层）；scale 是普通兵 / 精英兵的分层倍率。 */
+    const mobHpOf = (kind, scale = 1) => {
       if (!(mobBase > 0)) return 0;
       const k = PLATFORM_KINDS[kind] || PLATFORM_KINDS.fairy;
-      return Math.max(1, Math.round(mobBase * k.hp / baseKindHp));
+      return Math.max(1, Math.round(mobBase * k.hp / baseKindHp * scale));
     };
+    /** 抽一只的精英标记（没有 Boss 的关卡恒为普通兵）。 */
+    const rollElite = () => mobBase > 0 && hpRng() < MOB_ELITE_CHANCE;
     for (const e of level.entities) {
       if (e.type !== 'fairy' && e.type !== 'flyer') continue;
       const kind = pickPlatformKind(e.type, tier, rng, used);
@@ -376,7 +385,9 @@ export class EnemyManager {
         while (level.rectHitsSolid(x, y, info.w, info.h) && y > T * 1.5 && guard < 30) { y -= 8; guard++; }
       }
       // 进场方案在 build 时确定（站桩 / 侧滑 / 天降 / 闪现 / 俯冲）
-      const unit = makeFairy(e.type, x, y, i++, tint, kind, rng, mobHpOf(kind));
+      const elite = rollElite();
+      const unit = makeFairy(e.type, x, y, i++, tint, kind, rng, mobHpOf(kind, elite ? MOB_ELITE_SCALE : MOB_TRASH_SCALE));
+      unit.elite = elite;
       assignEntry(unit, info.air, entryRng);
       this.list.push(unit);
 
@@ -386,7 +397,9 @@ export class EnemyManager {
         const ey = Math.max(T * 1.5, y - 38);
         if (ex > T * 2 && !level.rectHitsSolid(ex, ey, 30, 34)) {
           const ek = rng() < 0.5 ? 'spreader' : 'spinner';
-          const es = makeFairy('flyer', ex, ey, i++, tint, ek, rng, mobHpOf(ek));
+          const eElite = rollElite();
+          const es = makeFairy('flyer', ex, ey, i++, tint, ek, rng, mobHpOf(ek, eElite ? MOB_ELITE_SCALE : MOB_TRASH_SCALE));
+          es.elite = eElite;
           assignEntry(es, true, entryRng);
           escorts.push(es);
         }

@@ -134,12 +134,25 @@ export function finalHpMulFor(key) {
  *  - 第十轮用户口述：「小怪再削 1/2」
  *    → 小怪 ×1/24 再 ×1/2 = 平均 × 1/48，小头目保持 平均 × 2/15。
  *    此时小怪约为小头目的 5/32（≈16%）。
+ *  - 第十一轮用户口述：「这是最高血量的小怪，但是现在我不想小怪都是这个血量，这样太难打了」
+ *    → 小怪改成分层：普通兵 = 基准 × 1/2（很脆，绝大多数），精英兵 = 基准 × 2（少数），
+ *    每只按 MOB_ELITE_CHANCE 抽精英（独立随机流，不影响种类/进场分布）。
  * 其余兵种仍按 PLATFORM_KINDS.hp 的 6:9:12:15 权重等比放大（见 enemies.js 的 EnemyManager）。
  * 只有平台面道中走这套；STG 杂兵（stg.js）与 Boss 血量完全不受影响。
- * 想整体调松紧只改这两个常量。
+ * 想整体调松紧只改这几个常量。
  */
 export const MINIBOSS_CARD_SHARE = 2 / 15;
 export const MOB_CARD_SHARE = 1 / 48;
+/**
+ * 道中小怪血量分层（2026-10-28 第十一轮）：
+ *  - 普通兵 = 基准 × MOB_TRASH_SCALE（1/2）→ 很脆，占绝大多数
+ *  - 精英兵 = 基准 × MOB_ELITE_SCALE（2）→ 少数硬骨头
+ * 「基准」= 平均承伤符卡血量 × MOB_CARD_SHARE × 兵种权重（6:9:12:15）。
+ * 抽取走独立随机流（enemies.js 的 hpRng），不影响敌人种类与进场方案的分布。
+ */
+export const MOB_TRASH_SCALE = 1 / 2;
+export const MOB_ELITE_SCALE = 2;
+export const MOB_ELITE_CHANCE = 0.15;
 
 /**
  * 该 Boss 所有「承伤符卡」（跳过 survival）运行期血量的平均值。
