@@ -925,35 +925,8 @@ export class MinibossManager {
     }
     ctx.restore();
 
-    // 原型徽记：尖冠（狙）/ 三瓣舞环（舞）/ 引信火花（爆）
-    ctx.save();
-    ctx.globalAlpha = a * 0.9;
-    if (m.archetype === 'sniper') {
-      ctx.fillStyle = look.accent;
-      for (let i = -1; i <= 1; i++) {
-        ctx.beginPath();
-        ctx.moveTo(i * 13, -m.h * 0.46);
-        ctx.lineTo(i * 13 + 5, -m.h * 0.46 - (i === 0 ? 26 : 16));
-        ctx.lineTo(i * 13 + 10, -m.h * 0.46);
-        ctx.closePath();
-        ctx.fill();
-      }
-    } else if (m.archetype === 'dancer') {
-      ctx.strokeStyle = look.accent;
-      ctx.lineWidth = 2.5;
-      for (let i = 0; i < 3; i++) {
-        ctx.beginPath();
-        ctx.arc(0, -m.h * 0.36, 22 + i * 5, t * 1.4 + (i * Math.PI * 2) / 3, t * 1.4 + (i * Math.PI * 2) / 3 + 1.1);
-        ctx.stroke();
-      }
-    } else {
-      ctx.fillStyle = look.accent;
-      ctx.globalAlpha = a * (0.55 + 0.45 * Math.sin(t * 9));
-      ctx.beginPath();
-      ctx.arc(0, -m.h * 0.5, 6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
+    // 头顶原型徽记（尖冠 / 舞环 / 引信火花）：第十一轮用户要求去掉（「小BOSS上面不要出现图标」），
+    // 原型信息改为只看 HP 条右侧的英文标签，本体视觉只保留下面这圈旋转菱形光环。
 
     // 本体：放大版妖精（drawGenFairy 的原点就是包围盒中心）
     ctx.save();

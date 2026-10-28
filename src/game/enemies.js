@@ -20,7 +20,7 @@
 import { T } from './level.js';
 import { drawGenFairy } from '../art/genfairy.js';
 import { scaleEnemyHp, scalePlayerDamage } from './balance.js';
-import { cardAvgRuntimeHp, MOB_CARD_SHARE, MOB_TRASH_SCALE, MOB_ELITE_SCALE, MOB_ELITE_CHANCE } from './bossTuning.js';
+import { cardAvgRuntimeHp, MOB_CARD_SHARE, MOB_TRASH_SCALE, MOB_ELITE_SCALE, MOB_ELITE_CHANCE, MOB_ELITE_SIZE_SCALE } from './bossTuning.js';
 
 /**
  * 五色宝石色系。
@@ -227,7 +227,7 @@ function assignEntry(e, air, rng) {
   }
 }
 
-function makeFairy(type, x, y, idx, tint, kind = type, rng = null, hpOverride = 0) {
+function makeFairy(type, x, y, idx, tint, kind = type, rng = null, hpOverride = 0, elite = false) {
   const colorKey = pickFairyColor(tint, idx);
   const info = PLATFORM_KINDS[kind] || PLATFORM_KINDS[type] || PLATFORM_KINDS.fairy;
   const rnd = rng || Math.random;
@@ -259,7 +259,9 @@ function makeFairy(type, x, y, idx, tint, kind = type, rng = null, hpOverride = 
     deadT: 0,
     stompGrace: 0,
     // 扩展字段：外观尺寸 / 悬停参数 / 各兵种状态机
-    size: info.size,
+    // 精英兵只放大外观（drawGenFairy 的 size），碰撞框 w/h 与击破判定保持原样
+    size: Math.round(info.size * (elite ? MOB_ELITE_SIZE_SCALE : 1)),
+    elite,
     hoverAmp: info.amp,
     hoverSpeed: info.hover,
     patrol: info.air ? 0 : (kind === 'lancer' ? 42 : kind === 'weaver' ? 46 : 52),
@@ -386,8 +388,7 @@ export class EnemyManager {
       }
       // 进场方案在 build 时确定（站桩 / 侧滑 / 天降 / 闪现 / 俯冲）
       const elite = rollElite();
-      const unit = makeFairy(e.type, x, y, i++, tint, kind, rng, mobHpOf(kind, elite ? MOB_ELITE_SCALE : MOB_TRASH_SCALE));
-      unit.elite = elite;
+      const unit = makeFairy(e.type, x, y, i++, tint, kind, rng, mobHpOf(kind, elite ? MOB_ELITE_SCALE : MOB_TRASH_SCALE), elite);
       assignEntry(unit, info.air, entryRng);
       this.list.push(unit);
 
@@ -398,8 +399,7 @@ export class EnemyManager {
         if (ex > T * 2 && !level.rectHitsSolid(ex, ey, 30, 34)) {
           const ek = rng() < 0.5 ? 'spreader' : 'spinner';
           const eElite = rollElite();
-          const es = makeFairy('flyer', ex, ey, i++, tint, ek, rng, mobHpOf(ek, eElite ? MOB_ELITE_SCALE : MOB_TRASH_SCALE));
-          es.elite = eElite;
+          const es = makeFairy('flyer', ex, ey, i++, tint, ek, rng, mobHpOf(ek, eElite ? MOB_ELITE_SCALE : MOB_TRASH_SCALE), eElite);
           assignEntry(es, true, entryRng);
           escorts.push(es);
         }

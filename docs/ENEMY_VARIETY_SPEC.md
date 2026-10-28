@@ -142,7 +142,7 @@
 第十一轮用户口述「这是最高血量的小怪，但是现在我不想小怪都是这个血量，这样太难打了」——改成分层：
 
 - 基准 = `avg × MOB_CARD_SHARE`，`MOB_CARD_SHARE = 1/48`（第六轮 1/6 → 第八轮 1/12 → 第九轮 1/24 → 第十轮再 ×1/2），基准兵种 `fairy`。小头目保持 `avg × 2/15`。
-- 2026-10-28 第十一轮起，基准之上再分两档：普通兵 ×`MOB_TRASH_SCALE`（1/2，很脆，占绝大多数）、精英兵 ×`MOB_ELITE_SCALE`（2，少数硬骨头），每只按 `MOB_ELITE_CHANCE`（0.15）抽取。精英标记挂在 `unit.elite`（目前只改数值，外观未区分）。
+- 2026-10-28 第十一轮起，基准之上再分两档：普通兵 ×`MOB_TRASH_SCALE`（1/2，很脆，占绝大多数）、精英兵 ×`MOB_ELITE_SCALE`（2，少数硬骨头），每只按 `MOB_ELITE_CHANCE`（0.15）抽取。精英标记挂在 `unit.elite`；精英的外观比同兵种普通兵大 `MOB_ELITE_SIZE_SCALE`（1.2×，只放大 `drawGenFairy` 的绘制尺寸，碰撞框 `w/h` 与击破判定不变）。
 - 抽取走 `enemies.js` 的独立随机流 `hpRng`（种子 = `关卡 gen.seed ^ hashStr(id) ^ 0x2545f491`），不改动种类 / 护航 / 进场序列，所以分层前后敌人配比与站位逐只一致；同一关每次进入的精英分布也完全确定。
 - 兵种之间保留原 6:9:12:15 梯度，按 `PLATFORM_KINDS[kind].hp / PLATFORM_KINDS.fairy.hp` 等比放大：fairy / flyer ×1、weaver ×1.5、lancer / spreader / spinner ×2、bomber ×2.5。
 - 实现：`enemies.js` 的 `EnemyManager` 构造时算出 `mobHpOf(kind, scale)`，传给 `makeFairy`（含 tier≥3 的空中护航）。平台面小怪从此**不再吃 `ENEMY_HP_SCALE`**；STG 杂兵（`src/game/stg.js`）不变。
@@ -165,7 +165,7 @@
 ### D3 数据与行为
 
 - HP：`bossHalfCardHp(stage.def.boss)`（stage 侧算好传入 manager）。所有难度同一 HP。
-- 小头目本体：绘制用 `drawGenFairy`（`src/art/genfairy.js`）放大版（`size≈92~104`）+ 该原型色；再加一层视觉标识（旋转光环/尖冠/星徽，任选简单画法），不要复用 Boss 立绘。
+- 小头目本体：绘制用 `drawGenFairy`（`src/art/genfairy.js`）放大版（`size≈92~104`）+ 该原型色；本体下方一圈旋转菱形光环作视觉标识，不要复用 Boss 立绘。头顶原型徽记（尖冠 / 舞环 / 引信火花）2026-10-28 第十一轮按用户要求移除（「小BOSS上面不要出现图标」），原型只由 HP 条右侧英文标签体现。
 - 三种原型（确定性分配），各自 2~3 套弹幕循环，循环内按 `difficulty` 的 `enemyBulletScale` / `enemyFireScale` / `bulletSpeedCap` / `bulletBudget` 缩放：
   1. `sniper`（蓝）：瞄准 5 连扇（带轻微提前量）↔ 3 连快速点射；HP<50% 后追加一次带缺口环。
   2. `dancer`（紫）：2/3 臂旋转螺旋 ↔ 交替双向扇；伴随横向漂移。

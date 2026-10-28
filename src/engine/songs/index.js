@@ -74,7 +74,7 @@ export const SONGS = {
   // ナイト・オブ・ナイツ 三曲的 idiom 融合，G 小调 160 BPM 80 小节 = 120.0s（见 tools/build/_exsr_compose.py）。
   // audio 让引擎直接播离线 band 渲染成品 src/assets/bgm/sakuya_ex.mp3，
   // fetch 失败时自动回退 sakuya_ex.js 里的合成数据。
-  ex_pre: { ...SAKUYA_EX.ex_pre, audio: 'src/assets/bgm/sakuya_ex.mp3?v=1.6.23' },
+  ex_pre: { ...SAKUYA_EX.ex_pre, audio: 'src/assets/bgm/sakuya_ex.mp3?v=1.6.24' },
   // EX 中段（雷米莉亚拦路）：亡き王女の為のセプテット —— 主旋律照原曲扒谱、编制照 194s 蓝本重排到 160 BPM 圆舞（见 tools/ex_septette2.py）
   ex_mid: REMILIA_EX.ex_mid,
   // 3 面 Boss：おてんば恋娘 —— Ateam 重低频编 + 花映塚 + 完美教室（见 tools/ateam_stage3.py）

@@ -153,6 +153,11 @@ export const MOB_CARD_SHARE = 1 / 48;
 export const MOB_TRASH_SCALE = 1 / 2;
 export const MOB_ELITE_SCALE = 2;
 export const MOB_ELITE_CHANCE = 0.15;
+/**
+ * 精英兵的外观放大倍数（2026-10-28 第十一轮，用户：「可以稍微大一点」）。
+ * 只放大 `drawGenFairy` 的绘制尺寸，碰撞框（w/h）与击破判定不变。
+ */
+export const MOB_ELITE_SIZE_SCALE = 1.2;
 
 /**
  * 该 Boss 所有「承伤符卡」（跳过 survival）运行期血量的平均值。
