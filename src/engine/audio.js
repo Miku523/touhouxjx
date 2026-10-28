@@ -482,6 +482,21 @@ export class AudioEngine {
         break;
       }
 
+      // 秘籍输对：E–G–B 快速上行 + 高八度长音收尾 + 高音闪光。
+      // 和「胜利」的四音上行都错开：换成三角波主奏、最后一口拖长，
+      // 一耳朵就知道是「解锁成功」而不是又打赢了一关。
+      case 'secret': {
+        const notes = [659.25, 783.99, 987.77, 1318.5];
+        for (let i = 0; i < notes.length; i++) {
+          const last = i === notes.length - 1;
+          const dur = last ? 0.34 : 0.075;
+          this._tone('triangle', notes[i], notes[i], dur, g(0.16), t0 + i * 0.09);
+          this._tone('square', notes[i] / 2, notes[i] / 2, dur, g(0.045), t0 + i * 0.09);
+        }
+        this._noise(0.3, g(0.05), 'highpass', 5000, 9200, t0 + 0.18);
+        break;
+      }
+
       // 符卡：低频轰鸣 + 上扬扫频 + 明亮和弦，一耳朵听出「清屏大招」
       case 'spell': {
         this._noise(0.5, g(0.2), 'lowpass', 2600, 200, t0);

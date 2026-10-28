@@ -42,6 +42,11 @@ const STAGE_KEY = (i) => `stage${i + 1}`;
 /** 可玩主角：EXTRA 按这顺序各自解锁、各自可选 */
 const CHAR_KEYS = ['reimu', 'marisa'];
 const PROGRESS_KEY = 'hks.progress.v1';
+/**
+ * EXTRA 解锁秘籍：在标题画面或「操作说明」页依次按下这 16 个数字键。
+ * 与真结局解锁等价（写进 hks.progress.v1），只是给不想等到真结局的玩家 / 排查用。
+ */
+const SECRET_EXTRA_CODE = '2002081120260909';
 /** 音乐回忆室：听过哪些曲子（与通关进度分开存，重置进度不清空回忆） */
 const MUSIC_KEY = 'hks.music.v1';
 /** 符卡演出的世界减速：总时长（秒）与最大减速比例（0.55 = 掉到 45% 速度） */
@@ -171,6 +176,8 @@ class Game {
     this._pendingTimeout = 0;
     this.menuIndex = 0;
     this.menuButtons = [];
+    // 秘籍输入缓冲：依次按下的数字；按到别的键就清空
+    this._secretBuf = '';
 
     /* ---------- 设置项（可持久化） ---------- */
     this._settingsOrigin = 'title'; // 设置页来源：'title' 标题 / 'pause' 暂停
@@ -245,6 +252,8 @@ class Game {
       if (this._tryStageWarp(e)) return;
       // 音乐回忆室是整屏页面：按键先交给它，消费掉就不再漏进标题菜单
       if (this.musicRoom?.handleKey(e)) return;
+      // 秘籍：依次按下 16 位数字解锁 EXTRA（标题画面 / 操作说明页，见 SECRET_EXTRA_CODE）
+      if (this._trySecretCode(e)) return;
       // 静音键：标题页的 M 另有用途（音乐室），其余状态（暂停 / 对话 / 结局 /
       // 结算面板）也该能一键静音。play 状态由主循环里的 mute 动作处理，避免重复触发。
       if (e.code === 'KeyM' && !this._captureAction && this.state !== 'menu' && this.state !== 'play') {
@@ -1063,7 +1072,8 @@ class Game {
     const diff = getDifficulty(this.difficulty);
     this._setPanel(tr('选择主角'), tr('当前难度：{d} · {n} 面', { d: tr(diff.cn), n: diff.stageCount }), rows,
       tr('← → 选择　ENTER 确认　ESC 返回难度'),
-      { screen: true, en: 'SELECT HEROINE', grid: 'cc-grid', scene: 'shrine', select: this.char === 'marisa' ? 1 : 0 }
+      // page 标记：数字键 1 / 2 在这一页是选人热键，秘籍输入要靠 _page 让位（见 _trySecretCode）
+      { screen: true, en: 'SELECT HEROINE', grid: 'cc-grid', scene: 'shrine', page: 'charselect', select: this.char === 'marisa' ? 1 : 0 }
     );
     this._bindPortraitArt();
   }
@@ -1137,6 +1147,8 @@ class Game {
       notice || tr('EXTRA 的主角各自解锁：N / H / L 不续命通关 1–6 面，那位主角才能进入 EXTRA'),
       {
         screen: true, en: 'SELECT HEROINE · EXTRA', grid: 'cc-grid', scene: 'mansion',
+        // 同主线选人页：EXTRA 选人的 1 / 2 也是热键，别被秘籍输入吃掉
+        page: 'extrachar',
         select: Math.max(0, cards.findIndex((c) => this._extraUnlockedFor(c.key))),
       }
     );
@@ -1250,6 +1262,17 @@ class Game {
       row('help-sys', tr('界面'), '<span class="help-tip">' + tr('↑↓ 选择 · ENTER 确认') + '</span>'),
       row('help-sys', tr('静音'), cap('mute')),
       row('help-sys', tr('退出游戏'), cap('quit')),
+      // 秘籍卡：整行铺开（16 位数字串塞不进三栏）。玩家看到就能直接在说明页上按。
+      {
+        ...row('help-secret', tr('解锁 EXTRA'),
+          '<span class="keycap help-code">' + SECRET_EXTRA_CODE + '</span>' +
+          '<span class="help-tip">' + tr('输对有音效提示') + '</span>'),
+        groupTitle: tr('秘籍'), glyph: '秘',
+      },
+      row('help-secret', tr('输入位置'),
+        '<span class="help-tip">' +
+          (this.unlockedExtra ? tr('已解锁：两位主角都能进 EXTRA') : tr('标题画面 / 本页：依次按下数字键')) +
+        '</span>'),
       { label: tr('返回'), cls: 'set-foot-btn back-ghost', key: 'ESC', back: true, group: 'help-foot', onPick: () => this.showTitle() },
     ];
 
@@ -1394,6 +1417,67 @@ class Game {
     const def = list[index];
     if (!def) { this._onAllCleared(); return; }
     this._createStage(def, index, false, opts);
+  }
+
+  /**
+   * 秘籍输入：依次按下 SECRET_EXTRA_CODE 的 16 位数字解锁 EXTRA。
+   * 标题画面和「操作说明」页都认（秘籍就写在说明页上，玩家看到就能当场按）。
+   *
+   * 只吃纯数字键：带 Shift / Ctrl / Alt / Meta 的一律放过——Shift + 1–6 是隐藏跳关，
+   * 别把玩家「想跳关」的按键吞进秘籍缓冲。改键录音、音乐回忆室整屏接管时也让位。
+   * 选人页的 1 / 2 是主角热键、改键页数字键可能正被绑成动作，这两个页面不抢。
+   * 按到数字以外的键就把缓冲清空：玩家会自然地「重新数一遍」，
+   * 也避免一天里零散按到的数字凑成秘籍。
+   * @returns {boolean} 是否已消费这次按键
+   */
+  _trySecretCode(e) {
+    if (!e || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
+    if (this._captureAction) return false;
+    if (this.musicRoom?.visible) return false;
+    // 只在菜单类页面（标题 / 难度 / 说明 / 设置）生效；游戏里、暂停里都不吃数字键
+    if (this.state !== 'menu') return false;
+    if (!this.overlay || this.overlay.classList.contains('hidden')) return false;
+    const page = this._page;
+    if (page === 'charselect' || page === 'extrachar' || page === 'keybinds') return false;
+    const m = /^(?:Digit|Numpad)([0-9])$/.exec(e.code || '');
+    if (!m) {
+      if (this._secretBuf) this._secretBuf = '';
+      return false;
+    }
+    // 数字键在菜单里本来没有功能，命中就吞掉（也挡住浏览器 / 输入法的默认行为）
+    e.preventDefault();
+    // 只留最后 16 位：输错一位也只要再补 16 位就能命中，不用回标题重来
+    this._secretBuf = (this._secretBuf + m[1]).slice(-SECRET_EXTRA_CODE.length);
+    if (this._secretBuf === SECRET_EXTRA_CODE) {
+      this._secretBuf = '';
+      this._onSecretCode();
+    }
+    return true;
+  }
+
+  /**
+   * 秘籍命中：EXTRA 直接解锁。
+   * 秘籍与「用哪位主角达成真结局」无关，所以两位主角一起开；写进 hks.progress.v1，
+   * 和真结局解锁的记录等价（设置页「重置进度」会一起清掉）。
+   * 反馈顺序：先播专属提示音（需求里的「输对有音效提示」），再弹平台 toast，
+   * 最后按当前页重绘——说明页的秘籍卡变成「已解锁」，标题页的 EXTRA 从灰显变可点。
+   */
+  _onSecretCode() {
+    const already = this.unlockedExtra && CHAR_KEYS.every((k) => this._extraUnlockedFor(k));
+    this.unlockedExtra = true;
+    this.extraChars = { reimu: true, marisa: true };
+    // 旧格式只认 extraChar：给个合法值，滚回旧版也不会读到不认识的主角
+    if (!CHAR_KEYS.includes(this.extraChar)) {
+      this.extraChar = CHAR_KEYS.includes(this.char) ? this.char : CHAR_KEYS[0];
+    }
+    this._saveProgress();
+    this.audio?.play?.('secret');
+    const msg = already
+      ? tr('秘籍生效：EXTRA 本来就是解锁状态')
+      : tr('秘籍生效：EXTRA 已解锁（两位主角都能进）');
+    try { platform.showToast?.(msg, 3600); } catch (e) { /* toast 失败也不影响解锁 */ }
+    if (this._page === 'help') this.showHelp();
+    else this.showTitle(msg);
   }
 
   /**

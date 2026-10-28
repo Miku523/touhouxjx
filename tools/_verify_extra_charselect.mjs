@@ -16,10 +16,14 @@ async function toTitle() {
 
 try {
   await T.boot();
+  // 开机标题动画没结束前，main.js 的全局 keydown 会先吞掉按键（_bootDone 还是 false），
+  // 这里等它真结束再继续，否则下面第一下 KeyE 会被跳标题动画吃掉，偶发失败。
+  await T.waitFor('__game._bootDone === true', 12000);
 
   // ---------- 1) 旧存档迁移：只有 extraChar（上一版格式） ----------
   await T.eval(`localStorage.setItem('hks.progress.v1', JSON.stringify({ extraUnlocked: true, extraChar: 'reimu' }))`);
   await T.boot({ query: '?migrate=' + Date.now() });
+  await T.waitFor('__game._bootDone === true', 12000);
   await T.sleep(400);
   out.migrateSingle = await j(`({
     unlocked: __game.unlockedExtra, chars: __game.extraChars, extraChar: __game.extraChar,
@@ -32,6 +36,7 @@ try {
   // ---------- 2) 更老存档：只有 extraUnlocked，没有角色 ----------
   await T.eval(`localStorage.setItem('hks.progress.v1', JSON.stringify({ extraUnlocked: true }))`);
   await T.boot({ query: '?migrate=' + Date.now() });
+  await T.waitFor('__game._bootDone === true', 12000);
   await T.sleep(400);
   out.migrateLegacy = await j(`({ chars: __game.extraChars, saved: JSON.parse(localStorage.getItem('hks.progress.v1') || 'null') })`);
   check('远古存档(无角色)迁移：两位都解锁', out.migrateLegacy.chars.reimu && out.migrateLegacy.chars.marisa);
