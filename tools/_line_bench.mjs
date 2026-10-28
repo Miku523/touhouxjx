@@ -232,6 +232,7 @@ function parseArgs(argv) {
     only: null,
     bigLines: null,
     maxSeconds: 480,
+    fromJson: null,
     help: false,
   };
   for (const a of argv) {
@@ -250,6 +251,7 @@ function parseArgs(argv) {
     else if (a.startsWith('--only=')) o.only = a.slice(7).split(',').map((s) => s.trim()).filter(Boolean);
     else if (a.startsWith('--big-lines=')) o.bigLines = a.slice(12).split(',').map((s) => s.trim()).filter(Boolean);
     else if (a.startsWith('--dir=')) o.dir = a.slice(6);
+    else if (a.startsWith('--from-json=')) o.fromJson = a.slice(12);
     else if (a.startsWith('--protocols=')) {
       const list = a.slice(12).split(',').map((s) => s.trim()).filter(Boolean);
       const picked = list.filter((p) => p === 'h1' || p === 'h2');
@@ -278,6 +280,7 @@ const USAGE = [
   '  --big-lines=a,b     只对这些线路跑大文件下载（默认全部可用线路）',
   '  --json              结果落 tools/_opt/line_bench_<yyyymmdd-HHMM>.json + .md（默认已开启）',
   '  --dir=DIR           结果目录（默认 tools/_opt）',
+  '  --from-json=PATH     不测速，只把已保存的 .json 重新渲染成同名 .md（改报告文案用，零网络）',
   '  --no-save           不落文件，只打控制台',
   '  --max-seconds=N     整轮时间预算，超出后剩余线路标 SKIP（默认 480）',
   '  -h, --help          显示本帮助',
@@ -1061,13 +1064,21 @@ function buildMarkdown(payload) {
   }
   if (s.fastestId && s.fastestId !== 'main') {
     const fr = results.find((r) => r.id === s.fastestId);
-    push('- 其余可用线路里最快的是 ' + code(s.fastestId) + '（' + f(ttfbOf(fr), 0) + ' ms）' + (s.baseTtfb ? '，仍是主域名的 ×' + f(ttfbOf(fr) / s.baseTtfb, 1) : '') + '。');
+    const ratio = s.baseTtfb ? ttfbOf(fr) / s.baseTtfb : null;
+    push('- 本次窗口最快的探测线路是 ' + code(s.fastestId) + '（' + f(ttfbOf(fr), 0) + ' ms）' + (ratio === null ? '。' : '，为主域名 ' + f(s.baseTtfb, 0) + ' ms 的 ×' + f(ratio, 2) + (ratio < 1 ? '（本次快 ' + f((1 - ratio) * 100, 0) + '%）' : '（慢 ' + f((ratio - 1) * 100, 0) + '%）') + '。') + '注意这是**单窗口**结果：绝对 TTFB 会随国际链路拥塞漂移 2–5×（见第 3 节 min/max），跨窗口排序会互换，不能凭一轮就换线路。');
   } else {
-    push('- 主域名本身就是本次最快的可用线路：没有出现能反超它的镜像/CDN。');
+    push('- 主域名本身就是本次最快的可用线路：没有任何镜像/CDN 反超它。');
   }
   if (s.cfFronted.length) {
     const best = s.cfFronted[0];
-    push('- 所有镜像/CDN 里最快的 ' + code(best.id) + ' 仍比主域名慢 **×' + f(best.ratio, 1) + '**（' + f(best.ttfb, 0) + ' ms，边缘 ' + (best.region || '?') + '；压缩 ' + best.enc + '）。即「换免费 CDN」这一层没有收益，只多一跳。');
+    const pct = Math.round((best.ratio - 1) * 100);
+    if (best.ratio >= 1.2) {
+      push('- 镜像/CDN 里最快的 ' + code(best.id) + ' 比主域名慢 **' + (best.ratio >= 1.8 ? '×' + f(best.ratio, 1) : pct + '%') + '**（' + f(best.ttfb, 0) + ' ms，边缘 ' + (best.region || '?') + '；压缩 ' + best.enc + '）。即「换免费 CDN」这一层没有收益，只多一跳。');
+    } else if (best.ratio >= 0.8) {
+      push('- 镜像/CDN 里最快的 ' + code(best.id) + ' 与主域名基本持平（' + f(best.ttfb, 0) + ' vs ' + f(s.baseTtfb, 0) + ' ms，差 ' + Math.abs(pct) + '%，在噪声内；压缩 ' + best.enc + '）。⇒ 换 CDN 没有稳定收益，只多一跳和一份缓存维护成本。');
+    } else {
+      push('- 镜像/CDN 里最快的 ' + code(best.id) + ' 本次比主域名**快 ' + Math.abs(pct) + '%**（' + f(best.ttfb, 0) + ' ms，边缘 ' + (best.region || '?') + '）。单窗口不足以支撑切换：跨窗口波动可达数倍（见第 3 节 min/max），要换必须多网络多渠道复测。');
+    }
   }
   push('- 稳定性：本次主域名的失败率与波动没有比其它可用线路差；单次极值可以很大（见第 3 节 min/max），但中位数稳定——抖动主要来自本机到境外边缘的链路，而不是某条线路特有故障。');
   push('');
@@ -1075,7 +1086,8 @@ function buildMarkdown(payload) {
   push('### (b) 加 A 记录 / 加 IPv6 / CF 前置 / ICP+国内 CDN：预期收益与代价', '');
   push('**1) 补上 .110/.111 两条 A 记录（几乎零成本）**', '');
   if (s.ipTtfbs.length >= 2) {
-    push('- 实测：Pages 官方 4 条 A 记录（.108–.111，SNI/Host 保持主域名）本次 ' + s.ipTtfbs.map((x) => code(x.id) + ' ' + (x.tag === 'OK' ? '200' : x.tag)).join('、') + '，region 都是 ' + (s.regionSet.join('/') || 'japaneast') + '，TTFB 中位数 ' +
+    const ipRegions = [...new Set(results.filter((r) => /^ip\d+$/.test(r.id)).map((r) => { const p = primaryProto(r); return p ? r.small[p].regions[0] : null; }).filter(Boolean))];
+    push('- 实测：Pages 官方 4 条 A 记录（.108–.111，SNI/Host 保持主域名）本次 ' + s.ipTtfbs.map((x) => code(x.id) + ' ' + (x.tag === 'OK' ? '200' : x.tag)).join('、') + '，region 全部是 ' + (ipRegions.join('/') || 'japaneast') + '，TTFB 中位数 ' +
       s.ipTtfbs.map((x) => code(x.id) + ' ' + f(x.ttfb, 0) + 'ms').join('、') +
       (s.ipSpreadPct !== null ? '，彼此跨度 ' + s.ipSpreadPct + '%' : '') + '。');
   } else {
@@ -1096,7 +1108,7 @@ function buildMarkdown(payload) {
   if (s.cfFronted.length) {
     const first = s.cfFronted[0];
     const last = s.cfFronted[s.cfFronted.length - 1];
-    push('- 实测：本次 CF 承载的线路（' + s.cfFronted.map((x) => code(x.id)).join('、') + '）TTFB 中位数 ' + f(first.ttfb, 0) + '–' + f(last.ttfb, 0) + ' ms，是主域名的 ×' + f(first.ratio, 1) + '–×' + f(last.ratio, 1) + '，边缘落点在境外（' + s.cfFronted.map((x) => x.region || '?').join('/') + '），国内没有节点。');
+    push('- 实测：本次 CF 承载的线路（' + s.cfFronted.map((x) => code(x.id)).join('、') + '）TTFB 中位数 ' + f(first.ttfb, 0) + '–' + f(last.ttfb, 0) + ' ms，为主域名 ' + f(s.baseTtfb, 0) + ' ms 的 ×' + f(first.ratio, 1) + '–×' + f(last.ratio, 1) + '（小于 ×1 表示本次反而更快，属噪声）；边缘落点在境外（' + s.cfFronted.map((x) => x.region || '?').join('/') + '），国内没有节点。');
   }
   push('- 结论：**按现状不要上 CF 代理**。免费 CF 在国内无节点（CF 中国网络需企业版 + 备案），代理后等于把「本机→东京 Fastly」换成「本机→境外 CF→回源 GitHub」，多一跳 TLS 且回源仍跨境。收益只存在于「Pages IP 被墙」的极端情况；真到那一步正确解法是 ICP + 国内 CDN，而非 CF 免费版。代价：多一跳 TLS、发布后要处理缓存一致性与 purge，并且挡住 x-github-edge-region 观测。');
   push('');
@@ -1120,10 +1132,25 @@ function buildMarkdown(payload) {
   push('node tools/_line_bench.mjs --runs=3                        # 快速复跑，结果打屏 + 落盘');
   push('node tools/_line_bench.mjs --json                         # 显式落盘 tools/_opt/line_bench_<yyyymmdd-HHMM>.{md,json}');
   push('node tools/_line_bench.mjs --only=main,jsdelivr --runs=10 # 只盯两条线路，加大采样');
+  push('node tools/_line_bench.mjs --from-json=tools/_opt/line_bench_<stamp>.json # 不测速，只重渲染 .md');
   push(fence, '');
   push('注意：不同 ISP / 省份 / 时段会得到不同数字（CDN 边缘、国际出口拥塞、家宽 QoS 都在变）。要下「换线路」这种决定，至少 2 个以上网络环境各跑一轮，只看中位数与失败率，不要看单次极值。', '');
 
   return lines.join('\n');
+}
+
+// ─────────────────────────────────────────────── 只重渲染（零网络）
+
+function rerender(file) {
+  const p = path.resolve(file);
+  const payload = JSON.parse(fs.readFileSync(p, 'utf8'));
+  payload.summaryFull = buildSummary(payload.results || []);
+  const md = buildMarkdown(payload);
+  const out = p.replace(/\.json$/i, '.md');
+  fs.writeFileSync(out, md + '\n', 'utf8');
+  process.stdout.write(md + '\n');
+  process.stderr.write('[line-bench] 已重新渲染: ' + out + '\n');
+  return 0;
 }
 
 // ─────────────────────────────────────────────── 主流程
@@ -1134,6 +1161,7 @@ async function main() {
     process.stdout.write(USAGE + '\n');
     return 0;
   }
+  if (opt.fromJson) return rerender(opt.fromJson);
 
   const ctx = { opt, startedAt: now(), expectedBigBytes: null };
   try {

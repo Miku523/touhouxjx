@@ -10,6 +10,7 @@ const URL0 = process.argv[2] || 'http://127.0.0.1:8137/index.html';
 const OUT = process.argv[3] || '_deploy_local';
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const PORT = Number(process.env.CDP_PORT || 9361);
+const WAIT_STEPS = Number(process.env.DEPLOY_WAIT_STEPS || 100); // ×200ms 等 __game 就绪；跨境慢链路可调大
 const W = 1280, H = 720;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -96,7 +97,7 @@ try {
   await send('Page.navigate', { url });
 
   let booted = false;
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < WAIT_STEPS; i++) {
     try { if (await ev('!!window.__game')) { booted = true; break; } } catch {}
     await sleep(200);
   }
