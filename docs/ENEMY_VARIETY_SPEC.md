@@ -22,7 +22,7 @@
 - 工作树里已有上一轮音乐/Boss 调整的未提交改动（`src/assets/levelgen.js`、`src/game/stage.js`、`src/game/boss.js`、`src/game/level.js` 等）。**不要回滚、不要格式化整文件**，只做本任务需要的增量修改，diff 必须能一眼看出本任务的部分。
 - 代码风格：ES Module、2 空格缩进、分号、注释用中文（与现有代码一致）。不引入任何依赖/构建步骤。
 - 不改（除非本任务明确要求）：`src/game/difficulty.js` 的数值表、`src/game/bossTuning.js` 的数值、`src/game/boss.js` 现有 Boss 行为（只允许新增 `bossHalfCardHp` 导出）、`src/main.js`、`src/i18n/packs/*`、`src/assets/levels.js` 的关卡尺寸/音乐/剧情。
-- 新 UI 文案用**英文/符号**（`MINI BOSS`、`+1/32P`），避免触碰 i18n 门禁（`tools/i18n_gate.mjs` 要求 `tr('…')` 键四语齐全）。
+- 新 UI 文案用**英文/符号**（`SNIPER`、`+1/32P`），避免触碰 i18n 门禁（`tools/i18n_gate.mjs` 要求 `tr('…')` 键四语齐全）。
 - 性能：不要每帧 new 对象/数组；远距离（>2400px）不更新、不绘制；尊重 `bulletBudget` 与 `BulletPool` 上限。
 - 测试一律用本地服务器：`8137`（已在跑）→ `--url http://127.0.0.1:8137/index.html`。headless Edge 路径脚本里已写死。
 
@@ -175,7 +175,7 @@
 - 触发：`player.x + 400 > x - 1100` 时开始进场（提前一屏入场）。
 - 受击：`shots.hitRect` 结算（同 `Boss.damageWithShots` 的矩形近似），命中闪白 + 火花；接触玩家 `player.hurt`（用现有敌人同款调用方式，带 invuln 保护）。
 - 击破：爆裂 + 冲击波 + 镜头震动；`stage._addPower(POWER.pickup)`（+4 = 1/32P），弹出 `+1/32P` 漂浮字；`stage.onEvent('minibossClear', {key, index})`（main.js 有 default 分支，安全）；清空自己所在半径的敌弹（`bullets.clear()` 会给玩家喘息，允许）。
-- HP 条：激活期间在小头目头顶画：`MINI BOSS` 小字 + 原型英文标签（`SNIPER`/`DANCER`/`BOMBER`）+ 细血条（宽 120px，底/满两色）。世界坐标绘制（`ctx.translate(-cam.x, -cam.y)`），不污染 HUD DOM。
+- 头顶 UI（世界坐标绘制，`ctx.translate(-cam.x, -cam.y)`，不污染 HUD DOM）：2026-10-28 第十一轮按用户要求收敛为**只有一行居中的原型英文标签**（`SNIPER`/`DANCER`/`BOMBER`，10px 粗体 + 深色描影）——原来的 `MINI BOSS` 小字、120px 细血条与右侧右对齐标签一律去掉；血量反馈靠命中闪白。
 - 边界必须处理：玩家死亡/复活（`_respawn`）→ 未击破的激活中小头目重置为未触发+满血，击破的保持击破；Boss 战开始（`beginBoss`）→ 清掉激活中的小头目与弹幕（避免 Boss 开场混弹）；关卡重开/重试 → 新建 manager 自然重置；暂停/对话（`state!=='play'`）→ 不更新。
 
 ### D4 API 契约（stage.js 集成点）

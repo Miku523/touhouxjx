@@ -806,7 +806,7 @@ export class MinibossManager {
       }
       if (m.state === 'enter') this._drawEntryTrail(ctx, m);
       this._drawBody(ctx, m);
-      this._drawHpBar(ctx, m);
+      this._drawLabel(ctx, m);
     }
     this._drawFloaters(ctx, cx, cy);
   }
@@ -945,36 +945,24 @@ export class MinibossManager {
     ctx.restore();
   }
 
-  /** 世界坐标 HP 条：MINI BOSS 小字 + 原型英文标签 + 120px 细条。 */
-  _drawHpBar(ctx, m) {
-    const w = 120;
-    const h = 5;
-    const x = m.x - w / 2;
-    const y = m.y - m.h * 0.78 - 30;
-    const ratio = clamp(m.hp / m.maxHp, 0, 1);
+  /**
+   * 头顶原型标签（2026-10-28 第十一轮用户要求）：
+   * 「MINI BOSS」字样一并去掉、右侧原型文字改为居中、血条隐藏。
+   * 现在只剩头顶居中的原型英文名（SNIPER / DANCER / BOMBER），血量反馈靠命中闪白。
+   */
+  _drawLabel(ctx, m) {
+    const y = m.y - m.h * 0.78 - 16;
 
     ctx.save();
     ctx.globalAlpha = 0.9;
-    // 底槽
-    ctx.fillStyle = 'rgba(6, 9, 20, 0.62)';
-    ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
-    // 满血条
-    ctx.fillStyle = m.look.accent;
-    ctx.fillRect(x, y, w * ratio, h);
-    // 高光：血条顶部一条白线，读起来更利落
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(x, y, w * ratio, 1);
-    ctx.globalAlpha = 0.9;
-    // 文案
-    ctx.font = 'bold 9px "Microsoft YaHei", "PingFang SC", sans-serif';
+    ctx.font = 'bold 10px "Microsoft YaHei", "PingFang SC", sans-serif';
     ctx.textBaseline = 'alphabetic';
-    ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(226, 238, 255, 0.82)';
-    ctx.fillText('MINI BOSS', x, y - 6);
-    ctx.textAlign = 'right';
+    ctx.textAlign = 'center';
+    // 深色描影：天空 / 樱花等亮背景上也能读清
+    ctx.fillStyle = 'rgba(6, 9, 20, 0.62)';
+    ctx.fillText(m.look.label, m.x + 1, y + 1);
     ctx.fillStyle = m.look.accent;
-    ctx.fillText(m.look.label, x + w, y - 6);
+    ctx.fillText(m.look.label, m.x, y);
     ctx.restore();
   }
 
