@@ -108,16 +108,16 @@ const DEFS = [
   // 6 面 Boss：竹取飛翔 ～ Lunatic Princess —— 原曲三条轨逐音原样，外加月光琶音 / 铺底 / 补鼓（见 tools/kaguya_fuse2.py）
   { id: 'kaguya_stage6', url: './kaguya_stage6.js', keys: ['stage6'],
     pick: (m) => ({ stage6: m.KAGUYA_STAGE6?.stage6 }) },
-  // EX Boss：U.N.オーエンは彼女なのか？～ 495年の孤独（见 tools/un_mad.py）
-  // audio 让引擎直接播离线渲染成品 src/assets/bgm/extra_mad.mp3，
-  // fetch 失败时自动回退到 un_mad.js 里的合成数据。
-  { id: 'un_mad', url: './un_mad.js', keys: ['extra'],
-    pick: (m) => ({ extra: m.UN_MAD?.extra ? { ...m.UN_MAD.extra, audio: 'src/assets/bgm/extra_mad.mp3' } : undefined }) },
+  // EX Boss：恶魔之妹 —— 最終鬼畜妹フランドール・S × U.N.オーエンは彼女なのか？（见 tools/build/_fld_compose.py）
+  // audio 让引擎直接播离线渲染成品 src/assets/bgm/flandre_devil.mp3，
+  // fetch 失败时自动回退到 flandre_devil.js 里的合成数据。
+  { id: 'flandre_devil', url: './flandre_devil.js', keys: ['extra'],
+    pick: (m) => ({ extra: m.FLANDRE_DEVIL?.extra ? { ...m.FLANDRE_DEVIL.extra, audio: 'src/assets/bgm/flandre_devil.mp3?v=1.6.41' } : undefined }) },
   // EX 道中：红月下追逐不止的女仆（见 tools/build/_exsr_compose.py）
   // audio 让引擎直接播离线 band 渲染成品 src/assets/bgm/sakuya_ex.mp3，
   // fetch 失败时自动回退 sakuya_ex.js 里的合成数据。
   { id: 'sakuya_ex', url: './sakuya_ex.js', keys: ['ex_pre'],
-    pick: (m) => ({ ex_pre: m.SAKUYA_EX?.ex_pre ? { ...m.SAKUYA_EX.ex_pre, audio: 'src/assets/bgm/sakuya_ex.mp3?v=1.6.32' } : undefined }) },
+    pick: (m) => ({ ex_pre: m.SAKUYA_EX?.ex_pre ? { ...m.SAKUYA_EX.ex_pre, audio: 'src/assets/bgm/sakuya_ex.mp3?v=1.6.36' } : undefined }) },
   // EX 中段（雷米莉亚拦路）：亡き王女の為のセプテット —— 见 tools/ex_septette2.py
   { id: 'septette_ex', url: './septette_ex.js', keys: ['ex_mid'],
     pick: (m) => ({ ex_mid: m.REMILIA_EX?.ex_mid }) },

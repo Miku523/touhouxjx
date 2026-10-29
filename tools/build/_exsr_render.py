@@ -1014,8 +1014,9 @@ def render_song(song, out_sr=DEFAULT_OUT_SR, wet=HALL_WET, drive=SAT_DRIVE,
             nr = max(1, int(round(ramp * out_sr)))
             if len(seg) > 2 * nr:
                 w = 0.5 - 0.5 * np.cos(np.linspace(0.0, np.pi, nr))
-                seg[:nr] = g * w
-                seg[-nr:] = g * w[::-1]
+                # 相对增益：从当前基线 1.0 平滑过渡到 g（不能从 0 起，否则段首会静音 0.4s）
+                seg[:nr] = 1.0 + (g - 1.0) * w
+                seg[-nr:] = 1.0 + (g - 1.0) * w[::-1]
             env[i0:i1] *= seg
         y = y * env
 

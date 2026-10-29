@@ -140,16 +140,16 @@ DNS 侧：主域名只有两条 A（`185.199.108.153` / `185.199.109.153`，TTL 
 - 引用改造：`src/art/genboss.js`、`src/art/genchars.js`、`src/art/genfairy.js`、`src/game/dialogue.js`（`AI_PORTRAITS`）、`src/game/ending.js`、`src/game/spellCutin.js`、`src/game/stage.js`、`src/main.js`；`index.html` 三条首屏 preload 加 `type="image/webp"` 并指向 `.webp`。
 - 逐张体积 / PSNR 表：`tools/_opt/webp_table.md`，机器可读：`tools/_opt/webp_report.json`；运行时验收：`node tools/_opt_art_check.mjs`（62 张 decode 与尺寸一致、全部 `200 + image/webp`、0 4xx）。
 
-### 3.2 预渲染 BGM 转 MP3（3 首，−14.8 MB）
+### 3.2 预渲染 BGM 转 MP3（3 首，−15.0 MB）
 
 | 曲目 | 用途 | WAV | MP3 |
 | --- | --- | --- | --- |
 | `sakuya_ex` | EXTRA 道中 | 5,292,044 B | **1,369,893 B** |
 | `festival_box` | EXTRA 结局（八音盒） | 9,664,118 B | **2,545,365 B** |
-| `extra_mad` | U.N. 终盘 | 5,483,526 B | **1,401,593 B** |
-| 合计 | | 20,439,688 B | **5,316,851 B（−74.0%）** |
+| `flandre_devil` | EXTRA 终盘（恶魔之妹） | 6,615,044 B | **1,698,472 B** |
+| 合计 | | 21,571,206 B | **5,613,730 B（−74.0%）** |
 
-- 脚本：`python tools/optimize_audio_mp3.py`（MPEG-2 Layer III / 22050 Hz / 单声道 / VBR ≈ 91.5 kbps）。源是 22.05 kHz 单声道母版，所以用 MPEG-2 L3，不用 44.1k 的 MPEG-1。
+- 脚本：`python tools/optimize_audio_mp3.py`（MPEG-2 Layer III / 22050 Hz / 单声道 / VBR ≈ 91.8 kbps）。源是 22.05 kHz 单声道母版，所以用 MPEG-2 L3，不用 44.1k 的 MPEG-1。
 - 关键在于**别让循环接缝变形**：lame 默认不写 Xing/Info 头，播放器只能猜时长；这里自己构造 Xing/Info + LAME tag，按 `n = 576 × 帧数 − delay − padding` 反解精确 padding、TOC 用真实帧偏移。验收（`node tools/verify_audio_mp3.mjs`，49 pass / 0 fail）：
   - Edge `decodeAudioData` 时长差 **0.000000 s**、采样数差 **0**（22050 native 与 48000 两种 context 都比过）；
   - 与 WAV 互相关 lag = 0、corr 0.9994–0.99998；
@@ -279,9 +279,9 @@ DEPLOY_WAIT_STEPS=900 CDP_PORT=9377 node tools/_deploy_check.mjs 'https://mikuas
 - **不给背景降分辨率**：`src/engine/renderer.js` 里 `dpr = min(devicePixelRatio, 2)`、backing 至少 1.25× 超采样，画布设备像素可以到 2560 宽，2048 宽的背景源图是真有用的；降到 1600 还能再省约 1.4 MB，但大屏会发糊，不采纳（实验脚本 `tools/_opt_bg_downscale.py`，数据在 `tools/_opt/downscale/`）。
 - **不引入免费 CDN**：实测全部更慢或不可用（见 §1）。
 - **国内再加速需要 ICP 备案 + 国内 CDN**：那是运营层面的事，不在本次代码改动范围。
-- **母版 / 原图仍留在仓库**：三首 WAV（20.4 MB）与 47 张原始 PNG/JPG 还在，只是不再被请求，不影响加载；是否移出版本库（改用 Release / 图床）待定。
+- **母版 / 原图仍留在仓库**：三首 WAV（20.2 MB）与 47 张原始 PNG/JPG 还在，只是不再被请求，不影响加载；是否移出版本库（改用 Release / 图床）待定。
 - **首访仍会按需补图**：受限链路上没有完全预取的 Boss 立绘（约 883 KB）、自机帧等，会在玩家真正进入对应场景时按需加载——这是设计意图，不是遗漏。
-- **已知素材特性（未改）**：`extra_mad` 源 WAV 开头有 0.717 s 数字静音；`sakuya_ex` 的循环点本身有素材级跳变（WAV 一致，MP3 未放大）。
+- **已知素材特性（未改）**：`flandre_devil` 开场就是满电平的八音盒与钟摆，没有数字静音；`sakuya_ex` 的循环点本身有素材级跳变（WAV 一致，MP3 未放大）。
 
 - **本轮没做「进关模块动态化」**：`src/game/stage.js` 39 K、`src/game/boss.js` 47 K、`src/art/scenes.js` 51 K、`src/game/story.js` 28 K、`src/game/ending.js`、`src/assets/levelgen.js` 50 K 仍然静态进首访（合计约 180 KiB gzip）。它们和曲库不同——进第一面就要用，动态化只是把成本从首访挪到进关，弱网下会变成「点开始后多等一个 RTT」。留作后续可选项。
 - **不做 AVIF 能力探测**：见 §2.2，回退靠 `onerror`；代价是极老浏览器可能在首屏 3 图各浪费一次 404（`type="image/avif"` 的 preload 会被忽略，只发生在 `artUrl()` 的 `<img>` 路径上）。
