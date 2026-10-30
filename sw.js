@@ -22,19 +22,18 @@
      - 不碰：非 GET、跨域、range 请求、非 200、chrome-extension://、sw.js 自身
    ============================================================ */
 
-const CACHE_VERSION = 'hks-v1.6.45';
+const CACHE_VERSION = 'hks-v1.6.46';
 const CACHE_PREFIX = 'hks-';
 const OFFLINE_URL = './index.html';
 const NETWORK_TIMEOUT = 4000;
 /**
- * 没有缓存兜底时的兜底超时。4s 只适用于「超时还能回缓存」的场景；
+ * 没有缓存兜底时不再设人为超时（v1.6.46 起）。4s 只适用于「超时还能回缓存」的场景；
  * 冷缓存 / 换版本（purgeCodeCache 已清空代码缓存）时模块只能走网络，
- * 15KB/s 下 gzip 后 57KB 的 main.js 要 5s 以上，4s 会系统性地把模块图掐成 504。
- * 所以这里只留一个防彻底卡死的上限，慢但健康的请求让它跑完。
- * 实测（15KB/s、SW 已激活、代码缓存被清）：30s 仍会把排在队尾的模块图尾请求掐成 504
- * （69 个模块 / 6 连接，队首到队尾的响应头排队就要 30-40s），故取 120s 只作极端兜底。
+ * 15KB/s 下 69 个模块排 6 条连接，队首到队尾光排队就要 30-40s，整图跑完 2 分钟以上。
+ * 实测：30s 上限 → 一次重载 70 条 504；120s 上限 → 仍有 28-36 条（队尾请求），
+ * 同时页面重试又白下 ~0.93MB。任何固定上限都会切到队尾，所以干脆不加：
+ * 网络真断了 fetch 自己会 reject（network 已 catch 成 null），那时才回缓存 / 504。
  */
-const NETWORK_TIMEOUT_HARD = 120000;
 /**
  * hks:warm 预热预算（防止弱网 / 慢链路下把整站再下一遍，和前台立绘、音乐抢带宽）：
  *   · 字节：SW 生命周期内累计，最多额外下 1.5MB
@@ -46,7 +45,7 @@ const WARM_MAX_MS = 8000;
 /** 本次 SW 生命周期里 hks:warm 已经额外下载的字节数（两次 warm 共享同一份预算） */
 let warmSpentBytes = 0;
 /** 预缓存离线壳；单个失败（404/网络抖动）不影响安装 */
-const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.6.45'];
+const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.6.46'];
 
 const OFFLINE_HTML =
   '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' +
@@ -292,10 +291,13 @@ async function networkFirst(request) {
     return cached;
   }
 
-  // 无兜底：只能等网络把数据拿回来（慢链路下这就是玩家真正在下载的那一次）
-  const res = await withTimeout(network, NETWORK_TIMEOUT_HARD).catch(() => null);
+  // 无兜底：这次请求就是玩家真正在下载的那一次，不要给它加人为超时。
+  // 15KB/s 下 69 个模块排 6 条连接，队尾要等两分钟以上——加 120s 上限只会把队尾
+  // 掐成 504 再让页面重试、白付一遍字节（实测复访 28 条 504 / 0.93MB 重下）。
+  // 网络真断了 fetch 会自己 reject（network 已 catch 成 null），落到缓存兜底。
+  const res = await network;
   if (res && res.ok) return res;
-  // 无缓存 + 网络确实拿不到任何数据：这才是 504 唯一该出现的位置
+  if (cached) return cached;
   return new Response('', { status: 504, statusText: 'Offline' });
 }
 
