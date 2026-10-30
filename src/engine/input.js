@@ -159,6 +159,16 @@ function clampAxis(v) {
   return Math.max(-1, Math.min(1, n));
 }
 
+/**
+ * 操作方式：
+ *  - 'keys'       键盘（默认）：方向键 + Z/J 射击 + X/L 符卡
+ *  - 'wasd-mouse' WASD 移动 + 鼠标左键射击 + 鼠标右键符卡
+ */
+export const SCHEMES = ['keys', 'wasd-mouse'];
+
+/** 鼠标按键 → 动作（只在 wasd-mouse 方案里生效） */
+const MOUSE_BUTTON_ACTIONS = { 0: 'shoot', 2: 'cast' };
+
 export class Input {
   constructor() {
     /** 键盘按住的动作 */
@@ -202,6 +212,11 @@ export class Input {
     /** @type {Map<string, {primary:string, alt:string|null}>} */
     this.binds = loadBinds();
 
+    /** 当前操作方式，见 SCHEMES（main 启动时按设置同步） */
+    this.scheme = SCHEMES[0];
+    /** 鼠标按住的动作（来源 'mouse'，只有 wasd-mouse 方案会写入） */
+    this._mouseHeld = new Set();
+
     this._onKeyDown = (e) => {
       const action = this.actionOf(e.code);
       // 空格与方向键会滚动页面 / 移动焦点，一律拦掉
@@ -229,6 +244,7 @@ export class Input {
     window.addEventListener('keydown', markGesture, { once: true });
 
     this._bindTouch();
+    this._bindMouse();
   }
 
   /* ------------------------------------------------------------------ */
@@ -316,6 +332,7 @@ export class Input {
     for (const a of this._keyHeld) this.held.set(a, true);
     for (const a of this._padHeld) this.held.set(a, true);
     for (const a of this._gpHeld) this.held.set(a, true);
+    for (const a of this._mouseHeld) this.held.set(a, true);
   }
 
   _addEdge(map, action, source) {
@@ -354,6 +371,7 @@ export class Input {
     this._keyHeld.clear();
     this._padHeld.clear();
     this._gpHeld.clear();
+    this._mouseHeld.clear();
     this._recomputeHeld();
     for (const a of wasHeld) {
       this._addEdge(this._releasedBy, a, 'key');
@@ -528,6 +546,68 @@ export class Input {
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
     window.removeEventListener('blur', this._onBlur);
+    this._releaseMouse();
+    window.removeEventListener('pointerup', this._onMouseUp);
+    window.removeEventListener('pointercancel', this._onMouseUp);
+    if (this._mouseCanvas) {
+      this._mouseCanvas.removeEventListener('pointerdown', this._onMouseDown);
+      this._mouseCanvas.removeEventListener('contextmenu', this._onContextMenu);
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 鼠标（WASD + 鼠标 方案）                                             */
+  /* ------------------------------------------------------------------ */
+
+  /** 切换操作方式；切换时松开鼠标键，避免切走那一刻按着左键、切回来还卡着射击 */
+  setScheme(scheme) {
+    const next = SCHEMES.includes(scheme) ? scheme : SCHEMES[0];
+    if (next === this.scheme) return;
+    this.scheme = next;
+    this._releaseMouse();
+  }
+
+  /**
+   * 鼠标按键按下 / 松开：button 0 = 射击，2 = 符卡。
+   * 按下只在 wasd-mouse 方案里生效；松开永远生效（清掉可能残留的按住状态）。
+   */
+  setMouseButton(button, value) {
+    const action = MOUSE_BUTTON_ACTIONS[button];
+    if (!action) return;
+    if (value) {
+      if (this.scheme !== 'wasd-mouse') return;
+      this._setSource(this._mouseHeld, action, true, 'mouse');
+    } else if (this._mouseHeld.has(action)) {
+      this._setSource(this._mouseHeld, action, false, 'mouse');
+    }
+  }
+
+  _releaseMouse() {
+    for (const a of [...this._mouseHeld]) this._setSource(this._mouseHeld, a, false, 'mouse');
+  }
+
+  _bindMouse() {
+    const canvas = document.getElementById('game');
+    this._mouseCanvas = canvas || null;
+    this._onMouseDown = (e) => {
+      // 触屏 / 笔走虚拟手柄，这里只认鼠标
+      if (e.pointerType && e.pointerType !== 'mouse') return;
+      this.setMouseButton(e.button, true);
+    };
+    this._onMouseUp = (e) => {
+      if (e.pointerType && e.pointerType !== 'mouse') return;
+      this.setMouseButton(e.button, false);
+    };
+    this._onContextMenu = (e) => {
+      // 右键是符卡，别弹出浏览器菜单（只在 wasd-mouse 方案里拦）
+      if (this.scheme === 'wasd-mouse') e.preventDefault();
+    };
+    // 按下只认游戏画面：菜单 / HUD 按钮都是 DOM，点在它们身上不会落到 canvas
+    if (canvas) canvas.addEventListener('pointerdown', this._onMouseDown);
+    // 松开挂在 window 上：按下后指针可能已经移出画面甚至窗口
+    window.addEventListener('pointerup', this._onMouseUp);
+    window.addEventListener('pointercancel', this._onMouseUp);
+    if (canvas) canvas.addEventListener('contextmenu', this._onContextMenu);
   }
 
   /* ------------------------------------------------------------------ */

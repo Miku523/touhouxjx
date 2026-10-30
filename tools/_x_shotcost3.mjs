@@ -1,0 +1,10 @@
+import { launch } from './_pt_core.mjs';
+import { LOCAL, cold, throttle, sample, nav } from './_x_gate.mjs';
+const T = await launch({ port: 9471, width: 1280, height: 720 });
+await cold(T); await throttle(T, { latency: 0, down: -1, up: -1, type: 'wifi' });
+const t0 = Date.now();
+await nav(T, LOCAL + '/index.html?nosw=1');
+console.log('navHelper=' + (Date.now() - t0) + 'ms');
+const rows = await sample(T, [1, 2, 3, 5], { dir: 'tools/shots/net_gate', tag: 'clock3' });
+for (const r of rows) console.log('at=' + r.at + ' wall=' + r.wall + ' domT=' + (r.dom && r.dom.t) + ' shotMs=' + r.shotMs + ' light=' + (r.img && r.img.lightPct));
+await T.close();

@@ -483,6 +483,9 @@ export class Stage {
     this.onEvent = opts.onEvent || (() => {});
 
     this.level = new Level(this.def, opts.index);
+    // 软件光栅低配标记（由 main.js 从 renderer.lowSpec 传进来）：
+    // 影响纹理缩放采样质量与全屏混合层开销，见 tools/reports/perf.md。
+    this.lowSpec = !!opts.lowSpec;
     this.mode = this.level.mode === 'stg' ? 'stg' : 'platform';
     this.extra = !!this.level.extra;
     // Extra 固定按 EX 隐藏档的强度；主线按玩家选择的难度
@@ -1986,7 +1989,7 @@ export class Stage {
       };
       ctx.save();
       ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
+      ctx.imageSmoothingQuality = this.lowSpec ? 'low' : 'high';
       paint(layers[ai], 1);
       if (k > 0.001 && layers[ai + 1]) {
         paint(layers[ai + 1], k);
@@ -2032,7 +2035,7 @@ export class Stage {
 
     ctx.save();
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
+    ctx.imageSmoothingQuality = this.lowSpec ? 'low' : 'high';
     ctx.globalAlpha = fade;
     ctx.drawImage(a.img, x, y, iw, ih);
     if (mixK > 0.001 && b !== a && b.ok) {
@@ -2254,8 +2257,9 @@ export class Stage {
       ctx.fillStyle = gr.gnd;
       ctx.fillRect(cam.x, dy + H - 190, VIEW_W, 190);
 
-      // 环境光染色：让程序化地形接到厚涂背景的光色里
-      if (gr.amb) {
+      // 环境光染色：让程序化地形接到厚涂背景的光色里。
+      // overlay 是逐像素混合，软件光栅实测 -9ms/帧；低配跳过（perf.md §2.2/§8 P0-3）。
+      if (gr.amb && !this.lowSpec) {
         ctx.save();
         ctx.globalCompositeOperation = 'overlay';
         ctx.globalAlpha = 0.26;
@@ -2263,8 +2267,9 @@ export class Stage {
         ctx.fillRect(cam.x, dy + H - 210, VIEW_W, 210);
         ctx.restore();
       }
-      // 去饱和 + 统一色相：程序化草地的荧光绿和厚涂背景不是一个世界
-      if (gr.sat) {
+      // 去饱和 + 统一色相：程序化草地的荧光绿和厚涂背景不是一个世界。
+      // saturation 混合在软件光栅上同样昂贵，低配跳过。
+      if (gr.sat && !this.lowSpec) {
         ctx.save();
         ctx.globalCompositeOperation = 'saturation';
         ctx.globalAlpha = 1;

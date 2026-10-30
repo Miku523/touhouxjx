@@ -54,6 +54,16 @@ export class Renderer {
     // ---- 低配自动降档：软件光栅（WARP/SwiftShader）下放弃全部后期、backing 降到 1.0 ----
     this.softwareRaster = detectSoftwareRaster();
     this.lowSpec = this.softwareRaster;
+    // 低配动态 backing：软件光栅下按帧时间在 0.75 -> 0.67 -> 0.60 -> 0.55 之间降档。
+    // 像素数是软件光栅唯一有效的旋钮（perf.md §1.5：1.0=21.7ms、0.75=15.9、0.67=12.6、0.60=10.8、0.55 约 9ms）。
+    this._lowSteps = [0.75, 0.67, 0.60, 0.55];
+    this._lowIdx = 0;
+    this.lowBacking = this._lowSteps[0];
+    this._lowEma = 0;
+    this._lowFrames = 0;
+    this._lowCooldown = 0;
+    this._lowLast = 0;
+    this._lowStart = 0;      // 首次开始计时的时刻（前 5s 是启动/开屏，不参与降档）
 
     // ---- 后期处理缓冲（bloom 用低分辨率，省带宽） ----
     this.bloom = document.createElement('canvas');
@@ -129,17 +139,24 @@ export class Renderer {
     // backing store：至少 1.25x 超采样，保证矢量描边和细字在 1x 屏上也不糊。
     // 1.5 倍在 1280×720 窗口下会渲染 1920×1080（2.25 倍像素）；1.25 倍省约 30% 填充率，
     // 而画布仍由浏览器降采样，边缘抗锯齿观感几乎不变。软件光栅再降到 1.0。
-    const floor = this.lowSpec ? 1.0 : 1.25;
-    // 软件光栅在 1600×900 / 1920×1080 这类大窗口下，backing 1.25 实测只有 9–14fps
-    // （每帧 115ms，见 QA 第三轮）；超过 1.0 全是逐像素光栅成本，而矢量画风对
-    // 合成器放大 1.25× 的柔化不敏感。这里锁 1.0（1280×720）换可玩帧率。
-    const cap = this.lowSpec ? 1.0 : 2.5;
+    // 软件光栅：像素数（backing）是唯一起作用的旋钮。1280×720 下 backing 1.0 实测每帧
+    // 50–68ms（15fps），0.75（960×540）实测 16.7ms（60fps 撞顶），且窗口大小几乎无影响
+    // （像素数由 backing 决定，见 tools/reports/perf.md §2.2）。合成器放大带来的柔化在
+    // 2D 手绘风里可接受，远好过 15fps。GPU 路径完全不变。
+    const floor = this.lowSpec ? this.lowBacking : 1.25;
+    const cap = this.lowSpec ? this.lowBacking : 2.5;
     const dprForBacking = Math.max(1, this.dpr);
     const backing = Math.min(Math.max(scale * dprForBacking, floor), cap);
     this.backing = backing;
 
-    this.canvas.width = Math.round(VIEW_W * backing);
-    this.canvas.height = Math.round(VIEW_H * backing);
+    // backing 没变就不要重设 canvas.width/height：赋值会清空画布并触发后端存储重建，
+    // 是切画质 / 窗口 resize 时 50–80ms hitch 的一部分（perf.md §2.3）。
+    const cwPx = Math.round(VIEW_W * backing);
+    const chPx = Math.round(VIEW_H * backing);
+    if (this.canvas.width !== cwPx || this.canvas.height !== chPx) {
+      this.canvas.width = cwPx;
+      this.canvas.height = chPx;
+    }
     this.canvas.style.width = cssW + 'px';
     this.canvas.style.height = cssH + 'px';
 
@@ -169,9 +186,45 @@ export class Renderer {
 
     // 矢量绘制需要平滑，跟像素风相反
     this.ctx.imageSmoothingEnabled = true;
-    this.ctx.imageSmoothingQuality = 'high';
+    // 软件光栅下 'high' 的每个 drawImage 缩放都要高质量重采样：实测 Boss 战 68ms→32ms
+    // （2.1×，perf.md §2.2）。'low' 只是缩放锐度略降，GPU 路径保持 high。
+    this.ctx.imageSmoothingQuality = this.lowSpec ? 'low' : 'high';
 
     this.ctx.setTransform(backing, 0, 0, backing, 0, 0);
+  }
+
+  /**
+   * 低配动态 backing：按帧间隔 EMA 决定是否再降一档（只降不升）。
+   * 预算 19ms（约 52fps）触发降档；刚变档的 30 帧不计入，避开改 canvas 尺寸后的首帧长帧。
+   */
+  _tuneLowBacking() {
+    if (!this.lowSpec) return;
+    const n = this._lowSteps.length;
+    const now = performance.now();
+    if (!this._lowStart) this._lowStart = now;
+    if (now - this._lowStart < 5000) { this._lowLast = now; return; }   // 启动/开屏阶段的一次性长帧不算
+    if (!this._lowLast) { this._lowLast = now; return; }
+    const dt = now - this._lowLast;
+    this._lowLast = now;
+    if (dt <= 0 || dt > 400) return;   // 切后台 / 一次性长卡顿不计入
+    if (this._lowCooldown > 0) { this._lowCooldown--; return; }
+    this._lowEma = this._lowEma ? this._lowEma * 0.9 + dt * 0.1 : dt;
+    this._lowFrames++;
+    if (this._lowEma > 19 && this._lowFrames > 120 && this._lowIdx < n - 1) {
+      this._lowIdx++;
+      this._applyLowBacking();
+    }
+  }
+
+  _applyLowBacking() {
+    this.lowBacking = this._lowSteps[this._lowIdx];
+    this._lowEma = 0;
+    this._lowFrames = 0;
+    this._lowCooldown = 30;
+    this._lowStart = performance.now();   // 每次变档后重新给 5s 观察期
+    this.fit();
+    this._syncInfo();
+    this.skipPostFrames(2);
   }
 
   /** 诊断信息快照（供测试断言，不影响渲染逻辑） */
@@ -180,6 +233,7 @@ export class Renderer {
     window.__rendererInfo = {
       mode: this.lowSpec ? 'soft' : 'gpu',
       backing: this.backing,
+      lowBacking: this.lowBacking,
       postLevel: this.postLevel,
       canvasW: this.canvas.width,
       canvasH: this.canvas.height,
@@ -202,7 +256,9 @@ export class Renderer {
   setQuality(q) {
     const mode = (q === 'high' || q === 'low') ? q : 'auto';
     this.quality = mode;
-    const low = mode === 'low' || (mode === 'auto' && this.softwareRaster);
+    // 注意：软件光栅下即使玩家手选「高」也强制走低配（backing 0.75 + 关后期）。
+    // 否则 1280×720 只有 5–6fps 且没有自动逃生（perf.md §3.2）。
+    const low = mode === 'low' || this.softwareRaster;
     this.lowSpec = low;
     // 玩家手选「高」时不再让自适应把辉光收走，否则「高」看起来跟「自动」一样
     this.autoDegrade = mode !== 'high';
@@ -249,6 +305,7 @@ export class Renderer {
 
   /** 每帧绘制前重置状态，返回以逻辑坐标工作的 ctx */
   begin(bgColor) {
+    this._tuneLowBacking();
     const ctx = this.ctx;
     ctx.setTransform(this.backing, 0, 0, this.backing, 0, 0);
     ctx.globalAlpha = 1;

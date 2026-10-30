@@ -173,6 +173,8 @@ class Game {
     this.screenShake = true;
     // 画质档位：'auto' 跟随硬件检测，'high' / 'low' 玩家强制覆盖（设置页「画质」行）
     this.quality = 'auto';
+    // 操作方式：'keys' 键盘（默认）/ 'wasd-mouse' WASD 移动 + 鼠标左键射击、右键符卡
+    this.controlScheme = 'keys';
     this._pendingTimeout = 0;
     this.menuIndex = 0;
     this.menuButtons = [];
@@ -189,6 +191,8 @@ class Game {
     this._settingsSfxVolume = 1;
     this._settingsSfxOn = true;
     this._loadSettings();
+    // 设置加载完再把操作方式同步给 Input（Input 在 105 行就建好了，必须先有设置值）
+    this._applyControlScheme();
     this._loadProgress();
     // 音乐回忆：先读出「听过哪些曲子」，再让音频引擎在每次换曲时回报
     this._heardSongs = new Set();
@@ -837,13 +841,20 @@ class Game {
   _revealTitle() {
     if (this._bootDone) return;
     this._bootDone = true;
-    // 等两帧：确保 renderer 已经用补全后的标题插画画过至少一帧，再淡出启动幕
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      // hide() 内部加 .done 淡出、淡完 display:none，和标题开屏动画同时开始
-      this._boot?.hide();
-      // 启动幕刚开始淡出就开演：人物从右侧滑进来，标题与选项从左侧滑进来
-      this._playTitleIntro();
-    }));
+    const reveal = () => {
+      // 等两帧：确保 renderer 已经用补全后的标题插画画过至少一帧，再淡出启动幕
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        // hide() 内部加 .done 淡出、淡完 display:none，和标题开屏动画同时开始
+        this._boot?.hide();
+        // 启动幕刚开始淡出就开演：人物从右侧滑进来，标题与选项从左侧滑进来
+        this._playTitleIntro();
+      }));
+    };
+    // 主样式表（src/style.css）没到之前不许撤启动幕：撤掉首绘兜底又没样式，
+    // 露出来的就是未排版的裸 DOM（1.6.41 弱网「紫屏 + 裸 HUD 文字」的根因）。
+    // index.html 的 __hksAfterCss 会在样式表就绪（或已弹出错误面板）后回调。
+    if (typeof window.__hksAfterCss === 'function') window.__hksAfterCss(reveal);
+    else reveal();
   }
 
   /* ---------------- 标题开屏动画 ----------------
@@ -1233,6 +1244,7 @@ class Game {
         grid: 'diff-grid',
         scene: 'mountain',
         select: Math.max(0, DIFFICULTY_KEYS.indexOf(this.difficulty)),
+        page: 'difficulty',
       }
     );
   }
@@ -1241,6 +1253,9 @@ class Game {
     this.state = 'menu';
     const K = (a) => this.input.labelFor(a);
     const cap = (a) => `<span class="keycap">${K(a)}</span>`;
+    // WASD + 鼠标 方案里，射击/符卡改用鼠标键帽；键盘键位其实还能用，只是不再主推
+    const mouseMode = this.input.scheme === 'wasd-mouse';
+    const mcap = (label) => `<span class="keycap">${tr(label)}</span>`;
     const row = (group, label, ctl) => ({
       cls: 'info help-row',
       group,
@@ -1253,12 +1268,13 @@ class Game {
       row('help-move', tr('跳跃'), cap('jump') + '<span class="help-tip">' + tr('二段跳') + '</span>'),
       // label 别写太长：三栏面板里「低速移动 / 判定点」会折成两行（试玩反馈 P3-4）
       row('help-move', tr('低速 / 判定点'), cap('slow') + '<span class="help-tip">' + tr('按住显示判定点') + '</span>'),
-      { ...row('help-act', tr('射击'), cap('shoot')), groupTitle: tr('战斗'), glyph: '戰' },
+      { ...row('help-act', tr('射击'), mouseMode ? mcap('鼠标左键') : cap('shoot')), groupTitle: tr('战斗'), glyph: '戰' },
       row('help-act', tr('向上射击'), cap('up') + '<span class="help-tip">' + tr('按住打空中') + '</span>'),
       row('help-act', tr('向下射击'), cap('down') + '<span class="help-tip">' + tr('按住打脚下') + '</span>'),
       // 冲刺只做高速位移，没有无敌帧（别照旧文案写「无敌」）；符卡消耗 POWER.castCost=48
       row('help-act', tr('冲刺'), cap('dash') + '<span class="help-tip">' + tr('可穿敌') + '</span>'),
-      row('help-act', tr('符卡'), cap('cast') + '<span class="help-tip">' + tr('耗 24 · 火力下降') + '</span>'),
+      row('help-act', tr('符卡'), (mouseMode ? mcap('鼠标右键') : cap('cast')) +
+        '<span class="help-tip">' + tr('耗 24 · 火力下降') + '</span>'),
       { ...row('help-sys', tr('暂停菜单'), cap('pause')), groupTitle: tr('系统'), glyph: '系' },
       row('help-sys', tr('界面'), '<span class="help-tip">' + tr('↑↓ 选择 · ENTER 确认') + '</span>'),
       row('help-sys', tr('静音'), cap('mute')),
@@ -1271,6 +1287,27 @@ class Game {
       tr('设置页内：K 按键设置　G 画质　F 帧率　M 静音　X 重置进度　ESC 返回'),
       { screen: true, en: 'HOW TO PLAY', page: 'help', grid: 'help-grid', scene: 'forest', select: rows.length - 1 }
     );
+  }
+
+  /**
+   * 把当前操作方式落到 Input 与画布光标上。启动时（_loadSettings 之后）也要调一次。
+   */
+  _applyControlScheme() {
+    this.controlScheme = this.controlScheme === 'wasd-mouse' ? 'wasd-mouse' : 'keys';
+    this.input.setScheme(this.controlScheme);
+    // WASD + 鼠标 方案里光标换成准星，提示「这里点得了」
+    if (this.canvas) this.canvas.style.cursor = this.controlScheme === 'wasd-mouse' ? 'crosshair' : '';
+  }
+
+  /** 操作方式：键盘 ↔ WASD + 鼠标。即时生效并写入设置，不重开对局。 */
+  _cycleControlScheme(dir = 1, origin = this._settingsOrigin) {
+    const order = ['keys', 'wasd-mouse'];
+    const at = Math.max(0, order.indexOf(this.controlScheme));
+    this.controlScheme = order[(at + (dir >= 0 ? 1 : -1) + order.length) % order.length];
+    this._applyControlScheme();
+    this.audio.play?.('menu');
+    this._saveSettings();
+    this._showSettings(this.menuIndex, origin || 'title');
   }
 
   /** 帧率上限档位：无上限 / 60 / 120 / 30 */
@@ -1325,6 +1362,8 @@ class Game {
   _applyQuality(q) {
     this.quality = q === 'high' || q === 'low' ? q : 'auto';
     this.renderer.setQuality?.(this.quality);
+    // 画质切档立即同步给当前关卡（低配纹理采样/混合层开关跟着变）
+    if (this.stage) this.stage.lowSpec = !!this.renderer.lowSpec;
     this._saveSettings();
   }
 
@@ -1587,6 +1626,8 @@ class Game {
       // Extra 的强度在 Stage 内固定为 H；主线使用本局选择的难度
       difficulty: isExtra ? 'EX' : this.difficulty,
       power: this.carryPower,
+      // 软件光栅低配：关卡据此降低纹理采样质量、跳过全屏混合层（perf.md §8）
+      lowSpec: this.renderer.lowSpec,
       onEvent: (type, data) => this._onStageEvent(type, data),
     });
     // 切场景 / 开新关：前两帧先不做后期，把 bloom 的冷启动成本挪出可见卡顿
@@ -2410,7 +2451,7 @@ class Game {
         { label: tr('退出到标题'), key: 'Q', hotkey: 'KeyQ', cls: 'danger', onPick: () => this.showTitle() },
       ],
       tr('{level} · 难度 {d} · 退出后需从标题重新开始', { level, d: diff }),
-      { select: 0 }
+      { select: 0, page: 'paused' }
     );
   }
 
@@ -2475,6 +2516,10 @@ class Game {
     // ← → / Enter 则按顺序循环——鼠标党和键盘党都不别扭。
     const langSeg = `<span class="seg seg-lang" data-i18n-skip>${LANGS.map((l) =>
       `<b class="${l.tag === getLang() ? 'on' : ''}" data-lang="${l.tag}">${l.short}</b>`).join('')}</span>`;
+    // 操作方式：键盘（默认）/ WASD + 鼠标（鼠标左键射击、右键符卡）。
+    // 只换操作方式，不改键位表：两种方案的键盘键位完全一样。
+    const cseg = `<span class="seg">${[['keys', tr('键盘')], ['wasd-mouse', tr('WASD + 鼠标')]]
+      .map(([k, txt]) => `<b class="${k === (this.controlScheme || 'keys') ? 'on' : ''}">${txt}</b>`).join('')}</span>`;
     const row = (text, ctl, key) =>
       `<span class="set-label">${text}</span><span class="set-ctl">${ctl}</span>` +
       (key ? `<span class="k">${key}</span>` : '');
@@ -2641,6 +2686,14 @@ class Game {
         adjust: (d) => this._adjustLives(d, origin),
         onPick: () => this._adjustLives(1, origin),
       },
+      // 操作方式：桌面端专属。触屏设备走虚拟手柄，没有鼠标可点，这行不出现。
+      ...(this.input.touchDevice ? [] : [{
+        group: 'game',
+        cls: 'set-row', key: 'U', hotkey: 'KeyU',
+        html: row(tr('操作方式'), cseg, 'U'),
+        adjust: (d) => this._cycleControlScheme(d, origin),
+        onPick: () => this._cycleControlScheme(1, origin),
+      }]),
       {
         group: 'game',
         cls: 'set-row set-row-link', key: 'K', hotkey: 'KeyK',
@@ -2836,7 +2889,14 @@ class Game {
       note || (cap ? tr('按下要绑定的新键…') : tr('点选一项，再按下新键；重复的键会自动互换')),
       rows,
       cap ? tr('按任意键绑定　ESC 取消　Del 恢复默认') : tr('↑ ↓ 选择　ENTER 改键　Del 恢复默认　ESC 返回'),
-      { screen: true, en: 'KEY CONFIG', grid: 'kb-grid', scene: 'mansion', noDirect: true, page: 'keybinds', select }
+      { screen: true, en: 'KEY CONFIG', grid: 'kb-grid', scene: 'mansion', noDirect: true, page: 'keybinds', select,
+        // 方向键导航时把光标行写回 _keybindIndex：重进页面/切语言能停在同一行（QA-02）
+        onSelect: (el) => {
+          const a = el && el._spec && el._spec.action;
+          if (!a) return;
+          const idx = ACTION_DEFS.findIndex((x) => x.action === a);
+          if (idx >= 0) this._keybindIndex = idx;
+        } }
     );
   }
 
@@ -2913,6 +2973,7 @@ class Game {
       if (Number.isFinite(s.musicVolume)) this._settingsMusicVolume = Math.max(0, Math.min(1, s.musicVolume));
       if (Number.isFinite(s.sfxVolume)) this._settingsSfxVolume = Math.max(0, Math.min(1, s.sfxVolume));
       if (typeof s.sfxOn === 'boolean') this._settingsSfxOn = s.sfxOn;
+      if (s.controlScheme === 'keys' || s.controlScheme === 'wasd-mouse') this.controlScheme = s.controlScheme;
     } catch (e) {
       // 无 localStorage / 数据损坏：用默认值
     }
@@ -2931,6 +2992,8 @@ class Game {
         musicVolume: this.audio.musicVolume,
         sfxVolume: this.audio.sfxVolume,
         sfxOn: this.audio.sfxEnabled,
+        // 操作方式：键鼠 / WASD + 鼠标（见 docs/MOUSE_CONTROLS.md）
+        controlScheme: this.controlScheme === 'wasd-mouse' ? 'wasd-mouse' : 'keys',
         // 语言只在手选过之后才写：没手选就继续跟随浏览器语言，
         // 换一台设备打开还能自动匹配（见 docs/SETTINGS_I18N_DESIGN.md）。
         ...(isManualLang() ? { lang: getLang() } : {}),
@@ -3850,9 +3913,13 @@ class Game {
       ctx.globalAlpha = alpha;
     }
 
-    ctx.shadowColor = 'rgba(4, 2, 10, 0.75)';
-    ctx.shadowBlur = 36;
-    ctx.shadowOffsetY = 8;
+    // 软件光栅下 36px 高斯阴影每帧 >5ms（标题页只有 44fps 的主因，perf.md §2.2）；
+    // 背景本身是深色，低配省掉这层阴影观感差异很小。
+    if (!this.renderer.lowSpec) {
+      ctx.shadowColor = 'rgba(4, 2, 10, 0.75)';
+      ctx.shadowBlur = 36;
+      ctx.shadowOffsetY = 8;
+    }
     ctx.drawImage(img, -w / 2, -h, w, h);
     ctx.restore();
   }
@@ -3864,3 +3931,8 @@ class Game {
 await initLang();
 const game = new Game();
 window.__game = game;
+// 首绘引导：主脚本真的起来了，放行 index.html 里被 hks-ready 挡住的 #ui
+// （样式表没到之前这一步不会撤遮盖，由 index.html 的状态机兜住）
+try {
+  if (typeof window.__hksUiReady === 'function') window.__hksUiReady();
+} catch (e) { /* 引导脚本缺失时不影响游戏本体 */ }

@@ -22,12 +22,12 @@
      - 不碰：非 GET、跨域、range 请求、非 200、chrome-extension://、sw.js 自身
    ============================================================ */
 
-const CACHE_VERSION = 'hks-v1.6.41';
+const CACHE_VERSION = 'hks-v1.6.42';
 const CACHE_PREFIX = 'hks-';
 const OFFLINE_URL = './index.html';
 const NETWORK_TIMEOUT = 4000;
 /** 预缓存离线壳；单个失败（404/网络抖动）不影响安装 */
-const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.6.41'];
+const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.6.42'];
 
 const OFFLINE_HTML =
   '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' +
@@ -276,8 +276,46 @@ async function codeHandler(request) {
   }
   return networkFirst(request);
 }
+/**
+ * 记住本次发布版本的令牌：版本变了就清掉旧代码缓存
+ * （本次加载的 .js/.css 全部从网络重抓，不吃旧内层的缓存）。
+ */
+async function rememberVersionToken(htmlText) {
+  try {
+    const token = parseVersionToken(htmlText);
+    if (!token) return;
+    const prev = await readVersionToken();
+    if (prev !== token) {
+      await writeVersionToken(token);
+      if (prev) await purgeCodeCache();
+    }
+  } catch (err) {
+    /* 解析失败不影响导航 */
+  }
+}
+
+/**
+ * 弱网兜底的后台补拉：本次导航 4s 超时、只能拿缓存壳时，在后台再拉一次网络版
+ * index.html，更新离线壳与版本令牌（顺便清掉版本不匹配的旧代码缓存），
+ * 保证「这次能玩、下次刷新就是新版」，而不是一直卡在旧壳上。
+ * 用 event.waitUntil 续命，绝不阻塞本次响应。
+ */
+async function refreshShellInBackground(request) {
+  // 先让出首屏带宽：等一会再补拉
+  await new Promise((r) => setTimeout(r, 2000));
+  try {
+    const res = await withTimeout(fetch(new Request(request.url, { cache: 'no-store', credentials: 'same-origin' })), 20000);
+    if (!res || !res.ok) return;
+    const cache = await openCache();
+    cache.put(OFFLINE_URL, res.clone()).catch(() => {});
+    await rememberVersionToken(await res.clone().text());
+  } catch (err) {
+    /* 后台补拉失败不打扰用户 */
+  }
+}
+
 /** 导航：网络优先（4s 超时），抓不到就回退离线壳 */
-async function navigationHandler(request) {
+async function navigationHandler(request, event) {
   try {
     const res = await withTimeout(fetch(request), NETWORK_TIMEOUT);
     if (res && res.ok) {
@@ -285,22 +323,19 @@ async function navigationHandler(request) {
       // 顺手把最新 index.html 存成离线壳
       cache.put(OFFLINE_URL, res.clone()).catch(() => {});
       // 记下本次发布的版本令牌；版本变了就清掉旧代码（本次加载全部从网络重抓）
-      try {
-        const token = parseVersionToken(await res.clone().text());
-        if (token) {
-          const prev = await readVersionToken();
-          if (prev !== token) {
-            await writeVersionToken(token);
-            if (prev) await purgeCodeCache();
-          }
-        }
-      } catch (err) {
-        /* 解析失败不影响导航 */
-      }
+      await rememberVersionToken(await res.clone().text());
       return res;
     }
     throw new Error('bad status: ' + (res && res.status));
   } catch (err) {
+    // 弱网 / 断网：本次先用缓存壳顶上，同时在后台补拉网络版（下次刷新即新版）
+    try {
+      if (event && typeof event.waitUntil === 'function') {
+        event.waitUntil(refreshShellInBackground(request));
+      }
+    } catch (e) {
+      /* 不支持 waitUntil 也不影响返回 */
+    }
     const cache = await openCache();
     const cached =
       (await cache.match(request)) ||
@@ -339,7 +374,7 @@ self.addEventListener('fetch', (event) => {
   if (request.cache === 'only-if-cached' && request.mode !== 'same-origin') return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(navigationHandler(request));
+    event.respondWith(navigationHandler(request, event));
     return;
   }
 

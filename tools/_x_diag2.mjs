@@ -1,0 +1,13 @@
+import { launchCfg, sleep } from './_pt_perf_lib.mjs';
+const T = await launchCfg({ port: 9461, gpu: true, width: 1280, height: 720 });
+await T.boot();
+await T.waitFor('window.__game._bootDone === true', 10000);
+await sleep(600);
+await T.eval(`(() => { const g = window.__game; g.startStage(0, {skipIntro:true}); const s=g.stage; g.state='play'; s.state='play'; const p=s.player; if(p){p.invuln=999999;p.hearts=999;p.alive=true;} return {state:g.state, sstate:s.state, mode:s.mode}; })()`).then(x=>console.log('entered:', JSON.stringify(x)));
+await T.keyDown('ArrowRight'); await T.keyDown('KeyZ');
+await sleep(100);
+console.log('input:', JSON.stringify(await T.eval('({right: window.__game.input.down("right"), shoot: window.__game.input.down("shoot")})')));
+await sleep(2500);
+console.log('keys 2.6s:', JSON.stringify(await T.eval('({ gState: window.__game.state, sState: window.__game.stage.state, t: +window.__game.stage.t.toFixed(1), stepCount: window.__game.loop.stepCount, bullets: window.__game.stage.bullets.activeCount, enemiesActive: window.__game.stage.enemies.list.filter(e=>e.active).length, px: +window.__game.stage.player.x.toFixed(1), camx: +window.__game.stage.camera.x.toFixed(1), fps: +window.__game.loop.fps.toFixed(1) })')));
+await T.keyUp('ArrowRight'); await T.keyUp('KeyZ');
+await T.close();

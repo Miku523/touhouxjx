@@ -301,6 +301,32 @@ DEPLOY_WAIT_STEPS=900 CDP_PORT=9377 node tools/_deploy_check.mjs 'https://mikuas
 | AVIF | 线上带 `?noavif=1` 可先验证 WebP 通路；代码级回退让 `src/art/img.js` 的 `isAvifEnabled()` 恒返回 false；彻底回退则还原 8 个引用文件 + `index.html` 3 条 preload，删 60 个 `.avif` 与 `avif_manifest.js` |
 | 非阻塞 CSS | 4 条 `<link>` 去掉 `media="print" onload/onerror`，删 `#boot-fallback` 内联 `<style>` 与那段内联 `<script>`（`<noscript>` 里 4 条普通 link 可一并删） |
 | SW 版本令牌 | 路由里 `codeHandler` 改回 `networkFirst`（其余 helper 留着无害），或整文件 `git checkout -- sw.js` |
-| 首访字节门禁 | `tools/_firstvisit_bytes.mjs` 是只读工具，删掉不影响线上 |
+| 首访字节门禁 | `tools/_firstvisit_bytes.mjs` 是只读工具，删掉不影响线上 || 首绘引导状态机 1.6.42 | `git checkout -- index.html src/main.js`。回退后 8 s 硬超时与「裸 DOM 暴露」缺陷会一并回来，只用于紧急对照排查 || 加载失败面板 | 面板 DOM 与逻辑都在 `index.html` 内联段（`#hks-boot-error`）；删掉 `showPanel` 调用链即可，不影响游戏本体 |
 
 版本串 `1.6.26` 每次回滚/发布都要再升一次（三处：`index.html` 的 `?v=`、`src/ui/platform.js` 的 `PLATFORM_VERSION`、`sw.js` 的 `CACHE_VERSION`），否则老访客会吃缓存。
+
+## 7. 首绘引导状态机（1.6.42 重写）
+
+**1.6.42 之前的 bug（线上复现过）**：`src/style.css` 用 `media="print" onload="__hksCss(this)"` 非阻塞加载，但等待逻辑里有一个 `setTimeout(ready, 8000)` 硬超时——8 s 一到就挂上 `html.css-ready`，撤掉 `#boot-fallback` 遮盖。于是冷启动/弱网（style.css 还没到）的机器会看到**无样式裸 DOM**：左下角 `POWER Lv.1 / 0 /128 / 1UP 0/99 / STAGE 1 0:00 / 博丽神社·黄昏樱花` 纯文本、居中的 `SURVIVE` 徽标、背景只剩一块暗紫/深色。用户本机因为 SW + HTTP 缓存命中，永远看不到。
+
+**现在的状态机**（全部在 `index.html` 内联段，ES5、无依赖）：
+
+| 状态 | 条件 | 表现 |
+| --- | --- | --- |
+| 首绘遮盖 | `html:not(.css-ready)` | `#boot-fallback` 内联样式接管：深色底 + 紫色辉光 + 启动 LOGO / LOADING；`#ui > *:not(#boot)` 一律 `display:none!important`，**任何情况下都不会出现裸 DOM** |
+| 样式就绪 | `style.css` 的 `onload`（`__hksCss(this)`）→ `html.css-ready` | 撤遮盖，`#boot` 启动幕按既有动画推进。其余 3 个 CSS（title-intro / mobile / platform）各自 onload 计数，不再影响遮盖 |
+| 样式失败 | `style.css` onerror → 自动缓存破坏重试 1 次（`?v=` 拼随机）→ 仍失败 | 弹 `#hks-boot-error` 面板「样式表没有加载成功」，按钮：重新加载 / 清除缓存并重试 / 继续等待；面板里给出诊断（问题类型、已等待秒数、样式表 0-4、主脚本状态、网络在线状态、版本串） |
+| 脚本就绪 | `main.js` 末尾调 `window.__hksUiReady()` → `html.hks-ready` | 启动幕 `finish()` + 标题 intro；`__hksAfterCss(fn)` 的门控队列在这里放行 `_revealTitle` |
+| 慢网 | 5 s / 12 s / 20 s 仍未就绪 | 启动幕下出现提示「网络较慢，正在加载必要资源… 已等待 N 秒」/「主脚本加载中…」，不弹面板、不暴露 DOM |
+| 卡死（样式） | 25 s 仍无 `css-ready` | `css-slow` 软面板「样式表还在加载」；有失败记录则升级为 `css` 错误面板 |
+| 卡死（脚本） | 30 s 有 `css-ready` 但无 `hks-ready` | `js-slow` 软面板「还在加载，请稍候」；若 `load.flags.scriptError` 有值则 `js` 错误面板「游戏脚本没有启动」并显示失败的 `src` |
+| 主脚本 404/被拦 | SCRIPT `error` 冒泡 + 2.6 s 后仍无 `hks-ready` | 立刻弹 `js` 错误面板，不必干等 30 s |
+| 老浏览器（无 ES Module） | `<script nomodule>` 先置 `window.__hksNoModule` | 主脚本根本不会执行、也不会触发 error，1 s 内直接弹 `js` 面板说明「浏览器版本过旧」，避免玩家干等 30 s 或反复清缓存 |
+| 自动恢复 | 资源后到 | `closePanelIfRecovered()` 按 `css`/`css-slow`、`js`/`js-slow` 前缀匹配自动收面板；`window.__hksRetry()` / `__hksHardReset()` 可脚本化重试（QA 用） |
+
+**调试/自动化接口**：`window.__hksLoad`（`css.landed/total`、`flags`、`errors`、`timeline`）、`window.__hksBootState()`、`window.__hksRetry()`、`window.__hksHardReset()`（注销 SW + `caches.delete` + 清 localStorage 版本键 + reload）。运行时异常（`error` 非 SCRIPT、`unhandledrejection`）只进 `errors` 供诊断，不会误弹面板。
+
+**验收脚本**：`tools/_loader_selftest.mjs`（正常 / 屏蔽 style.css / 屏蔽 main.js 三档，端口 9481-9483）、`tools/_loader_slowtest.mjs`（45 KB/s + 500 ms RTT 弱网、主脚本屏蔽到 31 s，端口 9484-9485）。1.6.42 实测：正常 0.6 s 进 menu；屏蔽 style.css 0.8 s 出面板、重试后 3 s 恢复；弱网 19.6 s 样式就绪、约 40 s 出 js-slow 软面板、65 s 进 menu，全程 `#ui` 无裸元素。
+
+**发布注意**：改这个文件后照旧升版本串（`index.html` 的 `?v=`、`src/ui/platform.js:14`、`sw.js:25/30`），否则老访客的 SW 会继续发旧 `index.html`——1.6.30 的教训（代码推了但用户吃旧缓存）。
+
