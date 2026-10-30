@@ -183,6 +183,7 @@
         hksReady = true;
         try { docEl().classList.add("hks-ready"); } catch (e) {}
         try { load.flags.ready = true; } catch (e) {}
+        try { sessionStorage.removeItem("hks.autoRetry"); } catch (e) {}
         tl("hks-ready");
       }
       function runQueued() {
@@ -263,7 +264,7 @@
         L.push("已等待: " + Math.round(ms() / 1000) + "s / 样式表: " + load.css.landed + "/" + NAMES.length);
         L.push("style.css: " + (load.css.styleOk ? "已加载" : (load.css.retried ? "加载失败(已重试)" : "未完成")));
         L.push("主脚本: " + (load.flags.uiReady ? "已启动" : (window.__game ? "已存在" : "未启动")));
-        L.push("网络: " + ((navigator.onLine === false) ? "离线" : "在线") + " / 版本: 1.6.42");
+        L.push("网络: " + ((navigator.onLine === false) ? "离线" : "在线") + " / 版本: 1.6.43");
         if (load.css.failed.length) L.push("失败资源: " + load.css.failed.join(", "));
         if (load.errors.length) {
           var e0 = load.errors[load.errors.length - 1];
@@ -387,9 +388,23 @@
           push("panel-build-fail", e && e.message);
         }
       }
+      /* 加载失败先自动重载一次（sessionStorage 防循环）：弱网/瞬时 503 最常见，
+         自动重试比让玩家点「重新加载」体验好；第二次仍失败才弹面板。 */
+      function autoRetryOnce(what) {
+        if (noModule) return false; // 老浏览器重载也没用，直接走面板
+        if (uiReady) return false; // 已经在跑了，别重载打断
+        try {
+          if (sessionStorage.getItem("hks.autoRetry") === "1") return false;
+        } catch (e) { return false; }
+        try { sessionStorage.setItem("hks.autoRetry", "1"); } catch (e) {}
+        push("auto-retry", String(what || ""));
+        tl("auto-retry");
+        setTimeout(function () { try { location.reload(); } catch (e) {} }, 1200);
+        return true;
+      }
       function retryStyle(link) {
         load.css.retried = true;
-        var href = "./src/style.css?v=1.6.42";
+        var href = "./src/style.css?v=1.6.43";
         try { if (link && link.getAttribute("href")) href = link.getAttribute("href"); } catch (e) {}
         var sep = href.indexOf("?") >= 0 ? "&" : "?";
         var url = href + sep + "hks_retry=" + Date.now();
@@ -440,6 +455,8 @@
           if (tg && tg.tagName === "SCRIPT") {
             push("script-error", tg.src || "inline");
             load.flags.scriptError = tg.src || "inline";
+            // 模块图里任何一个文件 404/503/断网都会让入口脚本 error：先自动重载一次
+            if (autoRetryOnce(tg.src || "inline")) return;
             setTimeout(function () {
               if (!uiReady && !errorShown && !waitMore) {
                 showPanel("js", "主脚本加载失败: " + String(tg.src || "inline").slice(0, 120));
@@ -488,19 +505,19 @@
   <!-- 关键样式表用 preload 抢高优先级：media="print" 的样式表在部分浏览器里是最低
         优先级，弱网下会被图片 / 字体饿死，慢到十几秒才到。preload 复用同一 URL，
         不会重复下载，只是把它的抓取优先级提到 high。 -->
-  <link rel="preload" as="style" href="./src/style.css?v=1.6.42" fetchpriority="high" />
-  <link rel="stylesheet" href="./src/style.css?v=1.6.42" media="print" data-css="style" onload="__hksCss(this,'style')" onerror="__hksCssFail(this,'style')" />
+  <link rel="preload" as="style" href="./src/style.css?v=1.6.43" fetchpriority="high" />
+  <link rel="stylesheet" href="./src/style.css?v=1.6.43" media="print" data-css="style" onload="__hksCss(this,'style')" onerror="__hksCssFail(this,'style')" />
   <!-- 标题开屏动画：单独成文件，只读 .overlay.title-mode.intro 下的入场状态，
         不动 style.css 里既有的标题版式，方便整体回滚。 -->
-  <link rel="stylesheet" href="./src/title-intro.css?v=1.6.42" media="print" data-css="intro" onload="__hksCss(this,'intro')" onerror="__hksCssFail(this,'intro')" />
+  <link rel="stylesheet" href="./src/title-intro.css?v=1.6.43" media="print" data-css="intro" onload="__hksCss(this,'intro')" onerror="__hksCssFail(this,'intro')" />
   <!-- 触屏虚拟手柄样式：只有 body.hks-pad-on 时才生效，桌面端零影响 -->
-  <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.42" media="print" data-css="mobile" onload="__hksCss(this,'mobile')" onerror="__hksCssFail(this,'mobile')" />
-  <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.42" media="print" data-css="platform" onload="__hksCss(this,'platform')" onerror="__hksCssFail(this,'platform')" />
+  <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.43" media="print" data-css="mobile" onload="__hksCss(this,'mobile')" onerror="__hksCssFail(this,'mobile')" />
+  <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.43" media="print" data-css="platform" onload="__hksCss(this,'platform')" onerror="__hksCssFail(this,'platform')" />
   <noscript>
-    <link rel="stylesheet" href="./src/style.css?v=1.6.42" />
-    <link rel="stylesheet" href="./src/title-intro.css?v=1.6.42" />
-    <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.42" />
-    <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.42" />
+    <link rel="stylesheet" href="./src/style.css?v=1.6.43" />
+    <link rel="stylesheet" href="./src/title-intro.css?v=1.6.43" />
+    <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.43" />
+    <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.43" />
     <div style="position:fixed;left:0;right:0;bottom:0;z-index:9999;padding:14px 18px;background:#1a0f2a;color:#ffe4b0;font:13px/1.7 serif;text-align:center;">
       本作需要启用 JavaScript 才能运行，请在浏览器设置里允许 JavaScript 后刷新页面。
     </div>
@@ -559,7 +576,7 @@
   <link rel="preload" as="image" type="image/avif" href="./src/art/gen/reimu_title.avif" fetchpriority="high" />
   <link rel="preload" as="image" type="image/avif" href="./src/art/gen/marisa_title.avif" fetchpriority="high" />
 <!-- modulepreload:start（tools/gen_modulepreload.py 生成，勿手改） -->
-  <link rel="modulepreload" href="./src/main.js?v=1.6.42" />
+  <link rel="modulepreload" href="./src/main.js?v=1.6.43" />
   <link rel="modulepreload" href="./src/engine/renderer.js" />
   <link rel="modulepreload" href="./src/engine/input.js" />
   <link rel="modulepreload" href="./src/ui/platform.js" />
@@ -744,7 +761,7 @@
           </div>
         </div>
         <div class="title-deco" aria-hidden="true">
-          <span class="title-ver">Chronicle of Gensokyo · ver 1.6.42</span>
+          <span class="title-ver">Chronicle of Gensokyo · ver 1.6.43</span>
         </div>
       </div>
 
@@ -841,6 +858,6 @@
     </div>
   </div>
 
-  <script type="module" src="./src/main.js?v=1.6.42"></script>
+  <script type="module" src="./src/main.js?v=1.6.43"></script>
 </body>
 </html>

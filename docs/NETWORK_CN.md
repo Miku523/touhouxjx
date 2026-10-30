@@ -324,6 +324,8 @@ DEPLOY_WAIT_STEPS=900 CDP_PORT=9377 node tools/_deploy_check.mjs 'https://mikuas
 | 老浏览器（无 ES Module） | `<script nomodule>` 先置 `window.__hksNoModule` | 主脚本根本不会执行、也不会触发 error，1 s 内直接弹 `js` 面板说明「浏览器版本过旧」，避免玩家干等 30 s 或反复清缓存 |
 | 自动恢复 | 资源后到 | `closePanelIfRecovered()` 按 `css`/`css-slow`、`js`/`js-slow` 前缀匹配自动收面板；`window.__hksRetry()` / `__hksHardReset()` 可脚本化重试（QA 用） |
 
+**加载失败自动重试（1.6.43）**：入口脚本 `error`（含模块图里任一文件 404/503/断网）会先自动 `location.reload()` 一次，`sessionStorage["hks.autoRetry"]` 防循环；成功进入 `hks-ready` 后清掉标记，第二次仍失败才弹错误面板。弱网瞬时 503 常见，这比让玩家自己点「重新加载」省一步。
+
 **调试/自动化接口**：`window.__hksLoad`（`css.landed/total`、`flags`、`errors`、`timeline`）、`window.__hksBootState()`、`window.__hksRetry()`、`window.__hksHardReset()`（注销 SW + `caches.delete` + 清 localStorage 版本键 + reload）。运行时异常（`error` 非 SCRIPT、`unhandledrejection`）只进 `errors` 供诊断，不会误弹面板。
 
 **验收脚本**：`tools/_loader_selftest.mjs`（正常 / 屏蔽 style.css / 屏蔽 main.js 三档，端口 9481-9483）、`tools/_loader_slowtest.mjs`（45 KB/s + 500 ms RTT 弱网、主脚本屏蔽到 31 s，端口 9484-9485）。1.6.42 实测：正常 0.6 s 进 menu；屏蔽 style.css 0.8 s 出面板、重试后 3 s 恢复；弱网 19.6 s 样式就绪、约 40 s 出 js-slow 软面板、65 s 进 menu，全程 `#ui` 无裸元素。
