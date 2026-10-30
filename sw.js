@@ -22,12 +22,12 @@
      - 不碰：非 GET、跨域、range 请求、非 200、chrome-extension://、sw.js 自身
    ============================================================ */
 
-const CACHE_VERSION = 'hks-v1.6.47';
+const CACHE_VERSION = 'hks-v1.6.48';
 const CACHE_PREFIX = 'hks-';
 const OFFLINE_URL = './index.html';
 const NETWORK_TIMEOUT = 4000;
 /**
- * 没有缓存兜底时不再设人为超时（v1.6.47 起）。4s 只适用于「超时还能回缓存」的场景；
+ * 没有缓存兜底时不再设人为超时（v1.6.48 起）。4s 只适用于「超时还能回缓存」的场景；
  * 冷缓存 / 换版本（purgeCodeCache 已清空代码缓存）时模块只能走网络，
  * 15KB/s 下 69 个模块排 6 条连接，队首到队尾光排队就要 30-40s，整图跑完 2 分钟以上。
  * 实测：30s 上限 → 一次重载 70 条 504；120s 上限 → 仍有 28-36 条（队尾请求），
@@ -45,7 +45,7 @@ const WARM_MAX_MS = 8000;
 /** 本次 SW 生命周期里 hks:warm 已经额外下载的字节数（两次 warm 共享同一份预算） */
 let warmSpentBytes = 0;
 /** 预缓存离线壳；单个失败（404/网络抖动）不影响安装 */
-const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.6.47'];
+const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.6.48'];
 
 const OFFLINE_HTML =
   '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' +

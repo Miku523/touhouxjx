@@ -14,8 +14,6 @@ import { Hud } from './game/hud.js';
 import { SpellCutin } from './game/spellCutin.js';
 import { BootScreen } from './game/bootScreen.js';
 import { Dialogue } from './game/dialogue.js';
-import { Ending } from './game/ending.js';
-import { endingFor } from './game/endings.js';
 import { DIFFICULTY_KEYS, DIFFICULTIES, getDifficulty } from './game/difficulty.js';
 
 /* ============================================================
@@ -59,6 +57,28 @@ function loadGameKit() {
     throw err;
   });
   return _gameKitPromise;
+}
+
+/* ------------------------------------------------------------
+   结局模块（ending.js 演出的绘制/推进 + endings.js 的结局文本，未压缩约 51KB）
+   只有真正打出结局才会用到，不进首屏静态图。打到第 5 面时提前拉（见 _createStage）。
+   ------------------------------------------------------------ */
+let Ending = null, endingFor = null;
+let _endingModulePromise = null;
+/** 载入结局模块；并发调用共享同一个 promise，失败后允许重试 */
+function loadEndingModule() {
+  if (_endingModulePromise) return _endingModulePromise;
+  _endingModulePromise = Promise.all([
+    import('./game/ending.js'),
+    import('./game/endings.js'),
+  ]).then(([endingMod, endingsMod]) => {
+    Ending = endingMod.Ending;
+    endingFor = endingsMod.endingFor;
+  }).catch((err) => {
+    _endingModulePromise = null;  // 网络抖动允许下次重试
+    throw err;
+  });
+  return _endingModulePromise;
 }
 
 /** game kit 还没就绪时给玩家一个整屏「载入中」兜底，别让难度页按了 Enter 之后一动不动 */
@@ -177,7 +197,7 @@ class Game {
     this.hud = new Hud();
     this.cutin = new SpellCutin();
     this.dialogue = new Dialogue();
-    this.ending = new Ending();
+    this.ending = null;   // 51KB 的结局演出模块，打出结局时才建（见 _ensureEnding）
     this.audio = new AudioEngine();
     // 平台层：环境识别 / PWA / 全屏 / 安全区 / 安卓返回键。
     // index.html 里没有单独引它 —— import 即自动初始化，桌面端不会产生副作用。
@@ -717,6 +737,18 @@ class Game {
     return this._gamepadPromise;
   }
 
+  /**
+   * 结局演出模块按需加载（ending.js + endings.js，约 51KB）。
+   * 打到第 5 面就开始预取，正常情况下等玩家真的通关时早就下好了；
+   * 万一是弱网没赶上，_playEnding 会 await 这里并挂整屏提示。
+   */
+  async _ensureEnding() {
+    if (this.ending) return this.ending;
+    await loadEndingModule();
+    if (!this.ending) this.ending = new Ending();
+    return this.ending;
+  }
+
   /** 每帧同步虚拟手柄状态（TouchPad 内部会判重，未变化时几乎零开销） */
   _syncTouchState() {
     const pad = this.pad;
@@ -754,7 +786,7 @@ class Game {
       return;
     }
     if (this.state === 'ending') {
-      this.ending.advance();
+      this.ending?.advance();
       return;
     }
     if (this.state === 'play') {
@@ -1785,7 +1817,10 @@ class Game {
     if (!isExtra) this._warmStageBg(this._mainStages()[index + 1]?.theme);
     // 结局素材（约 960KB）在首屏是空闲预取、弱网下会被跳过：进最后两面时提前拉，
     // 等真正通关（还要再打一两面）时早下完了，结局开场不会空白。
-    if (!isExtra && index >= 4) this.ending?.preloadAssets?.();
+    if (!isExtra && index >= 4) {
+      // 结局模块 51KB 与素材（约 960KB）一起提前拉，真通关时早就下完了
+      this._ensureEnding().then(() => this.ending?.preloadAssets?.()).catch(() => {});
+    }
     // 本关 Boss 立绘（每张约 90KB）也在开场就拉：弱网首访时闸门会跳过全量预取，
     // 若等 Boss 登场才请求，boss.js 的「立绘未就绪暂缓出场」会白等最多 3 秒。
     if (def?.boss) ensureBossArt(def.boss);
@@ -2282,9 +2317,8 @@ class Game {
    * 结局演出入口。
    * @param {'good'|'bad'|'extra'} mode 真结局 / 遗憾结局 / EXTRA 胜利
    */
-  _playEnding(mode) {
-    const spec = endingFor(this.char, mode);
-    if (!spec) { this.showTitle(); return; }
+  async _playEnding(mode) {
+    // 先切状态：调用方（通关流程）不必等模块，也不会继续跑对局逻辑
     this.state = 'ending';
     this._pendingTimeout = 0;
     this._hidePanel();
@@ -2295,6 +2329,22 @@ class Game {
     // EXTRA 胜利（W1/W2）用《魔法少女達の百年祭》8-bit 柔和版，其余结局用原创 ending 曲
     this.audio.playMusic?.(mode === 'extra' ? 'endingW' : 'ending');
     this.audio.play?.('win');
+
+    if (!this.ending) {
+      kitLoading(true, '正在载入结局…');
+      try {
+        await this._ensureEnding();
+      } catch (err) {
+        console.error('[ending] 载入失败', err);
+        kitLoading(true, '结局载入失败，请检查网络后重试');
+        setTimeout(() => { kitLoading(false); this.showTitle(); }, 2200);
+        return;
+      }
+      kitLoading(false);
+    }
+
+    const spec = endingFor(this.char, mode);
+    if (!spec) { this.showTitle(); return; }
     this.ending.play(spec, {
       onFinish: () => this.showTitle(),
     });
@@ -2549,6 +2599,7 @@ class Game {
 
     // 结局演出：优先处理，避免按键漏到菜单 / 关卡
     if (this.state === 'ending') {
+      if (!this.ending) { this.input.endFrame(); return; }   // 结局模块还在路上
       this.ending.update(dt);
       if (this.input.pressed('confirm') || this.input.pressed('jump') || this.input.pressed('shoot')) {
         this.ending.advance();
@@ -3470,7 +3521,7 @@ class Game {
     const ctx = this.renderer.begin('#05030a');
 
     if (this.state === 'ending') {
-      this.ending.draw(ctx);
+      this.ending?.draw(ctx);
       this.renderer.present(this.t);
       return;
     }
