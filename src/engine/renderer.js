@@ -65,6 +65,25 @@ export class Renderer {
     this._lowLast = 0;
     this._lowStart = 0;      // 首次开始计时的时刻（前 5s 是启动/开屏，不参与降档）
 
+    // ---- auto 档帧时间兜底（真实弱 GPU：detectSoftwareRaster 认不出的 Intel UHD / Vega 8 / 老 MX） ----
+    // 和上面的低配动态 backing 互斥：lowSpec 走 _tuneLowBacking（只降不升），
+    // auto 的 GPU 路径走 _adaptFrameTime（按帧时间预算升降 _adaptScale），两者不会同时改 backing。
+    // 计时全部用「有效帧时间累加」当单调时钟（_adaptClock）：切后台/暂停/长卡顿不进账，
+    // 也不依赖真实时间，方便在页面里喂伪造 dt 序列做状态机单测。
+    this._adaptScale = 1;        // backing 相对自然分辨率的倍率（1=不降，最低到 0.75 逻辑像素）
+    this._adaptNatural = 1;      // fit() 算出的自然 backing（未降档时）
+    this._adaptClock = 0;        // 有效帧时间累加（ms）
+    this._adaptEma = 0;          // 帧间隔 EMA（ms）
+    this._adaptOver = 0;         // 超预算累计（ms）
+    this._adaptStable = 0;       // 稳定累计（ms）
+    this._adaptCoolUntil = 0;    // 变档冷却（_adaptClock 时间戳）
+    this._adaptUpGap = 4000;     // 回抬所需稳定时长（ms），回抬失败后翻倍
+    this._adaptUpAt = -1e9;      // 上次回抬时的 _adaptClock
+    this._adaptUpFail = 0;       // 回抬后很快又超预算的次数
+    this._adaptBanUntil = 0;     // 回抬连续失败的禁用截止时刻（_adaptClock）
+    this._adaptTarget = 60;      // 当前预算对应的目标帧率（跟随玩家帧率上限）
+    this._adaptReason = '';      // 最近一次变档原因，写进 __rendererInfo 供测试断言
+
     // ---- 后期处理缓冲（bloom 用低分辨率，省带宽） ----
     this.bloom = document.createElement('canvas');
     this.bloom.width = 320;
@@ -146,7 +165,11 @@ export class Renderer {
     const floor = this.lowSpec ? this.lowBacking : 1.25;
     const cap = this.lowSpec ? this.lowBacking : 2.5;
     const dprForBacking = Math.max(1, this.dpr);
-    const backing = Math.min(Math.max(scale * dprForBacking, floor), cap);
+    // 自然 backing：窗口/DPR 决定的分辨率。auto 档的帧时间兜底只缩放它（_adaptScale），
+    // 不改 floor/cap 语义，所以 lowSpec 路径与原来完全一致（倍率恒为 1，backing = lowBacking）。
+    const natural = Math.min(Math.max(scale * dprForBacking, floor), cap);
+    this._adaptNatural = natural;
+    const backing = this.lowSpec ? natural : Math.max(natural * this._adaptScale, Math.min(0.75, natural));
     this.backing = backing;
 
     // backing 没变就不要重设 canvas.width/height：赋值会清空画布并触发后端存储重建，
@@ -227,6 +250,106 @@ export class Renderer {
     this.skipPostFrames(2);
   }
 
+  /** 当前预算的目标帧率：玩家把帧率上限设到 60 以下（30）时按 30 算，60/120/不限都按 60。
+   *  这样 30 档限帧的 33ms 帧间隔不会被误判成卡顿，也不会把 120Hz 屏的 8ms 当成「超额」。 */
+  _adaptBudgetMs() {
+    let capHz = 0;
+    try { capHz = window.__game?.loop?.frameCap || 0; } catch (e) { capHz = 0; }
+    this._adaptTarget = capHz > 0 && capHz < 60 ? capHz : 60;
+    return 1000 / this._adaptTarget;
+  }
+
+  /** 暂停/结算/GameOver/对话这些「渲染被主循环主动限到约 30fps」的状态不参与判定 */
+  _adaptFrozen() {
+    try {
+      const g = window.__game;
+      if (!g) return false;
+      const s = g.state;
+      if (s === 'paused' || s === 'clear' || s === 'gameover') return true;
+      if (s === 'dialogue' && g.dialogue && g.dialogue.active) return true;
+    } catch (e) { /* 诊断读失败就当没冻结 */ }
+    return false;
+  }
+
+  /**
+   * auto 档的帧时间兜底（perf.md P1-1 的剩余部分）。
+   * detectSoftwareRaster 只认 SwiftShader/WARP/llvmpipe，真实弱核显（Intel UHD / Vega 8 / 老 MX）
+   * 会被当成「强机」走 backing 1.25~2.5 的高路径，auto 档此前没有任何帧时间兜底。
+   * 这里按帧时间 EMA 监控：持续超预算就把 backing 乘 0.85 降一档（最低 0.75 逻辑像素），
+   * 稳定 4s 再回抬一档；升降都有冷却 + 1.05~1.5 倍预算的迟滞带，回抬失败会翻倍间隔并短暂禁用，
+   * 避免临界机上「降-抬-降」来回跳。只动 backing，不碰后期/画质选择，和 _tuneLowBacking 互斥。
+   *
+   * 所有计时用有效帧时间累加（_adaptClock）而不是 performance.now()：
+   *  - 切后台恢复、首帧、一次性长卡顿（dt>200）直接丢弃，不推进时钟；
+   *  - 启动后前 5s（开屏/资源热身）不判定；
+   *  - 单测可以直接喂伪造 dt 序列，不必真的等 10 秒。
+   */
+  _adaptFrameTime(dtMs) {
+    if (this.quality !== 'auto' || this.lowSpec || this.softwareRaster) return;
+    if (!(dtMs > 0) || dtMs > 200) return;                    // 无效/切后台/一次性大卡顿
+    if (this.postLevel === 0) return;
+    if (this._adaptFrozen()) { this._adaptEma = 0; return; }  // 暂停/结算/对话被限帧，不算卡顿
+    const budget = this._adaptBudgetMs();
+    this._adaptClock += dtMs;
+    this._adaptEma = this._adaptEma > 0 ? this._adaptEma * 0.9 + dtMs * 0.1 : dtMs;
+    if (this._adaptClock < 5000) return;                       // 启动/开屏阶段
+    if (this._adaptClock < this._adaptCoolUntil) { this._adaptOver = 0; this._adaptStable = 0; return; }
+    const ema = this._adaptEma;
+    if (ema > budget * 1.5) {
+      // 明显低于目标帧率：连续累计 1.2s 才降一档（单帧 100ms 的长卡顿最多贡献 100ms，不会误降）
+      this._adaptStable = 0;
+      this._adaptOver += dtMs;
+      if (this._adaptOver >= 1200) this._adaptStep(-1);
+    } else if (ema < budget * 1.05) {
+      // 稳定：累计够 _adaptUpGap 才回抬一档
+      this._adaptOver = 0;
+      this._adaptStable += dtMs;
+      if (this._adaptStable >= this._adaptUpGap) this._adaptStep(1);
+    } else {
+      // 1.05~1.5 倍预算：迟滞带，不升不降
+      this._adaptOver = 0;
+      this._adaptStable = 0;
+    }
+  }
+
+  /** 执行一档升降（dir=-1 降 / +1 抬）；值没变就不重设 canvas（fit 内部已做 P2-1 判断） */
+  _adaptStep(dir) {
+    const natural = this._adaptNatural || 1;
+    if (dir < 0) {
+      // 降到 0.75 逻辑像素为止：再低在 720p 窗口上会明显糊，而且弱机的瓶颈往往已经不是填充率
+      const minScale = Math.min(1, 0.75 / natural);
+      const next = Math.max(minScale, this._adaptScale * 0.85);
+      if (next >= this._adaptScale - 1e-6) return;
+      this._adaptScale = next;
+      this._adaptReason = 'overbudget';
+      this._adaptCoolUntil = this._adaptClock + 1500;
+      // 回抬后 8s 内又撑不住 = 这一档回抬失败：翻倍回抬间隔，连续失败就两分钟内不再尝试
+      if (this._adaptClock - this._adaptUpAt < 8000) {
+        this._adaptUpFail++;
+        this._adaptUpGap = Math.min(16000, this._adaptUpGap * 2);
+        if (this._adaptUpFail >= 3) { this._adaptBanUntil = this._adaptClock + 120000; this._adaptUpFail = 0; }
+      }
+    } else {
+      if (this._adaptClock < this._adaptBanUntil) return;
+      const next = Math.min(1, this._adaptScale * 1.12);
+      if (next <= this._adaptScale + 1e-6) return;             // 已回到自然分辨率
+      // 上一档撑过 15s 才算真正稳定：重置失败计数与回抬间隔
+      if (this._adaptClock - this._adaptUpAt > 15000) { this._adaptUpFail = 0; this._adaptUpGap = 4000; }
+      this._adaptScale = next;
+      this._adaptUpAt = this._adaptClock;
+      this._adaptReason = 'recovered';
+      this._adaptCoolUntil = this._adaptClock + 4000;
+    }
+    // 变档后的 1.5s/4s（含改 canvas 尺寸的长帧）不参与判定，避免自己触发自己
+    this._adaptEma = 0;
+    this._adaptOver = 0;
+    this._adaptStable = 0;
+    const before = this.backing;
+    this.fit();
+    // fit() 重设 canvas 会清屏：跳两帧后期，别让玩家看到闪黑（值没变时 fit 不会重设，也不用跳）
+    if (this.backing !== before) this.skipPostFrames(2);
+  }
+
   /** 诊断信息快照（供测试断言，不影响渲染逻辑） */
   _syncInfo() {
     const info = this.qualityInfo();
@@ -244,6 +367,16 @@ export class Renderer {
       hardware: info.hardware,
       softwareRaster: !!this.softwareRaster,
       bloom: this.postLevel >= 2,
+      // auto 档帧时间兜底（测试/诊断）：当前倍率、是否降档、最近一次变档原因
+      adaptive: {
+        enabled: this.quality === 'auto' && !this.lowSpec,
+        scale: +this._adaptScale.toFixed(3),
+        degraded: this._adaptScale < 0.999,
+        natural: +this._adaptNatural.toFixed(3),
+        reason: this._adaptReason || 'idle',
+        targetFps: this._adaptTarget || 60,
+        emaMs: +this._adaptEma.toFixed(2),
+      },
     };
   }
 
@@ -273,6 +406,18 @@ export class Renderer {
     this._bloomStable = 0;
     this._lastPresent = 0;
     this._grainPattern = null;
+    // 切档后 auto 兜底从自然分辨率重新开始（别把上一档的降档倍率带过来；也重新给 5s 预热）
+    this._adaptScale = 1;
+    this._adaptClock = 0;
+    this._adaptEma = 0;
+    this._adaptOver = 0;
+    this._adaptStable = 0;
+    this._adaptCoolUntil = 0;
+    this._adaptUpGap = 4000;
+    this._adaptUpAt = -1e9;
+    this._adaptUpFail = 0;
+    this._adaptBanUntil = 0;
+    this._adaptReason = '';
     this.fit();
     this._syncInfo();
     return this.qualityInfo();
@@ -332,6 +477,7 @@ export class Renderer {
     const now = performance.now();
     const dtMs = this._lastPresent ? now - this._lastPresent : 0;
     this._lastPresent = now;
+    this._adaptFrameTime(dtMs);   // auto 档帧时间兜底：只动 backing，不碰后期/画质档
     if (!this.postEnabled || this.postLevel === 0) return;
     // 首帧 / 切场景后的几帧先不做后期：bloom 的读回与着色器冷启动最容易在这里顶出长帧
     if (this.skipPost > 0) { this.skipPost--; return; }

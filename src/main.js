@@ -12,7 +12,7 @@ import { Loop } from './engine/loop.js';
 import { setPriority, preloadWhenIdle } from './engine/lazy_preload.js';
 import { AudioEngine } from './engine/audio.js';
 import { LEVELS } from './assets/levels.js';
-import { Stage, EXTRA_CHAIN, prefetchStageBg } from './game/stage.js';
+import { Stage, EXTRA_CHAIN, prefetchStageBg, warmStageBg } from './game/stage.js';
 import { prewarmSpriteCache } from './game/bullets.js';
 import { Hud } from './game/hud.js';
 import { SpellCutin } from './game/spellCutin.js';
@@ -1341,18 +1341,31 @@ class Game {
   /** 画质档位顺序：自动跟随硬件检测 → 高 → 低 */
   static QUALITIES = ['auto', 'high', 'low'];
 
-  cycleQuality(fromSettings = false, index = this.menuIndex) {
+  /** 软件光栅下 renderer.setQuality 会强制 low：「高」这一档不可选（perf.md §9 表第 1 行） */
+  _qualityLockedLow() {
+    return !!this.renderer?.softwareRaster;
+  }
+
+  /** 画质环切的下一个档位；软件光栅下跳过「高」，否则置灰了还能被键盘选到 */
+  _nextQuality(dir) {
     const qs = Game.QUALITIES;
     const at = Math.max(0, qs.indexOf(this.quality || 'auto'));
-    this._applyQuality(qs[(at + 1) % qs.length]);
+    const step = dir > 0 ? 1 : qs.length - 1;
+    let next = (at + step) % qs.length;
+    if (this._qualityLockedLow()) {
+      for (let i = 0; i < qs.length && qs[next] === 'high'; i++) next = (next + step) % qs.length;
+    }
+    return qs[next];
+  }
+
+  cycleQuality(fromSettings = false, index = this.menuIndex) {
+    this._applyQuality(this._nextQuality(1));
     if (fromSettings) this._showSettings(index, this._settingsOrigin);
   }
 
   /** ←→ 调画质（dir = ±1） */
   _adjustQuality(dir) {
-    const qs = Game.QUALITIES;
-    const at = Math.max(0, qs.indexOf(this.quality || 'auto'));
-    this._applyQuality(qs[(at + (dir > 0 ? 1 : qs.length - 1)) % qs.length]);
+    this._applyQuality(this._nextQuality(dir));
   }
 
   /**
@@ -1376,6 +1389,21 @@ class Game {
     return MAIN_STAGES().slice(0, getDifficulty(this.difficulty).stageCount);
   }
 
+  /**
+   * 把某主题的厚涂背景「加载 → decode → 合成层」预热到非关键窗口。
+   *
+   * 合成一张 1700×720 的背景层在软件光栅下要几十毫秒，原来会在进关首帧
+   * （或 _prewarmStageArt 里）同步发生 —— 这是「进关顿一下」的主因之一。
+   * warmStageBg 内部按 safe() 轮询：只有不在关卡进行中（或开场对白正开着）
+   * 才真正合成，所以不会在弹幕里插卡顿。失败静默，不影响进关。
+   */
+  _warmStageBg(theme) {
+    if (!theme || typeof warmStageBg !== 'function') return;
+    try {
+      warmStageBg(theme, () => this.state !== 'play' || !!(this.dialogue && this.dialogue.active));
+    } catch (e) { /* 预热失败不影响游玩 */ }
+  }
+
   startGame() {
     this._hidePanel();
     this.inExtra = false;
@@ -1389,8 +1417,10 @@ class Game {
     this.audio.unlock?.();
     this.audio.setMusic?.(this.musicOn !== false);
 
-    // 开场对白这几秒正好让第 1 面的厚涂背景下载完，进关就不会先看到程序化天空
+    // 开场对白这几秒正好让第 1 面的厚涂背景下载完，进关就不会先看到程序化天空；
+    // 顺便把背景合成层也在对白期做好（warmStageBg 会等 safe 窗口，不抢进关首帧）
     prefetchStageBg(this._mainStages()[0]?.theme);
+    this._warmStageBg(this._mainStages()[0]?.theme);
 
     const opening = openingFor(this.char);
     this._playDialogue(opening, () => this.startStage(0));
@@ -1427,6 +1457,7 @@ class Game {
     this.hud.setMaxLives(this.lives, this.char);
     // EXTRA 的厚涂背景也在开场对白期间先下好（EXTRA 只有一面，没有「上一面」可蹭）
     prefetchStageBg(EXTRA_STAGE()?.theme);
+    this._warmStageBg(EXTRA_STAGE()?.theme);
     this._playDialogue(extraIntroFor(this.char), () => this._startExtraStage());
   }
 
@@ -1581,10 +1612,16 @@ class Game {
 
   _createStage(def, index, isExtra, opts = {}) {
     this._hidePanel();
+    // 离开标题页：释放立绘阴影烘焙层（一张约 1000×850 的离屏 canvas）
+    this._titleBake = null;
     // 厚涂背景现在就请求：本关的（万一还没预取）与下一面的（一关好几分钟，
     // 等玩家走到下一面时图早就下完了，5/6 面开场不会再先闪出程序化天空兜底）。
     prefetchStageBg(def.theme);
     if (!isExtra) prefetchStageBg(this._mainStages()[index + 1]?.theme);
+    // 背景合成层预热：本关（读档/重开等绕过开场对白的路径）与下一面
+    // 都在对白/暂停等安全窗口里做完，不压进关首帧
+    this._warmStageBg(def.theme);
+    if (!isExtra) this._warmStageBg(this._mainStages()[index + 1]?.theme);
     // 结局素材（约 960KB）在首屏是空闲预取、弱网下会被跳过：进最后两面时提前拉，
     // 等真正通关（还要再打一两面）时早下完了，结局开场不会空白。
     if (!isExtra && index >= 4) this.ending?.preloadAssets?.();
@@ -2504,9 +2541,15 @@ class Game {
       const txt = cap === 0 ? '∞' : String(cap);
       return `<b class="${cap === this.frameCap ? 'on' : ''}">${txt}</b>`;
     }).join('')}</span>`;
-    // 画质：自动 / 高 / 低（分段控件，与帧率上限同一套皮肤）
+    // 画质：自动 / 高 / 低（分段控件，与帧率上限同一套皮肤）。
+    // 软件光栅下 renderer.setQuality 会强制 low，「高」选了也不生效 —— 这里置灰不可选，
+    // 并在下面「当前渲染」行补一句中文说明（perf.md §9 表第 1 行）。
+    const qLocked = this._qualityLockedLow();
+    const qSel = qLocked ? 'low' : (this.quality || 'auto');
     const qseg = `<span class="seg">${[['auto', tr('自动')], ['high', tr('高')], ['low', tr('低')]].map(([k, txt]) =>
-      `<b class="${k === (this.quality || 'auto') ? 'on' : ''}">${txt}</b>`).join('')}</span>`;
+      qLocked && k === 'high'
+        ? `<b class="off" style="opacity:.35" title="${tr('软件光栅下不可用')}">${txt}</b>`
+        : `<b class="${k === qSel ? 'on' : ''}">${txt}</b>`).join('')}</span>`;
     const qi = this.renderer?.qualityInfo?.() || { label: tr('自动'), detail: '' };
     // 触屏方案三分段：摇杆 / 手势 / 按键。选中态与 TouchPad 内部设置同源（hks.touch.v1）。
     const tset = this.pad?.getSettings?.() || { scheme: 'stick', haptics: true };
@@ -2592,9 +2635,10 @@ class Game {
         onPick: (i) => this.cycleQuality(true, i),
       },
       {
-        // 只读行：让玩家看得见当前到底跑在什么渲染模式上（软件光栅 / GPU、实际 backing、辉光开关）
+        // 只读行：让玩家看得见当前到底跑在什么渲染模式上（软件光栅 / GPU、实际 backing、辉光开关）；
+        // 软件光栅下「高」不可选，行内补一句中文说明（不新增行，避免打乱面板的导航索引）
         group: 'display', cls: 'set-row info',
-        html: row(tr('当前渲染'), `<span class="qinfo">${qi.label} · ${qi.detail}</span>`, ''),
+        html: row(tr('当前渲染'), `<span class="qinfo">${qi.label} · ${qi.detail}${qLocked ? ' · ' + tr('软件光栅下「高」画质不可用') : ''}</span>`, ''),
       },
       {
         group: 'display',
@@ -3194,16 +3238,25 @@ class Game {
     if (typeof document === 'undefined') return;
     const st = this.stage;
     if (!st || typeof st.draw !== 'function') return;
+    // 同一关只预热一次：重复调用除了白跑一遍完整 draw 没有任何收益
+    if (this._prewarmedStage === st) return;
     try {
-      const cv = document.createElement('canvas');
-      cv.width = this.renderer?.w || 1280;
-      cv.height = this.renderer?.h || 720;
+      const wantW = this.renderer?.w || 1280;
+      const wantH = this.renderer?.h || 720;
+      // 复用离屏 canvas：原来每次进关都新建一块 1280×720，再交给 GC 回收
+      let cv = this._prewarmCanvas;
+      if (!cv) cv = this._prewarmCanvas = document.createElement('canvas');
+      if (cv.width !== wantW || cv.height !== wantH) {
+        cv.width = wantW;
+        cv.height = wantH;
+      }
       const ctx = cv.getContext('2d');
       if (!ctx) return;
       const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
       const t0 = now();
       st.draw(ctx, 1);
       const ms = now() - t0;
+      this._prewarmedStage = st;
       if (typeof window !== 'undefined') {
         (window.__prewarmInfo || (window.__prewarmInfo = {})).stageArtMs = Math.round(ms);
       }
@@ -3913,15 +3966,64 @@ class Game {
       ctx.globalAlpha = alpha;
     }
 
-    // 软件光栅下 36px 高斯阴影每帧 >5ms（标题页只有 44fps 的主因，perf.md §2.2）；
-    // 背景本身是深色，低配省掉这层阴影观感差异很小。
-    if (!this.renderer.lowSpec) {
-      ctx.shadowColor = 'rgba(4, 2, 10, 0.75)';
-      ctx.shadowBlur = 36;
-      ctx.shadowOffsetY = 8;
+    // 立绘 + 投影走预烘焙层：36px 高斯阴影只算一次，之后每帧只贴一张图。
+    // 原来每帧都要给一张 700px 高的立绘做一次整幅高斯模糊（perf.md §2.2）；
+    // 软件光栅下这一层本来就不画，走下面的兜底分支，观感逐像素不变。
+    const bake = this._titleShadowBake();
+    if (bake) {
+      const k = breath;
+      const dw = (bake.cv.width / bake.backing) * k;
+      const dh = (bake.cv.height / bake.backing) * k;
+      const padL = (bake.pad / bake.backing) * k;
+      // 烘焙图里立绘下沿距底边 pad 个设备像素：贴图底边抬 padL 才能让脚底落回 y=0
+      ctx.drawImage(bake.cv, -dw / 2, padL - dh, dw, dh);
+    } else {
+      if (!this.renderer.lowSpec) {
+        ctx.shadowColor = 'rgba(4, 2, 10, 0.75)';
+        ctx.shadowBlur = 36;
+        ctx.shadowOffsetY = 8;
+      }
+      ctx.drawImage(img, -w / 2, -h, w, h);
     }
-    ctx.drawImage(img, -w / 2, -h, w, h);
     ctx.restore();
+  }
+
+  /**
+   * 标题立绘「立绘 + 投影」的预烘焙层。
+   *
+   * 把带 shadowBlur=36 的立绘一次性画进离屏 canvas，之后每帧只 drawImage。
+   * key 里带上 backing：窗口尺寸 / dpr 变化、自动降档改了 backing、换角色
+   * 都会让 key 不匹配，从而在这一帧重建一次。烘焙用的是和正式渲染相同的
+   * setTransform(backing) 上下文，保证阴影的胖瘦和原来逐像素一致。
+   * 软件光栅下返回 null（原来就不画这层阴影，不做无谓的离屏分配）。
+   */
+  _titleShadowBake() {
+    if (this.renderer?.lowSpec) return null;
+    const img = this._titleCharImgs?.[this.char] || this._titleCharImgs?.reimu;
+    if (!img || !img.complete || !img.naturalWidth) return null;
+    const backing = Math.max(0.25, this.renderer?.backing || 1);
+    const key = `${this.char}|${img.naturalWidth}x${img.naturalHeight}|${backing.toFixed(3)}`;
+    const old = this._titleBake;
+    if (old && old.key === key) return old;
+    try {
+      const h0 = 700;                 // 立绘基准高（呼吸缩放每帧另乘）
+      const w0 = h0 * (img.naturalWidth / img.naturalHeight);
+      const pad = 72;                 // 逻辑像素：blur 36 + offsetY 8 的扩散余量
+      const cv = document.createElement('canvas');
+      cv.width = Math.ceil((w0 + pad * 2) * backing);
+      cv.height = Math.ceil((h0 + pad * 2) * backing);
+      const c = cv.getContext('2d');
+      if (!c) return null;
+      c.setTransform(backing, 0, 0, backing, 0, 0);
+      c.shadowColor = 'rgba(4, 2, 10, 0.75)';
+      c.shadowBlur = 36;
+      c.shadowOffsetY = 8;
+      c.drawImage(img, pad, pad, w0, h0);
+      this._titleBake = { key, cv, pad, backing };
+      return this._titleBake;
+    } catch (e) {
+      return null;                    // 烘焙失败就退回原来的每帧阴影路径
+    }
   }
 }
 

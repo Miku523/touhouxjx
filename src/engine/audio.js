@@ -36,6 +36,17 @@ const DRUM_KIND = 4;
  */
 const MUSIC_FADE_OUT = 5;
 
+/**
+ * 音频文件 BGM 的慢链路策略（见 _startAudioMusic）：
+ *  - AUDIO_STREAM_GRACE_MS：fetch + decode 超过这么久还没拿到整首，就先改用
+ *    HTMLAudioElement 流式播放同一个 URL（边下边听），不再等 1~2 MB 的 mp3 全部下完。
+ *  - AUDIO_STALL_MS：文件方式在这段时间内没有任何可播放进度（整首没下完、流式也没起来），
+ *    或文件直接失败，就放弃文件、回退曲库里的合成数据——慢链路「永远 pending」不再发生。
+ * 两个值导出是为了测试能读到；实例字段 _audioStreamGraceMs / _audioStallMs 可临时改小。
+ */
+export const AUDIO_STREAM_GRACE_MS = 2500;
+export const AUDIO_STALL_MS = 8000;
+
 export class AudioEngine {
   constructor() {
     /** @type {AudioContext|null} unlock 之前为 null */
@@ -80,6 +91,21 @@ export class AudioEngine {
     this._musicVoices = new Set(); // BGM 节点，切歌/关闭时强制 stop
     this._audioCache = new Map();  // 音频文件曲目：url → AudioBuffer（解码一次复用）
     this._audioPending = null;     // 正在加载的音频曲目 key，防重复请求
+    // ---- 音频文件曲目的慢链路策略（边下边听 / 停滞兜底 / 可取消） ----
+    this._audioGen = 0;            // 请求代号：切歌 / 停止 / 回退合成时自增，作废在途异步回调
+    this._audioAbort = null;       // 在途整首下载的 AbortController
+    this._audioFetch = null;       // 同一 URL 共享的在途下载 { url, promise, controller }
+    this._audioGraceTimer = null;  // 「这么久还没下完就先流式起播」的定时器
+    this._audioStallTimer = null;  // 「这么久还没有任何可播进度就回退合成」的定时器
+    this._audioStreamGraceMs = AUDIO_STREAM_GRACE_MS; // 可临时改小（测试用）
+    this._audioStallMs = AUDIO_STALL_MS;              // 同上
+    this._audioEl = null;          // 流式播放的 <audio>：只建一个，反复换 src
+    this._audioElNode = null;      // 它的 MediaElementAudioSourceNode（只建一次）
+    this._audioStream = null;      // 当前正在流式播放的 <audio>（停止时卸掉）
+    this._audioStreamSeq = 0;      // 流式会话号：防止过期回调 / 定时器动到新的流
+    this._audioStreaming = false;  // 当前 BGM 是否走「边下边听」流式路径（诊断用）
+    this._audioMode = null;        // 当前 BGM 实际发声方式：'buffer' | 'stream' | 'synth'
+    this._audioSongStarted = false;// 本曲是否已触发过 onSongStart（流式 → buffer 只触发一次）
     this._songLoadToken = 0;       // 曲库懒加载的批次号：切歌/关音乐时自增，作废未完成的加载
     this._songLoadPending = null;  // 正在等曲库模块的曲目 { token, name }
     this._songLoadFrom = 0;        // 等模块期间记下的起播偏移，见 _queueSongLoad()
@@ -198,7 +224,8 @@ export class AudioEngine {
     this._startFrom = from; // 起播偏移：_startMusic 消费一次就清掉
     // 正在播就立刻换：先掐掉旧曲排期的节点，避免两首叠在一起。
     // 「放完渐出」留下的尾音也归这里管——换曲时照样收干净。
-    if (this._musicOn || this._musicVoices.size) this._stopMusic();
+    // 正在播、或上一首的文件还在下 / 流式还挂着，都先收干净再起新曲
+    if (this._musicOn || this._musicVoices.size || this._audioPending || this._audioStream) this._stopMusic();
     if (this._musicRequested && this.ctx) this._startMusic();
   }
 
@@ -251,6 +278,19 @@ export class AudioEngine {
       }, remain * 1000);
       return;
     }
+    // 流式文件曲目（边下边听）：按 element 当前播放位置算这一轮还剩多久
+    const el = this._audioStream;
+    if (el) {
+      const dur = Number(el.duration) || Number(this._song && this._song.duration) || 0;
+      const cur = Number(el.currentTime) || 0;
+      const elapsed = dur > 0 ? ((cur % dur) + dur) % dur : 0;
+      const remain = dur > 0 ? Math.max(0.05, dur - elapsed) : 0.05;
+      this._playOutTimer = setTimeout(() => {
+        this._playOutTimer = null;
+        this.fadeOutMusic(sec);
+      }, remain * 1000);
+      return;
+    }
     // 合成曲目：记下渐出时长，等 _musicTick 走到本轮末尾再开始渐出
     this._songPlayOut = sec;
   }
@@ -281,6 +321,8 @@ export class AudioEngine {
     } catch (e) {
       // 忽略
     }
+    // 流式元素没接进总线时总线渐出对它无效，单独把 element 音量降下去
+    if (this._audioStream && !this._audioElNode) this._fadeStreamVolume(s);
     this._fadeTimer = setTimeout(() => {
       this._fadeTimer = null;
       // 这时总线已经收到听不见，stop 不会有断口；总线增益也在这里恢复。
@@ -328,6 +370,8 @@ export class AudioEngine {
     } catch (e) {
       // 忽略
     }
+    // 流式元素没接总线时静音 / 恢复要单独作用到 element
+    this._syncStreamVolume();
   }
 
   /** 只读静音状态 */
@@ -341,6 +385,8 @@ export class AudioEngine {
   setMusicVolume(v) {
     this._musicVolume = Math.max(0, Math.min(1, Number(v) || 0));
     this._rampBus(this._musicGain, 0.9 * this._musicVolume);
+    // 流式元素没接总线时音量跟随 _musicVolume
+    this._syncStreamVolume();
   }
 
   get musicVolume() {
@@ -845,61 +891,110 @@ export class AudioEngine {
     }
   }
 
-  /** 走音频文件的 BGM：fetch → decodeAudioData → 无缝循环播放。from = 从第几秒起播（默认 0） */
+  /**
+   * 走音频文件的 BGM：优先 fetch → decodeAudioData → 无缝循环播放（快链路主路径）。
+   *
+   * 慢链路（整首 1~2 MB 的 mp3 迟迟下不完）不再傻等整首：
+   *  - fetch 超过 AUDIO_STREAM_GRACE_MS 还没好，就改用 <audio> 流式播放同一个 URL
+   *    （边下边听），几秒内先出声，并停掉整首下载把带宽让给流式；
+   *  - 下载完成后如果流式正在放，热切到 buffer 版本继续无缝循环；
+   *  - AUDIO_STALL_MS 内没有任何可播放进度，或文件直接失败：回退 _startSynthMusic
+   *    （from 偏移 / 循环计数 / 进度条 / onSongStart 语义不变）。
+   * 切歌 / 关音乐 / stopMusic 会 abort 在途请求、卸掉流式元素，_audioPending 不会卡死。
+   * 老环境（无 fetch / 无 decodeAudioData）保持原行为：直接合成。
+   *
+   * from = 从第几秒起播（默认 0）
+   */
   _startAudioMusic(name, song, from = 0) {
     if (!this.ctx || this._musicOn || this._audioPending === name) return;
     const url = song.audio;
-    const begin = (buf) => {
-      this._audioPending = null;
-      if (!buf || !this.ctx) return;
-      // 加载期间已经切走/关掉音乐就不要再起播
-      if (this._songName !== name || !this._musicRequested) return;
-      try {
-        const src = this.ctx.createBufferSource();
-        src.buffer = buf;
-        src.loop = true;
-        src.connect(this._musicOut());
-        const when = this.ctx.currentTime + 0.06;
-        // 从中间接上时直接从对应采样位置起播；_songStart 前推同样的偏移，
-        // 进度条 / 循环计数 / playOutMusic 的「这一轮还剩多久」仍然按整首算
-        const dur = Number(buf.duration) || Number(song.duration) || 0;
-        const offset = dur > 0 ? ((from % dur) + dur) % dur : 0;
-        src.start(when, offset);
-        this._song = Object.assign({}, song, { duration: buf.duration });
-        this._songStart = when - offset;
-        this._songIdx = 0;
-        this._songLoop = 0;
-        this._events = [];
-        this._musicOn = true;
-        this._audioSrc = src;
-        this._musicVoices.add(src);
-        src.onended = () => {
-          this._musicVoices.delete(src);
-          // 只有自然放完 / 被 stop 的曲目会走到这儿；渐出收尾由 fadeOutMusic 的定时器负责
-          if (this._audioSrc !== src) return;
-          this._audioSrc = null;
-          this._songPlayOut = 0;
-          this._musicOn = false;
-        };
-        this.onSongStart?.(name);
-      } catch (e) {
-        // 播放失败就退回合成
-      }
-    };
-    this._audioPending = name;
+    // 已经解码好的：直接复用缓存的 AudioBuffer，不重复下载
     const cached = this._audioCache.get(url);
     if (cached) {
-      begin(cached);
+      this._beginAudioBuffer(name, song, from, cached);
       return;
     }
     if (typeof fetch !== 'function' || typeof this.ctx.decodeAudioData !== 'function') {
       // 老环境没有 fetch、或 AudioContext 不支持解码（离线测试用的假 context）：
       // 别把 BGM 空着，直接用曲库里的合成数据播
-      this._audioPending = null;
       this._startSynthMusic(name, song, from);
       return;
     }
-    fetch(url)
+
+    // 新的文件请求：先把上一首可能还挂着的下载 / 流式元素收干净，再开新代号
+    this._cancelAudioLoad();
+    const gen = ++this._audioGen;
+    this._audioSongStarted = false;
+    this._audioPending = name;
+    this._audioMode = null;
+
+    // 1) 快链路主路径：fetch + decode 整首，成功后无缝循环（与 1.6.44 行为一致）
+    const load = this._loadAudioBuffer(url);
+    // 2) 慢链路：grace 内还没下完就先流式起播（边下边听）。网络已经明确很差时不必等
+    const grace = this._slowLinkHint() ? 0 : this._audioStreamGraceMs;
+    this._audioGraceTimer = setTimeout(() => {
+      this._audioGraceTimer = null;
+      if (gen !== this._audioGen || this._audioPending !== name) return;
+      this._startAudioStream(name, song, from, gen, url);
+    }, grace);
+    // 3) 兜底：STALL_MS 内没有任何可播放进度 → 放弃文件方式，回退合成器
+    this._audioStallTimer = setTimeout(() => {
+      this._audioStallTimer = null;
+      if (gen !== this._audioGen || this._audioPending !== name || this._musicOn) return;
+      this._fallbackToSynth(name, song, from, gen);
+    }, this._audioStallMs);
+
+    load.then((buf) => {
+      if (gen !== this._audioGen) return; // 已经被切歌 / 停止作废
+      this._clearAudioLoadTimers();
+      this._audioPending = null;
+      if (this._songName !== name || !this._musicRequested || !this.ctx) {
+        this._releaseAudioStream();
+        return;
+      }
+      const el = this._audioStream;
+      if (el) {
+        // 慢链路流式已经在缓冲 / 在放：从它当前的位置接上 buffer 版本，听感不断
+        const at = Number(el.currentTime) || 0;
+        this._audioStream = null;
+        this._audioStreamSeq++;
+        this._audioStreaming = false;
+        const ok = this._beginAudioBuffer(name, song, from, buf, at, true);
+        if (ok) {
+          this._detachAudioStream(el);
+        } else {
+          // buffer 起播失败：把流式还回去继续放
+          this._audioStream = el;
+          this._audioStreamSeq++;
+          this._audioStreaming = true;
+          this._audioMode = 'stream';
+        }
+        return;
+      }
+      this._beginAudioBuffer(name, song, from, buf);
+    }).catch(() => {
+      if (gen !== this._audioGen) return;
+      this._clearAudioLoadTimers();
+      // 流式已经接上（正在缓冲或在放）：这是慢链路的正常路径，不算失败
+      if (this._audioStreaming || this._musicOn) return;
+      this._fallbackToSynth(name, song, from, gen);
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 音频文件 BGM：下载 / 流式 / 兜底 / 取消                              */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * 下载 + 解码整首。同一 URL 的在途请求共享同一个 promise（_audioFetch），
+   * 换歌 / 停止时用 AbortController 立刻取消，不把一个 1~2 MB 的下载拖到结束。
+   */
+  _loadAudioBuffer(url) {
+    const inflight = this._audioFetch;
+    if (inflight && inflight.url === url) return inflight.promise;
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const init = controller ? { signal: controller.signal } : undefined;
+    const promise = fetch(url, init)
       .then((r) => {
         if (!r.ok) throw new Error('http ' + r.status);
         return r.arrayBuffer();
@@ -907,13 +1002,359 @@ export class AudioEngine {
       .then((ab) => new Promise((res, rej) => this.ctx.decodeAudioData(ab, res, rej)))
       .then((buf) => {
         this._audioCache.set(url, buf);
-        begin(buf);
-      })
-      .catch(() => {
-        // 文件缺失 / 解码失败：回退到合成器版本
+        if (this._audioFetch && this._audioFetch.promise === promise) this._audioFetch = null;
+        return buf;
+      }, (err) => {
+        if (this._audioFetch && this._audioFetch.promise === promise) this._audioFetch = null;
+        throw err;
+      });
+    this._audioFetch = { url, promise, controller };
+    this._audioAbort = controller;
+    return promise;
+  }
+
+  /** 取消在途的整首下载（切歌 / 停止 / 转流式 / 回退合成时） */
+  _abortAudioFetch() {
+    const ctrl = this._audioAbort;
+    this._audioAbort = null;
+    this._audioFetch = null;
+    if (ctrl) {
+      try {
+        ctrl.abort();
+      } catch (e) {
+        // 已经结束的请求 abort 也不会抛，忽略
+      }
+    }
+  }
+
+  /** 清掉「开始流式」「回退合成」两个定时器 */
+  _clearAudioLoadTimers() {
+    if (this._audioGraceTimer !== null) {
+      clearTimeout(this._audioGraceTimer);
+      this._audioGraceTimer = null;
+    }
+    if (this._audioStallTimer !== null) {
+      clearTimeout(this._audioStallTimer);
+      this._audioStallTimer = null;
+    }
+  }
+
+  /**
+   * 作废当前文件 BGM 的所有在途工作：下载、解码回调、流式元素、定时器。
+   * _audioPending 一并清空——切歌之后上一首的请求绝不会再挡着新曲目起播。
+   */
+  _cancelAudioLoad() {
+    this._audioGen++;
+    this._abortAudioFetch();
+    this._clearAudioLoadTimers();
+    this._releaseAudioStream();
+    this._audioPending = null;
+    this._audioStreaming = false;
+    this._audioMode = null;
+    this._audioSongStarted = false;
+  }
+
+  /** 网络已经很差 / 省流量：不用等 grace，直接边下边听 */
+  _slowLinkHint() {
+    try {
+      const c = typeof navigator !== 'undefined' ? navigator.connection : null;
+      if (!c) return false;
+      if (c.saveData) return true;
+      return c.effectiveType === 'slow-2g' || c.effectiveType === '2g' || c.effectiveType === '3g';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * 流式播放用的 <audio>：整个引擎只建一个元素、只接一次 MediaElementAudioSourceNode。
+   * 接进 WebAudio 后音量 / 静音 / 渐出仍然走 musicGain 总线；接不进去就退化为
+   * element.volume 跟随 _musicVolume、静音时 pause（见 _syncStreamVolume）。
+   */
+  _ensureAudioElement() {
+    if (this._audioEl) return this._audioEl;
+    if (typeof Audio !== 'function' || typeof document === 'undefined') return null;
+    try {
+      const el = new Audio();
+      el.preload = 'auto';
+      el.loop = true;
+      el.setAttribute('playsinline', '');
+      el.setAttribute('webkit-playsinline', '');
+      if (this.ctx && this._musicGain && typeof this.ctx.createMediaElementSource === 'function') {
+        try {
+          this._audioElNode = this.ctx.createMediaElementSource(el);
+          this._audioElNode.connect(this._musicGain);
+        } catch (e) {
+          this._audioElNode = null; // 接不进总线就走降级音量
+        }
+      }
+      this._audioEl = el;
+      return el;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * 慢链路「边下边听」：用 HTMLAudioElement 流式播放同一个 URL。
+   * 只要缓冲到能出声就先响起来，不等整首下完；在途的整首 fetch 同时停掉，
+   * 把带宽让给流式播放（两条连接并行会互相饿死，首声反而更晚）。
+   * 起播后如果 buffer 版本也下完了，_startAudioMusic 会热切过去。
+   */
+  _startAudioStream(name, song, from, gen, url) {
+    if (gen !== this._audioGen || this._audioPending !== name || this._musicOn || !this.ctx) return;
+    const el = this._ensureAudioElement();
+    if (!el) return; // 建不出元素就交给 STALL_MS 兜底去合成
+    this._abortAudioFetch(); // 慢链路：不再整首下载，带宽全给流式
+    this._audioStream = el;
+    this._audioStreamSeq++;
+    this._audioStreaming = true;
+    this._audioMode = 'stream';
+    // 兜底计时重新起算：STALL_MS 要衡量「流式开始缓冲后有没有进度」，
+    // 不能把前面的 grace（2.5s）和首次缓冲一起算进 8s，否则 15KB/s 下
+    // 正常能出声的流式会被误判成失败、白退回合成器。
+    if (this._audioStallTimer) { clearTimeout(this._audioStallTimer); this._audioStallTimer = null; }
+    this._audioStallTimer = setTimeout(() => {
+      this._audioStallTimer = null;
+      if (gen !== this._audioGen || this._audioPending !== name || this._musicOn) return;
+      this._fallbackToSynth(name, song, from, gen);
+    }, this._audioStallMs);
+    const offset = Math.max(0, Number(from) || 0);
+    const seq = this._audioStreamSeq;
+    // 事件回调只在「这段流式仍然是当前曲目」时生效，切歌 / 停止后一律闭嘴
+    const active = () => gen === this._audioGen && this._audioStreamSeq === seq &&
+      this._audioStream === el && this._songName === name && this._musicRequested;
+
+    el.onloadedmetadata = () => {
+      if (!active()) return;
+      if (offset > 0.05) {
+        try {
+          const d = Number(el.duration) || 0;
+          if (d > 0) el.currentTime = ((offset % d) + d) % d;
+        } catch (e) {
+          // 不支持 seek 就从头播，进度语义由 _songStart 兜住
+        }
+      }
+    };
+    el.onplaying = () => {
+      if (!active()) return;
+      if (this._musicOn) return; // buffer 版本已经接上了，别叠音
+      this._onAudioStreamPlaying(name, song, el);
+    };
+    el.onerror = () => {
+      if (!active()) return;
+      this._fallbackToSynth(name, song, from, gen);
+    };
+    try {
+      el.preload = 'auto';
+      el.loop = true;
+      el.src = url;
+      this._syncStreamVolume();
+      const p = el.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {
+          // 自动播放被拒 / 播放失败：同样当作文件方式失败，回退合成器
+          if (active()) this._fallbackToSynth(name, song, from, gen);
+        });
+      }
+    } catch (e) {
+      this._fallbackToSynth(name, song, from, gen);
+    }
+  }
+
+  /** 流式已经真正出声：接管进度条 / 循环计数状态，语义与 buffer 版本对齐 */
+  _onAudioStreamPlaying(name, song, el) {
+    this._clearAudioLoadTimers();
+    this._audioPending = null;
+    const dur = Number(el.duration) || Number(song.duration) || 0;
+    const cur = Number(el.currentTime) || 0;
+    const offset = dur > 0 ? ((cur % dur) + dur) % dur : 0;
+    this._song = dur > 0 ? Object.assign({}, song, { duration: dur }) : song;
+    this._songSoft = !!song.soft;
+    this._songWarm = !!song.warm;
+    // 进度按「整首」算：把已经播掉的 offset 从起点里减掉（与 buffer 版本一致）
+    this._songStart = this.ctx.currentTime - offset;
+    this._songIdx = 0;
+    this._songLoop = 0;
+    this._events = [];
+    this._musicOn = true;
+    this._audioSrc = null;
+    this._audioStreaming = true;
+    this._audioMode = 'stream';
+    this._syncStreamVolume();
+    this._markAudioStarted(name);
+  }
+
+  /** 卸掉流式元素：暂停 + 断开下载，元素本身留着复用（MediaElementSource 只能建一次） */
+  _detachAudioStream(el) {
+    if (!el) return;
+    try {
+      el.pause();
+    } catch (e) {
+      // 忽略
+    }
+    try {
+      el.onplaying = null;
+      el.onerror = null;
+      el.onloadedmetadata = null;
+    } catch (e) {
+      // 忽略
+    }
+    try {
+      el.preload = 'none';
+      el.removeAttribute('src');
+      el.load();
+    } catch (e) {
+      // 忽略
+    }
+  }
+
+  /** 停 / 切掉当前流式播放（_audioPending 的清空由调用方负责） */
+  _releaseAudioStream() {
+    const el = this._audioStream;
+    this._audioStream = null;
+    this._audioStreamSeq++;
+    this._audioStreaming = false;
+    if (el) this._detachAudioStream(el);
+  }
+
+  /**
+   * 流式元素没接进 WebAudio 总线时的降级音量：跟随 _musicVolume，静音时 pause。
+   * 接进总线时音量 / 静音 / 渐出全交给 musicGain，这里只把元素音量拉满。
+   */
+  _syncStreamVolume() {
+    const el = this._audioStream;
+    if (!el) return;
+    try {
+      if (this._audioElNode) {
+        el.volume = 1;
+        el.muted = false;
+        return;
+      }
+      const v = this._muted ? 0 : Math.max(0, Math.min(1, this._musicVolume));
+      el.volume = v;
+      el.muted = !!this._muted;
+      if (this._muted) {
+        if (!el.paused) el.pause();
+      } else if (this._musicRequested && this._musicOn) {
+        const p = el.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      }
+    } catch (e) {
+      // 忽略
+    }
+  }
+
+  /** 流式元素没接总线时的降级渐出（接进总线时由 musicGain 完成） */
+  _fadeStreamVolume(sec) {
+    const el = this._audioStream;
+    if (!el || this._audioElNode) return;
+    const start = Number(el.volume) || 0;
+    const t0 = Date.now();
+    const dur = Math.max(0.2, Number(sec) || MUSIC_FADE_OUT) * 1000;
+    const tick = () => {
+      if (this._audioStream !== el) return;
+      const k = Math.min(1, (Date.now() - t0) / dur);
+      try {
+        el.volume = Math.max(0, start * (1 - k));
+      } catch (e) {
+        return;
+      }
+      if (k < 1) setTimeout(tick, 50);
+    };
+    setTimeout(tick, 50);
+  }
+
+  /** 本曲第一次真正发出声音时通知外部（流式 → buffer 热切时只通知一次） */
+  _markAudioStarted(name) {
+    if (this._audioSongStarted) return;
+    this._audioSongStarted = true;
+    this.onSongStart?.(name);
+  }
+
+  /** 文件方式失败 / 停滞：清理干净后回退曲库里的合成数据（语义同 1.6.44 的 .catch 分支） */
+  _fallbackToSynth(name, song, from, gen) {
+    if (gen !== this._audioGen) return;
+    this._audioGen++; // 作废还在回调链上的下载 / 解码
+    this._abortAudioFetch();
+    this._clearAudioLoadTimers();
+    const wasStreaming = this._audioStreaming;
+    this._releaseAudioStream();
+    this._audioPending = null;
+    this._audioStreaming = false;
+    this._audioMode = 'synth';
+    if (wasStreaming) this._musicOn = false; // 流式如果已经在放，先当它停了，换合成器
+    if (!this._musicOn && this._songName === name && this._musicRequested) {
+      this._startSynthMusic(name, song, from);
+    }
+  }
+
+  /**
+   * 解码好的整首 buffer → 无缝循环起播（快链路主路径；也可从流式热切过来）。
+   * resumeAt / switching 用于「从流式当前位置接上」：已经在放也允许起播，
+   * 起播偏移取流式刚播到的位置，听感不断。
+   * @returns {boolean} 是否真的起播了
+   */
+  _beginAudioBuffer(name, song, from, buf, resumeAt = 0, switching = false) {
+    if (!buf || !this.ctx) return false;
+    if (this._songName !== name || !this._musicRequested) return false;
+    if (this._musicOn && !switching) return false;
+    let src = null;
+    try {
+      src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.connect(this._musicOut());
+      const when = this.ctx.currentTime + 0.06;
+      // 从中间接上时直接从对应采样位置起播；_songStart 前推同样的偏移，
+      // 进度条 / 循环计数 / playOutMusic 的「这一轮还剩多久」仍然按整首算
+      const dur = Number(buf.duration) || Number(song.duration) || 0;
+      let offset = dur > 0 ? ((from % dur) + dur) % dur : 0;
+      if (switching && Number.isFinite(resumeAt) && resumeAt > 0 && dur > 0) {
+        offset = ((resumeAt % dur) + dur) % dur;
+      }
+      src.start(when, offset);
+      this._song = Object.assign({}, song, { duration: buf.duration });
+      this._songSoft = !!song.soft;
+      this._songWarm = !!song.warm;
+      this._songStart = when - offset;
+      this._songIdx = 0;
+      this._songLoop = 0;
+      this._events = [];
+      this._musicOn = true;
+      this._audioSrc = src;
+      this._audioStreaming = false;
+      this._audioMode = 'buffer';
+      this._musicVoices.add(src);
+      src.onended = () => {
+        this._musicVoices.delete(src);
+        // 只有自然放完 / 被 stop 的曲目会走到这儿；渐出收尾由 fadeOutMusic 的定时器负责
+        if (this._audioSrc !== src) return;
+        this._audioSrc = null;
+        this._songPlayOut = 0;
+        this._musicOn = false;
+      };
+      this._markAudioStarted(name);
+      return true;
+    } catch (e) {
+      try {
+        if (src) {
+          src.onended = null;
+          if (typeof src.disconnect === 'function') src.disconnect();
+        }
+      } catch (e2) {
+        // 忽略
+      }
+      if (!switching) {
+        // 起播失败就退回合成
+        this._audioSrc = null;
+        this._musicOn = false;
+        this._audioMode = null;
         this._audioPending = null;
         if (this._songName === name && this._musicRequested) this._startSynthMusic(name, song, from);
-      });
+      }
+      return false;
+    }
   }
 
   /** 走实时合成的 BGM（曲库音符事件表 + 前瞻调度）。from = 从第几秒起播（默认 0） */
@@ -924,8 +1365,10 @@ export class AudioEngine {
     this._songWarm = !!song.warm;
     this._events = this._getEvents(name, song);
     if (!this._events || !this._events.length) return;
+    this._audioMode = 'synth';
+    this._audioStreaming = false;
     // 真正开始发声时才算「听见」：音乐关着时切歌不会误解锁回忆室里的曲目
-    this.onSongStart?.(name);
+    this._markAudioStarted(name);
 
     // 从中间接上：跳过偏移之前的事件，起播点前推同样的时间（进度 / 循环 / 渐出仍按整首算）。
     // 偏移可能落在最后一个事件之后——那就直接从下一圈的第一个事件排起，别让常驻静音。
@@ -964,6 +1407,8 @@ export class AudioEngine {
     this._audioPending = null;
     this._songPlayOut = 0;
     this._audioSrc = null;
+    // 文件 BGM 的在途下载 / 流式元素一并收掉：切歌不会被上一首的请求卡住
+    this._cancelAudioLoad();
     if (this._musicTimer !== null) {
       clearTimeout(this._musicTimer);
       this._musicTimer = null;

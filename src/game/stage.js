@@ -94,7 +94,16 @@ function _bgEntry(theme, idx) {
   if (e.img) {
     e.src = new URL('../art/gen/bg/' + key + '.webp', import.meta.url).href;
     e.img.decoding = 'async';
-    e.img.onload = () => { e.ok = true; e.failed = false; };
+    e.img.onload = () => {
+      e.ok = true;
+      e.failed = false;
+      // 后台 decode：不预热时首次 drawImage 会在渲染关键帧里同步解码 WebP
+      // （软件光栅下这道解码是进关首帧大峰值的来源之一）
+      try {
+        const p = e.img.decode?.();
+        if (p && p.catch) p.catch(() => {});
+      } catch (err) { /* 解码失败不影响后续绘制 */ }
+    };
     // 一次瞬时失败（弱网 / Service Worker 离线兜底返回 504）不该让这一面整局都退回
     // 程序化天空：退避重试几次，成功之后照常切回厚涂背景（配 draw 里的淡入）。
     e.img.onerror = () => {
@@ -465,6 +474,232 @@ function lanternOn() {
 }
 function lanternOff() {
   return lanternSprite(false);
+}
+
+/* ============================================================
+   厚涂背景合成层：模块级缓存 + 进关前预热
+   ------------------------------------------------------------
+   合成一张 (1280+420)×720 的背景层，要把 2048×1152 的 WebP 高质量缩放
+   一遍，再叠 3 层全屏渐变与曝光标定；软件光栅实测 40–80ms。这块成本原来
+   落在两个关键帧上：① 进关的 _prewarmStageArt() 同步跑一次完整 stage.draw；
+   ② 变体 1 到道中 40% 才首次合成，直接卡在弹幕里。
+   现在提到模块级缓存（同主题+变体只合成一次，重开/接关/读档都命中），
+   并给 main.js 提供 warmStageBg()：在过场对白/菜单这类非关键窗口里把
+   「加载 → decode → 合成」提前做完。
+   ============================================================ */
+const BG_LAYER_CACHE = new Map();   // key: theme|variant → 已合成 canvas
+const BG_LAYER_LRU = [];            // 最近使用的 key（尾部最新）
+const BG_LAYER_LIMIT = 4;           // 上限 4 张（≈4.9MB/张）：本关两变体 + 下一面两变体
+
+function _bgLayerKey(theme, variant) { return theme + '|' + (variant | 0); }
+
+/** 取已合成的背景层：未缓存返回 null（失败不缓存，图片晚到时下次仍会重试） */
+function _bgLayerGet(theme, variant) {
+  const key = _bgLayerKey(theme, variant);
+  const cv = BG_LAYER_CACHE.get(key);
+  if (!cv) return null;
+  const at = BG_LAYER_LRU.indexOf(key);
+  if (at >= 0) BG_LAYER_LRU.splice(at, 1);
+  BG_LAYER_LRU.push(key);
+  return cv;
+}
+
+function _bgLayerPut(theme, variant, cv) {
+  if (!cv) return;
+  const key = _bgLayerKey(theme, variant);
+  BG_LAYER_CACHE.set(key, cv);
+  const at = BG_LAYER_LRU.indexOf(key);
+  if (at >= 0) BG_LAYER_LRU.splice(at, 1);
+  BG_LAYER_LRU.push(key);
+  // 超出上限就丢最久没用过的：离屏 canvas 没有引用后由 GC 回收
+  while (BG_LAYER_LRU.length > BG_LAYER_LIMIT) {
+    BG_LAYER_CACHE.delete(BG_LAYER_LRU.shift());
+  }
+}
+
+function composeBgLayer(a, theme, variant) {
+  const W = VIEW_W, H = VIEW_H;
+  const OVER = 420;                 // 右侧多留出横移余量
+  const cv = document.createElement('canvas');
+  cv.width = W + OVER;
+  cv.height = H;
+  const c = cv.getContext('2d');
+  if (!c) return null;
+
+  if (!a || !a.img || !a.img.naturalWidth) return null;
+
+  // cover 到 (W+OVER) x H
+  const s = Math.max(cv.width / a.img.naturalWidth, cv.height / a.img.naturalHeight);
+  const iw = a.img.naturalWidth * s;
+  const ih = a.img.naturalHeight * s;
+  c.imageSmoothingEnabled = true;
+  c.imageSmoothingQuality = 'high';
+  // 统一调色：提高对比与饱和、压低整体亮度，让 AI 图不再「灰白平」
+  c.filter = 'saturate(1.14) contrast(1.10) brightness(0.94)';
+  c.drawImage(a.img, (cv.width - iw) / 2, (cv.height - ih) / 2, iw, ih);
+  c.filter = 'none';
+
+  // 雾之湖那张图里有一颗「白描边太阳」，用带体积的月盘盖住
+  if (theme === 'lake' && !variant) {
+    const gx = cv.width * 0.297, gy = H * 0.435, gr = 148;
+    const glow = c.createRadialGradient(gx, gy, 0, gx, gy, gr);
+    // 用一个有实心核心 + 柔边的月盘，盖住 AI 图里那圈「白描边太阳」
+    glow.addColorStop(0, 'rgba(255, 250, 238, 0.98)');
+    glow.addColorStop(0.52, 'rgba(250, 246, 232, 0.97)');
+    glow.addColorStop(0.62, 'rgba(238, 240, 236, 0.85)');
+    glow.addColorStop(0.78, 'rgba(215, 228, 245, 0.24)');
+    glow.addColorStop(1, 'rgba(180, 205, 240, 0)');
+    c.fillStyle = glow;
+    c.beginPath();
+    c.arc(gx, gy, gr, 0, Math.PI * 2);
+    c.fill();
+    // 冷灰环形山，避免月盘变成一张白纸
+    c.save();
+    c.beginPath();
+    c.arc(gx, gy, gr * 0.56, 0, Math.PI * 2);
+    c.clip();
+    const craters = [
+      [-0.18, -0.12, 0.16], [0.14, 0.06, 0.11], [0.02, 0.24, 0.09],
+      [-0.06, 0.02, 0.07], [0.22, -0.18, 0.06],
+    ];
+    for (let i = 0; i < craters.length; i++) {
+      const k = craters[i];
+      c.fillStyle = 'rgba(150, 160, 178, ' + (0.2 + i * 0.018) + ')';
+      c.beginPath();
+      c.ellipse(gx + k[0] * gr, gy + k[1] * gr, k[2] * gr, k[2] * gr * 0.78, 0.4, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.restore();
+  }
+
+  // 冷色光柱：多层同心梯形叠加 + 垂直衰减，做出带柔边的空气光
+  if (theme === 'lake' || theme === 'moon' || theme === 'mountain') {
+    const col = theme === 'mountain' ? [255, 214, 168]
+      : theme === 'moon' ? [196, 210, 255] : [206, 233, 255];
+    const beams = [
+      [0.15, 0.30, 150, 0.185],
+      [0.40, 0.22, 210, 0.130],
+      [0.64, 0.33, 135, 0.155],
+      [0.84, 0.19, 190, 0.090],
+    ];
+    c.save();
+    c.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < beams.length; i++) {
+      const bx = cv.width * beams[i][0];
+      const ang = beams[i][1];
+      const halfW = beams[i][2];
+      const a0 = beams[i][3];
+      const len = H * 1.18;
+      c.save();
+      c.translate(bx, -70);
+      c.rotate(ang);
+      const grd = c.createLinearGradient(0, 0, 0, len);
+      grd.addColorStop(0, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + a0 + ')');
+      grd.addColorStop(0.55, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + (a0 * 0.42) + ')');
+      grd.addColorStop(1, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',0)');
+      c.fillStyle = grd;
+      for (let k = 0; k < 6; k++) {
+        const spread = 1 + k * 0.45;
+        const w0 = 26 * spread, w1 = halfW * spread;
+        c.globalAlpha = 0.32 * Math.pow(0.72, k);
+        c.beginPath();
+        c.moveTo(-w0, 0); c.lineTo(w0, 0);
+        c.lineTo(w1, len); c.lineTo(-w1, len);
+        c.closePath(); c.fill();
+      }
+      c.restore();
+    }
+    c.restore();
+  }
+
+  // 顶部压暗
+  const top = c.createLinearGradient(0, 0, 0, H * 0.22);
+  top.addColorStop(0, 'rgba(4, 3, 10, 0.48)');
+  top.addColorStop(1, 'rgba(4, 3, 10, 0)');
+  c.fillStyle = top;
+  c.fillRect(0, 0, cv.width, H * 0.22);
+
+  // 底部压暗
+  const bot = c.createLinearGradient(0, H * 0.58, 0, H);
+  bot.addColorStop(0, 'rgba(6, 4, 12, 0)');
+  bot.addColorStop(0.62, 'rgba(6, 4, 12, 0.22)');
+  bot.addColorStop(1, 'rgba(6, 4, 12, 0.78)');
+  c.fillStyle = bot;
+  c.fillRect(0, H * 0.58, cv.width, H * 0.42);
+
+  // 色调和
+  const tint = c.createLinearGradient(0, 0, 0, H);
+  tint.addColorStop(0, 'rgba(40, 60, 120, 0.06)');
+  tint.addColorStop(1, 'rgba(20, 10, 24, 0.10)');
+  c.fillStyle = tint;
+  c.fillRect(0, 0, cv.width, H);
+
+  // 整体曝光标定：整层乘到统一亮度（压暗用黑幕，提亮用滤镜重绘一次）
+  const ex = (BG_EXPOSURE[theme] || [1, 1])[variant] ?? 1;
+  if (ex < 0.99) {
+    c.globalCompositeOperation = 'source-over';
+    c.fillStyle = 'rgba(0,0,0,' + (1 - ex).toFixed(4) + ')';
+    c.fillRect(0, 0, cv.width, cv.height);
+  } else if (ex > 1.01) {
+    const exp = document.createElement('canvas');
+    exp.width = cv.width; exp.height = cv.height;
+    const ec = exp.getContext('2d');
+    if (ec) {
+      ec.filter = 'brightness(' + ex.toFixed(4) + ')';
+      ec.drawImage(cv, 0, 0);
+      return exp;
+    }
+  }
+
+  return cv;
+}
+
+/* 预热：把某主题所有变体的「加载 → 解码 → 合成」提前做完。
+ * isSafe 由调用方给（不在关卡进行中时返回 true）：不在安全窗口就轮询等待，
+ * 绝不把 40–80ms 的合成塞进弹幕帧。失败/超时都只是退回原状（进关时现场合成），
+ * 不影响正确性。 */
+const _bgWarmBusy = new Set();
+
+export function warmStageBg(theme, isSafe) {
+  if (!theme || typeof document === 'undefined') return;
+  const n = BG_VARIANTS[theme] || BG_VARIANTS_DEFAULT;
+  for (let i = 0; i < n; i++) _warmBgVariant(theme, i, isSafe);
+}
+
+function _warmBgVariant(theme, idx, isSafe) {
+  const key = _bgLayerKey(theme, idx);
+  if (_bgWarmBusy.has(key) || BG_LAYER_CACHE.has(key)) return;
+  _bgWarmBusy.add(key);
+  const e = _bgEntry(theme, idx);
+  const finish = () => { _bgWarmBusy.delete(key); };
+  const safe = () => { try { return !isSafe || !!isSafe(); } catch (err) { return true; } };
+  // 合成放在空闲回调里：至少不会把已经排好的这一帧挤掉
+  const later = (fn) => {
+    try {
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 1200 });
+      else setTimeout(fn, 16);
+    } catch (err) { setTimeout(fn, 16); }
+  };
+  const compose = () => {
+    try {
+      if (!BG_LAYER_CACHE.has(key)) _bgLayerPut(theme, idx, composeBgLayer(e, theme, idx));
+    } catch (err) { /* 预热失败：进关时照常现场合成 */ }
+    finish();
+  };
+  let tries = 0;
+  const tick = () => {
+    if (++tries > 900) { finish(); return; }   // 约 3 分钟都等不到安全窗口：放弃（进关时兜底）
+    if (!e.ok) { setTimeout(tick, 120); return; }     // 图还在路上
+    if (!safe()) { setTimeout(tick, 200); return; }   // 关卡进行中：等过场/菜单
+    // decode 把 WebP 解码挪出关键帧：首次 drawImage 才解码会正好压在进关第一帧上
+    try {
+      const p = e.img && e.img.decode ? e.img.decode() : null;
+      if (p && typeof p.then === 'function') p.then(ready, ready);
+      else later(compose);
+    } catch (err) { later(compose); }
+  };
+  const ready = () => { if (safe()) later(compose); else setTimeout(tick, 200); };
+  tick();
 }
 
 export class Stage {
@@ -1799,145 +2034,6 @@ export class Stage {
      绘制
      ============================================================ */
 
-  /* 把整个背景层（图 + 压暗 + 色调）预合成到一张离屏 canvas。
-   * 每帧只做一次 1:1 贴图，避免大图缩放 + 多个全屏渐变填充导致的掉帧。 */
-  _composeBgLayer(list, theme, variant) {
-    const W = VIEW_W, H = VIEW_H;
-    const OVER = 420;                 // 右侧多留出横移余量
-    const cv = document.createElement('canvas');
-    cv.width = W + OVER;
-    cv.height = H;
-    const c = cv.getContext('2d');
-    if (!c) return null;
-
-    const a = list[0];
-    if (!a || !a.img || !a.img.naturalWidth) return null;
-
-    // cover 到 (W+OVER) x H
-    const s = Math.max(cv.width / a.img.naturalWidth, cv.height / a.img.naturalHeight);
-    const iw = a.img.naturalWidth * s;
-    const ih = a.img.naturalHeight * s;
-    c.imageSmoothingEnabled = true;
-    c.imageSmoothingQuality = 'high';
-    // 统一调色：提高对比与饱和、压低整体亮度，让 AI 图不再「灰白平」
-    c.filter = 'saturate(1.14) contrast(1.10) brightness(0.94)';
-    c.drawImage(a.img, (cv.width - iw) / 2, (cv.height - ih) / 2, iw, ih);
-    c.filter = 'none';
-
-    // 雾之湖那张图里有一颗「白描边太阳」，用带体积的月盘盖住
-    if (theme === 'lake' && !variant) {
-      const gx = cv.width * 0.297, gy = H * 0.435, gr = 148;
-      const glow = c.createRadialGradient(gx, gy, 0, gx, gy, gr);
-      // 用一个有实心核心 + 柔边的月盘，盖住 AI 图里那圈「白描边太阳」
-      glow.addColorStop(0, 'rgba(255, 250, 238, 0.98)');
-      glow.addColorStop(0.52, 'rgba(250, 246, 232, 0.97)');
-      glow.addColorStop(0.62, 'rgba(238, 240, 236, 0.85)');
-      glow.addColorStop(0.78, 'rgba(215, 228, 245, 0.24)');
-      glow.addColorStop(1, 'rgba(180, 205, 240, 0)');
-      c.fillStyle = glow;
-      c.beginPath();
-      c.arc(gx, gy, gr, 0, Math.PI * 2);
-      c.fill();
-      // 冷灰环形山，避免月盘变成一张白纸
-      c.save();
-      c.beginPath();
-      c.arc(gx, gy, gr * 0.56, 0, Math.PI * 2);
-      c.clip();
-      const craters = [
-        [-0.18, -0.12, 0.16], [0.14, 0.06, 0.11], [0.02, 0.24, 0.09],
-        [-0.06, 0.02, 0.07], [0.22, -0.18, 0.06],
-      ];
-      for (let i = 0; i < craters.length; i++) {
-        const k = craters[i];
-        c.fillStyle = 'rgba(150, 160, 178, ' + (0.2 + i * 0.018) + ')';
-        c.beginPath();
-        c.ellipse(gx + k[0] * gr, gy + k[1] * gr, k[2] * gr, k[2] * gr * 0.78, 0.4, 0, Math.PI * 2);
-        c.fill();
-      }
-      c.restore();
-    }
-
-    // 冷色光柱：多层同心梯形叠加 + 垂直衰减，做出带柔边的空气光
-    if (theme === 'lake' || theme === 'moon' || theme === 'mountain') {
-      const col = theme === 'mountain' ? [255, 214, 168]
-        : theme === 'moon' ? [196, 210, 255] : [206, 233, 255];
-      const beams = [
-        [0.15, 0.30, 150, 0.185],
-        [0.40, 0.22, 210, 0.130],
-        [0.64, 0.33, 135, 0.155],
-        [0.84, 0.19, 190, 0.090],
-      ];
-      c.save();
-      c.globalCompositeOperation = 'lighter';
-      for (let i = 0; i < beams.length; i++) {
-        const bx = cv.width * beams[i][0];
-        const ang = beams[i][1];
-        const halfW = beams[i][2];
-        const a0 = beams[i][3];
-        const len = H * 1.18;
-        c.save();
-        c.translate(bx, -70);
-        c.rotate(ang);
-        const grd = c.createLinearGradient(0, 0, 0, len);
-        grd.addColorStop(0, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + a0 + ')');
-        grd.addColorStop(0.55, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + (a0 * 0.42) + ')');
-        grd.addColorStop(1, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',0)');
-        c.fillStyle = grd;
-        for (let k = 0; k < 6; k++) {
-          const spread = 1 + k * 0.45;
-          const w0 = 26 * spread, w1 = halfW * spread;
-          c.globalAlpha = 0.32 * Math.pow(0.72, k);
-          c.beginPath();
-          c.moveTo(-w0, 0); c.lineTo(w0, 0);
-          c.lineTo(w1, len); c.lineTo(-w1, len);
-          c.closePath(); c.fill();
-        }
-        c.restore();
-      }
-      c.restore();
-    }
-
-    // 顶部压暗
-    const top = c.createLinearGradient(0, 0, 0, H * 0.22);
-    top.addColorStop(0, 'rgba(4, 3, 10, 0.48)');
-    top.addColorStop(1, 'rgba(4, 3, 10, 0)');
-    c.fillStyle = top;
-    c.fillRect(0, 0, cv.width, H * 0.22);
-
-    // 底部压暗
-    const bot = c.createLinearGradient(0, H * 0.58, 0, H);
-    bot.addColorStop(0, 'rgba(6, 4, 12, 0)');
-    bot.addColorStop(0.62, 'rgba(6, 4, 12, 0.22)');
-    bot.addColorStop(1, 'rgba(6, 4, 12, 0.78)');
-    c.fillStyle = bot;
-    c.fillRect(0, H * 0.58, cv.width, H * 0.42);
-
-    // 色调和
-    const tint = c.createLinearGradient(0, 0, 0, H);
-    tint.addColorStop(0, 'rgba(40, 60, 120, 0.06)');
-    tint.addColorStop(1, 'rgba(20, 10, 24, 0.10)');
-    c.fillStyle = tint;
-    c.fillRect(0, 0, cv.width, H);
-
-    // 整体曝光标定：整层乘到统一亮度（压暗用黑幕，提亮用滤镜重绘一次）
-    const ex = (BG_EXPOSURE[theme] || [1, 1])[variant] ?? 1;
-    if (ex < 0.99) {
-      c.globalCompositeOperation = 'source-over';
-      c.fillStyle = 'rgba(0,0,0,' + (1 - ex).toFixed(4) + ')';
-      c.fillRect(0, 0, cv.width, cv.height);
-    } else if (ex > 1.01) {
-      const exp = document.createElement('canvas');
-      exp.width = cv.width; exp.height = cv.height;
-      const ec = exp.getContext('2d');
-      if (ec) {
-        ec.filter = 'brightness(' + ex.toFixed(4) + ')';
-        ec.drawImage(cv, 0, 0);
-        return exp;
-      }
-    }
-
-    return cv;
-  }
 
   /** 程序化天空兜底（厚涂背景还没就绪时画它；图到位后淡入替换，见 draw） */
   _drawFallbackBg(ctx, theme, cam) {
@@ -1958,14 +2054,17 @@ export class Stage {
     // 注意：图片是异步加载的，list 可能一开始只含后加载完成的那张，
     // 所以合成缓存必须按条目的原始变体序号 idx 存，不能按 list 顺序存，
     // 否则曝光标定会串到另一张画上（EX 面出现过红月/蓝月互换）。
-    if (!this._bgLayers) this._bgLayers = {};
-    let cache = this._bgLayers[theme];
-    if (!cache) cache = this._bgLayers[theme] = [];
+    // 合成层缓存在模块级（见 composeBgLayer / BG_LAYER_CACHE）：换关、重开、读档都直接命中，
+    // 不再每次进关重新合成一张 1700×720 的大图（软件光栅 40–80ms 一次性顿挫的来源）。
     const layers = [];
     for (const e of list) {
       const idx = e.idx | 0;
-      if (cache[idx] === undefined) cache[idx] = this._composeBgLayer([e], theme, idx) || null;
-      if (cache[idx]) layers.push(cache[idx]);
+      let layer = _bgLayerGet(theme, idx);
+      if (!layer) {
+        layer = composeBgLayer(e, theme, idx) || null;
+        if (layer) _bgLayerPut(theme, idx, layer);
+      }
+      if (layer) layers.push(layer);
     }
     if (layers.length) {
       const lvlW = Math.max(1, (this.level.w || W) - W);

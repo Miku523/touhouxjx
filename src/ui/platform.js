@@ -11,7 +11,7 @@
  * 版本：改动本文件后记得同步 index.html 里的 ?v= 与 sw.js 的 CACHE_VERSION。
  */
 
-export const PLATFORM_VERSION = '1.6.44';
+export const PLATFORM_VERSION = '1.6.45';
 
 const VERSION = PLATFORM_VERSION;
 /** 只在同一个 origin + 安全上下文里注册（GitHub Pages / 本地 8138 都满足） */
@@ -23,6 +23,8 @@ const CSS_HREF = './src/ui/platform.css?v=' + VERSION;
 const LS_INSTALL = 'hks.install.v1';
 /** localStorage：iOS「添加到主屏幕」图文提示只弹一次 */
 const LS_A2HS = 'hks.a2hs.v1';
+/** sessionStorage：HTML/平台层版本对账「本会话已重载过一次」（值 = 发起重载时的 PLATFORM_VERSION） */
+const SS_HTMLVER = 'hks.htmlver.v1';
 
 const CAN = typeof window !== 'undefined' && !!(window && window.document);
 const W = CAN ? window : null;
@@ -810,10 +812,70 @@ function onAudioUnlock(cb) {
    9) Service Worker：只在 http(s) + 安全上下文注册，失败静默
    ============================================================ */
 
+/** 快链路阈值（字节/秒）：低于这个实测吞吐就不预热，跟 lazy_preload 的 SLOW_BYTES_PER_SEC 对齐 */
+const WARM_MIN_BYTES_PER_SEC = 350 * 1024;
+
+/**
+ * linkTier() 判不出来（'unknown'）时的兜底探针：用 ResourceTiming 里已经下完的同源资源
+ * 实测一次吞吐。量不出来（全是缓存命中 / 样本太小）返回 null。
+ * @returns {number|null} 字节/秒
+ */
+function measureWarmThroughput() {
+  return safely(() => {
+    const entries = W.performance.getEntriesByType('resource') || [];
+    let bytes = 0;
+    let t0 = Infinity;
+    let t1 = -Infinity;
+    for (const e of entries) {
+      if (!e || !e.name || !/^https?:/i.test(e.name)) continue;
+      const b = e.encodedBodySize || e.transferSize || 0;
+      if (b <= 0 || !(e.responseEnd > 0)) continue;
+      bytes += b;
+      if (e.startTime < t0) t0 = e.startTime;
+      if (e.responseEnd > t1) t1 = e.responseEnd;
+    }
+    const wall = (t1 - t0) / 1000;
+    if (bytes > 0 && wall > 0.25) return bytes / wall;
+    return null;
+  }, null);
+}
+
+/**
+ * 预热闸门：只有「确认是快链路」才预热。
+ * 受限链路 / 省流模式下预热等于把整站再下一遍，只会跟首屏还需要的立绘、音乐抢带宽；
+ * 离线可用性由 SW 的导航壳 PRECACHE 保证，不依赖预热。
+ * 复用 lazy_preload 的自适应档位（saveData / effectiveType / 首屏素材实测吞吐），
+ * 动态 import 拿不到就自己量一次；两种都量不出来时按「不预热」处理（保守）。
+ * @returns {Promise<'fast'|'constrained'|'unknown'>}
+ */
+async function warmGate() {
+  const conn = safely(
+    () =>
+      (W &&
+        W.navigator &&
+        (W.navigator.connection || W.navigator.mozConnection || W.navigator.webkitConnection)) ||
+      null,
+    null
+  );
+  if (conn && conn.saveData === true) return 'constrained';
+  let tier = 'unknown';
+  try {
+    const mod = await import('../engine/lazy_preload.js');
+    if (mod && typeof mod.linkTier === 'function') tier = mod.linkTier();
+  } catch (err) {
+    /* 模块拿不到就自己量 */
+  }
+  if (tier === 'fast' || tier === 'constrained') return tier;
+  const bps = measureWarmThroughput();
+  if (bps === null) return 'unknown';
+  return bps >= WARM_MIN_BYTES_PER_SEC ? 'fast' : 'constrained';
+}
+
 /**
  * 把「本次页面实际请求过的资源」交给 SW 预热缓存。
  * 作用：首访之后即使立刻断网，也能真正进入标题页，而不只是一个空的 index.html。
- * 全程静默，失败不影响游戏。
+ * 只在确认是快链路时才发；受限链路 / 省流 / 量不出来一律不发（见 warmGate）。
+ * 全程静默、异步，绝不影响启动，失败也不影响游戏。
  */
 function warmCache(reg) {
   return (async () => {
@@ -821,6 +883,22 @@ function warmCache(reg) {
       if (!reg) return false;
       const sw = (W && W.navigator && W.navigator.serviceWorker) || null;
       if (!sw) return false;
+      // 先过链路闸门：这一步是异步的、在 postMessage 之前，不会阻塞启动；
+      // 受限链路 / saveData / 量不出来 → 直接不发（弱网下预热只会跟前台抢带宽）。
+      let gate = 'unknown';
+      try {
+        gate = await warmGate();
+      } catch (err) {
+        gate = 'unknown';
+      }
+      const allowed = gate === 'fast';
+      safely(() => {
+        W.__hksWarm = { tier: gate, allowed: allowed, at: Date.now() };
+      });
+      if (!allowed) {
+        state.warmed = 'skip:' + gate;
+        return false;
+      }
       // 首次安装时页面还没被 SW 接管，controller 为 null，等它一下（最多 4s）
       if (!sw.controller) {
         await new Promise((resolve) => {
@@ -844,6 +922,9 @@ function warmCache(reg) {
       });
       target.postMessage({ type: 'hks:warm', version: VERSION, urls: Array.from(urls).slice(0, 400) });
       state.warmed = true;
+      safely(() => {
+        if (W.__hksWarm) W.__hksWarm.sent = urls.size;
+      });
       return true;
     } catch (err) {
       return false;
@@ -903,6 +984,54 @@ function ensureStyles() {
 }
 
 /* ============================================================
+   10.5) HTML / 平台层版本对账（net.md R5）
+   ------------------------------------------------------------
+   GitHub Pages 给 HTML 的缓存只有 max-age=600：发布后最多 10 分钟里，
+   访问者可能拿到「旧 index.html + 新 ?v= 资源」的混合体（旧壳配新核）。
+   index.html 末尾的内联脚本把入口 ?v= 写进 window.__hksHtmlVer；
+   这里拿它和 PLATFORM_VERSION 比对，不一致就带 ?hks_v=<htmlVer> 重载一次 ——
+   query 变了，CDN 的 cache key 也跟着变，直接绕开那份旧 HTML。
+
+   绝不循环，两道互相独立的闸：
+     1) 本会话已经为它重载过（sessionStorage，值 = 发起重载时的 PLATFORM_VERSION）；
+     2) 当前 URL 已经带过 hks_v（别的标签页/手动刷新留下的也算）。
+   离线时跳过（重载只会把页面换成离线错误页）；
+   老归档页/直接用平台层做单页测试时没有 __hksHtmlVer → 一律跳过。
+   ============================================================ */
+
+/** @returns {string|false} 触发的重载目标 URL（QA 用），没触发返回 false */
+function htmlVersionGuard() {
+  if (!CAN) return false;
+  const htmlVer = typeof W.__hksHtmlVer === 'string' ? W.__hksHtmlVer.trim() : '';
+  if (!htmlVer || htmlVer === VERSION) return false;
+  const nav = W.navigator || {};
+  if (nav.onLine === false) return false;
+  const loc = W.location || {};
+  const search = String(loc.search || '');
+  if (/[?&]hks_v=/.test(search)) return false;
+  const seen = safely(() => (W.sessionStorage ? W.sessionStorage.getItem(SS_HTMLVER) : null), null);
+  if (seen === VERSION) return false;
+  safely(() => {
+    if (W.sessionStorage) W.sessionStorage.setItem(SS_HTMLVER, VERSION);
+  });
+  const target =
+    String(loc.pathname || './') +
+    search +
+    (search.indexOf('?') >= 0 ? '&' : '?') +
+    'hks_v=' + encodeURIComponent(htmlVer) +
+    String(loc.hash || '');
+  // 让当前这一帧的模块图先落定再跳，别在 index.html 引导脚本还在解析时打断它
+  setTimeout(() => {
+    try {
+      loc.replace(target);
+    } catch (err) {
+      /* 跳转被内置 WebView 拦下就什么都不做，页面照常跑 */
+    }
+  }, 0);
+  return target;
+}
+
+/* ============================================================
    11) 入口
    ============================================================ */
 
@@ -918,6 +1047,9 @@ export function initPlatform(opts = {}) {
   if (state.inited) return platform.env;
 
   state.inited = true;
+
+  // R5：旧 HTML + 新平台层 → 带 ?hks_v= 重载一次绕开 CDN 旧缓存（详见 htmlVersionGuard）
+  safely(htmlVersionGuard);
 
   // 环境识别 → <html> class
   const detected = detectEnv();
@@ -940,6 +1072,7 @@ export function initPlatform(opts = {}) {
   safely(() => {
     W.__hksPlatform = platform;
     W.__hksEnv = env;
+    W.__hksHtmlVerGuard = htmlVersionGuard; // QA/自动化：手动复跑版本对账
   });
 
   return platform.env;
@@ -948,7 +1081,7 @@ export function initPlatform(opts = {}) {
 /* ============================================================
    12) 自动初始化
    index.html 只要引这一个模块就能用：
-     <script type="module" src="./src/ui/platform.js?v=1.6.44"></script>
+     <script type="module" src="./src/ui/platform.js?v=1.6.45"></script>
    业务需要 onBack 时，再调一次 initPlatform({ onBack })（幂等，只更新回调）。
    测试若想「只 import 不生效」，先设 window.__HKS_PLATFORM_NO_AUTO = true。
    ============================================================ */

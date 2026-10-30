@@ -22,12 +22,29 @@
      - 不碰：非 GET、跨域、range 请求、非 200、chrome-extension://、sw.js 自身
    ============================================================ */
 
-const CACHE_VERSION = 'hks-v1.6.44';
+const CACHE_VERSION = 'hks-v1.6.45';
 const CACHE_PREFIX = 'hks-';
 const OFFLINE_URL = './index.html';
 const NETWORK_TIMEOUT = 4000;
+/**
+ * 没有缓存兜底时的兜底超时。4s 只适用于「超时还能回缓存」的场景；
+ * 冷缓存 / 换版本（purgeCodeCache 已清空代码缓存）时模块只能走网络，
+ * 15KB/s 下 gzip 后 57KB 的 main.js 要 5s 以上，4s 会系统性地把模块图掐成 504。
+ * 所以这里只留一个防彻底卡死的上限，慢但健康的请求让它跑完。
+ */
+const NETWORK_TIMEOUT_HARD = 30000;
+/**
+ * hks:warm 预热预算（防止弱网 / 慢链路下把整站再下一遍，和前台立绘、音乐抢带宽）：
+ *   · 字节：SW 生命周期内累计，最多额外下 1.5MB
+ *   · 时间：单次预热最多跑 8s
+ * 超预算就停，已经拿到的照常进缓存（离线壳不受影响，见 PRECACHE）。
+ */
+const WARM_MAX_BYTES = 1.5 * 1024 * 1024;
+const WARM_MAX_MS = 8000;
+/** 本次 SW 生命周期里 hks:warm 已经额外下载的字节数（两次 warm 共享同一份预算） */
+let warmSpentBytes = 0;
 /** 预缓存离线壳；单个失败（404/网络抖动）不影响安装 */
-const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.6.44'];
+const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.6.45'];
 
 const OFFLINE_HTML =
   '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' +
@@ -245,19 +262,39 @@ async function staleWhileRevalidate(request) {
  */
 async function networkFirst(request) {
   const cache = await openCache();
+  // 先看一眼有没有缓存兜底（这一步很便宜）：它决定这次敢不敢用 4s 短超时。
+  //   有兜底 → 保持弱网 / 断网体验：4s 内没拿到就吃缓存；
+  //   无兜底（首访 / 换版本后 purgeCodeCache 已清空）→ 短超时会系统性地掐断
+  //             慢但健康的模块请求，改用一个只防卡死的长上限。
+  const cached = await cache.match(request);
+  let network;
   try {
     // cache: 'no-cache' 强制向服务器校验，避免浏览器 HTTP 缓存把旧文件再端回来
-    const res = await withTimeout(fetch(new Request(request, { cache: 'no-cache' })), NETWORK_TIMEOUT);
-    if (res && res.ok) {
-      if (isCacheable(res)) cache.put(request, res.clone()).catch(() => {});
-      return res;
-    }
-    throw new Error('bad status: ' + (res && res.status));
+    network = fetch(new Request(request, { cache: 'no-cache' }));
   } catch (err) {
-    const hit = await cache.match(request);
-    if (hit) return hit;
-    return new Response('', { status: 504, statusText: 'Offline' });
+    return cached || new Response('', { status: 504, statusText: 'Offline' });
   }
+  // 不管这次等不等它，都让这次 fetch 跑完并写进缓存：玩家已经付过的字节不能白付
+  // （超时只影响「这次响应用什么」，不影响这次下载继续落地）。
+  network = network
+    .then((res) => {
+      if (res && res.ok && isCacheable(res)) cache.put(request, res.clone()).catch(() => {});
+      return res;
+    })
+    .catch(() => null);
+
+  if (cached) {
+    // 有兜底：最多等 4s，超时 / 失败 / 状态不对都先用旧缓存顶上，网络那次继续在后台跑
+    const res = await withTimeout(network, NETWORK_TIMEOUT).catch(() => null);
+    if (res && res.ok) return res;
+    return cached;
+  }
+
+  // 无兜底：只能等网络把数据拿回来（慢链路下这就是玩家真正在下载的那一次）
+  const res = await withTimeout(network, NETWORK_TIMEOUT_HARD).catch(() => null);
+  if (res && res.ok) return res;
+  // 无缓存 + 网络确实拿不到任何数据：这才是 504 唯一该出现的位置
+  return new Response('', { status: 504, statusText: 'Offline' });
 }
 
 /**
@@ -401,22 +438,52 @@ self.addEventListener('message', (event) => {
   if (data.type === 'hks:warm') {
     event.waitUntil(
       (async () => {
-        const cache = await openCache();
-        const urls = Array.isArray(data.urls) ? data.urls.slice(0, 400) : [];
-        for (const raw of urls) {
-          try {
-            const abs = new URL(String(raw), self.location.href);
-            if (abs.origin !== self.location.origin) continue;
-            if (abs.pathname.endsWith('/sw.js')) continue;
-            const key = abs.href;
-            const existed = await cache.match(key);
-            if (existed) continue;
-            const res = await fetch(abs.href, { cache: 'no-cache' });
-            if (isCacheable(res)) await cache.put(key, res.clone());
-          } catch (err) {
-            /* 单个资源失败忽略 */
+        const started = Date.now();
+        const stats = { fetched: 0, cached: 0, failed: 0, bytes: 0, elapsed: 0, stop: 'done' };
+        try {
+          const cache = await openCache();
+          const urls = Array.isArray(data.urls) ? data.urls.slice(0, 400) : [];
+          for (const raw of urls) {
+            // 预算：超时 / 超字节就停，剩下的下次加载再说，绝不跟前台抢带宽
+            if (Date.now() - started >= WARM_MAX_MS) { stats.stop = 'time'; break; }
+            if (warmSpentBytes >= WARM_MAX_BYTES) { stats.stop = 'bytes'; break; }
+            try {
+              const abs = new URL(String(raw), self.location.href);
+              if (abs.origin !== self.location.origin) continue;
+              if (abs.pathname.endsWith('/sw.js')) continue;
+              const key = abs.href;
+              if (await cache.match(key)) { stats.cached++; continue; }
+              // 默认 cache 模式：尊重 HTTP 缓存，新鲜 / 刚校验过的资源不会再下一次
+              const res = await fetch(abs.href);
+              if (!isCacheable(res)) { stats.failed++; continue; }
+              // 没有 content-length（分块传输）时按 64KB 记一笔，避免预算被绕过
+              const cost = Number(res.headers.get('content-length') || 0) || 64 * 1024;
+              if (warmSpentBytes + cost > WARM_MAX_BYTES) { stats.stop = 'bytes'; break; }
+              await cache.put(key, res.clone());
+              warmSpentBytes += cost;
+              stats.bytes += cost;
+              stats.fetched++;
+            } catch (err) {
+              stats.failed++; /* 单个资源失败继续下一个 */
+            }
           }
+        } catch (err) {
+          stats.stop = 'error';
         }
+        stats.elapsed = Date.now() - started;
+        // 统计回传（页面可观测，也方便 QA 量这次预热到底额外下了多少字节）
+        const report = Object.assign(
+          { type: 'hks:warm-done', version: CACHE_VERSION, urls: Array.isArray(data.urls) ? data.urls.length : 0 },
+          stats
+        );
+        try {
+          const port = event.ports && event.ports[0];
+          if (port) port.postMessage(report);
+        } catch (err) { /* ignore */ }
+        try {
+          const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+          for (const client of all) client.postMessage(report);
+        } catch (err) { /* ignore */ }
       })()
     );
     return;
