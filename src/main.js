@@ -6,31 +6,102 @@
 import { Renderer, VIEW_W, VIEW_H } from './engine/renderer.js';
 import { Input, ACTION_DEFS, keyLabel } from './engine/input.js';
 import { platform, initPlatform } from './ui/platform.js';
-import { GamepadManager } from './engine/gamepad.js';
-import { TouchPad } from './ui/virtualPad.js';
 import { Loop } from './engine/loop.js';
 import { setPriority, preloadWhenIdle } from './engine/lazy_preload.js';
 import { AudioEngine } from './engine/audio.js';
 import { LEVELS } from './assets/levels.js';
-import { Stage, EXTRA_CHAIN, prefetchStageBg, warmStageBg } from './game/stage.js';
-import { prewarmSpriteCache } from './game/bullets.js';
 import { Hud } from './game/hud.js';
 import { SpellCutin } from './game/spellCutin.js';
-import { MusicRoom } from './game/musicRoom.js';
 import { BootScreen } from './game/bootScreen.js';
 import { Dialogue } from './game/dialogue.js';
 import { Ending } from './game/ending.js';
 import { endingFor } from './game/endings.js';
-import {
-  STORY,
-  openingFor,
-  stageStoryFor,
-  extraIntroFor,
-  extraPostFor,
-  midbossPreFor,
-  midbossPostFor,
-} from './game/story.js';
 import { DIFFICULTY_KEYS, DIFFICULTIES, getDifficulty } from './game/difficulty.js';
+
+/* ============================================================
+   首屏之后才加载的重模块（代码分割）
+   ------------------------------------------------------------
+   进关用到的整棵依赖树（stage.js 及其 20 个依赖，未压缩 ~886KB）+ 剧情文本
+   （story.js ~122KB）一旦静态 import，index.html 生成的 modulepreload 图就有
+   69 项 / 1.9MB，弱网首访（实测 ~17KB/s、RTT 400ms）光是下载到菜单就要 66s
+   —— 见 tools/_perf_online.md。
+   改成动态 import 后首屏静态图只剩菜单真正用得到的那批，进关前再 await 这两包；
+   首屏一揭幕就立刻在后台开始下（见 _prefetchGameKit），玩家看菜单的这几秒正好下载。
+   ============================================================ */
+let Stage = null, EXTRA_CHAIN = null, prefetchStageBg = null, warmStageBg = null;
+let prewarmSpriteCache = null;
+let STORY = null, openingFor = null, stageStoryFor = null,
+  extraIntroFor = null, extraPostFor = null, midbossPreFor = null, midbossPostFor = null;
+
+let _gameKitPromise = null;
+/** 载入进关才用得到的模块；并发调用共享同一个 promise，失败后允许重试 */
+function loadGameKit() {
+  if (_gameKitPromise) return _gameKitPromise;
+  _gameKitPromise = Promise.all([
+    import('./game/stage.js'),
+    import('./game/bullets.js'),
+    import('./game/story.js'),
+  ]).then(([stage, bullets, story]) => {
+    Stage = stage.Stage;
+    EXTRA_CHAIN = stage.EXTRA_CHAIN;
+    prefetchStageBg = stage.prefetchStageBg;
+    warmStageBg = stage.warmStageBg;
+    prewarmSpriteCache = bullets.prewarmSpriteCache;
+    STORY = story.STORY;
+    openingFor = story.openingFor;
+    stageStoryFor = story.stageStoryFor;
+    extraIntroFor = story.extraIntroFor;
+    extraPostFor = story.extraPostFor;
+    midbossPreFor = story.midbossPreFor;
+    midbossPostFor = story.midbossPostFor;
+  }).catch((err) => {
+    _gameKitPromise = null;   // 网络抖动允许下次进关重试，不要把失败永久钉住
+    throw err;
+  });
+  return _gameKitPromise;
+}
+
+/** game kit 还没就绪时给玩家一个整屏「载入中」兜底，别让难度页按了 Enter 之后一动不动 */
+function kitLoading(on, text) {
+  if (typeof document === 'undefined') return;
+  let el = document.getElementById('kitLoad');
+  if (!on) {
+    if (el) el.style.display = 'none';
+    return;
+  }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'kitLoad';
+    el.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;'
+      + 'justify-content:center;background:#05030a;color:#f2e9d8;letter-spacing:.14em;'
+      + 'font:14px/1.8 "Songti SC","SimSun",serif;text-align:center;padding:24px;';
+    (document.body || document.documentElement).appendChild(el);
+  }
+  el.textContent = text || '正在载入关卡…';
+  el.style.display = 'flex';
+}
+
+/**
+ * 进关入口统一走这里：先确保 game kit 已到，再继续原来的同步流程。
+ * @returns {Promise<boolean>} kit 是否就绪（失败时提示并返回 false）
+ */
+async function ensureGameKit() {
+  if (_gameKitPromise === null) {
+    // 首次触发并且在慢链路上：这一等可能要十几秒，先盖一张载入中
+    kitLoading(true, '正在载入关卡…');
+  }
+  try {
+    await loadGameKit();
+    return true;
+  } catch (err) {
+    kitLoading(true, '关卡资源载入失败，请检查网络后重试');
+    if (typeof console !== 'undefined') console.error('[gamekit] 载入失败', err);
+    return false;
+  } finally {
+    // 载入遮罩由调用方在真正开始画关卡时关掉（见 kitLoading(false)）
+  }
+}
+
 import { ensureCharArt } from './art/genchars.js';
 import { ensureBossArt } from './art/genboss.js';
 import { artUrl, onArtError } from './art/img.js';
@@ -117,11 +188,19 @@ class Game {
     platform.onAudioUnlock?.(() => { try { this.audio.unlock?.(); } catch (e) { /* 忽略 */ } });
     // 蓝牙/USB 手柄：轮询式接入，没有手柄时每帧只多一次 getGamepads() 空跑。
     // 桌面端插着手柄也能直接玩，且与键盘、触屏摇杆并存（Input 按来源合并）。
-    this.gamepad = new GamepadManager({ input: this.input });
-    this.gamepad.start?.();
+    // 手柄模块 30KB 而绝大多数访客根本没插手柄：先探一次已连接，没有就等插入事件。
+    this.gamepad = null;
+    this._gamepadPromise = null;
+    this._initGamepad();
     // 虚拟手柄模拟器：只依赖 Input 的 setStick/padPress/padRelease。
-    // 桌面端（input.touchDevice === false）不渲染任何 DOM，也不会进设置页。
-    this.pad = new TouchPad({ input: this.input });
+    // 59KB 的模块桌面端完全用不到，只有触屏设备才去拿；拿到之前 this.pad 是 null，
+    // 所有调用点都已做了可选链或判空，所以桌面端与模块到货前的操作都不受影响。
+    this.pad = null;
+    if (this.input.touchDevice) {
+      import('./ui/virtualPad.js')
+        .then(({ TouchPad }) => { this.pad = new TouchPad({ input: this.input }); })
+        .catch(() => { /* 拿不到就没有虚拟摇杆，键盘/手柄仍然可玩 */ });
+    }
     // 切后台 / 锁屏 / 被来电盖住：触屏设备自动暂停。没有这一步，
     // 手机切出去再回来时往往已经被弹幕打死了。桌面端刻意不接管，保持原有节奏。
     document.addEventListener('visibilitychange', () => {
@@ -243,7 +322,8 @@ class Game {
     //    绝不能留给第一次按键（那时玩家正盯着难度页，卡一下最明显）；
     // ② 弹幕精灵烘焙（~12ms 总量）排到标题页之后，分片跑，不和首屏抢带宽。
     this._prewarmAudio();
-    this._prewarmBulletSprites();
+    // 弹幕精灵烘焙要用 bullets.js（属于进关才加载的 game kit），首屏这里跑不了：
+    // 改到 _createStage 里进关时再启动（那边 1673 行本来就有一次调用）。
 
     window.addEventListener('keydown', (e) => {
       // 开屏动画期间任意按键直接落到结束姿态，不耽误想立刻开菜单的玩家
@@ -279,16 +359,9 @@ class Game {
     this.uiEl = document.getElementById('ui');
     this.hudEl = document.getElementById('hud');
 
-    // 音乐回忆室：独立整屏层，进入时收起标题菜单，返回时由 showTitle 复原
-    this.musicRoom = new MusicRoom({
-      audio: this.audio,
-      input: this.input,
-      host: this.uiEl,
-      isHeard: (key) => this._heardSongs.has(key),
-      markHeard: (key) => this._rememberSong(key),
-      onExit: () => this._leaveMusicRoom(),
-      onMute: () => this._toggleMute(),
-    });
+    // 音乐回忆室：独立整屏层，进入时收起标题菜单，返回时由 showTitle 复原。
+    // 53KB 的模块只在真正进去时才加载，先留空（showMusicRoom 里补建）。
+    this.musicRoom = null;
 
     // HUD 右上角设置键：打开暂停菜单（继续 / 设置 / 退出）
     document.getElementById('settingsBtn')?.addEventListener('click', () => {
@@ -614,6 +687,36 @@ class Game {
     }
   }
 
+  /**
+   * 手柄模块按需加载：已经插着手柄就立刻拿，否则等第一次插入。
+   * 拿回来之前 this.gamepad 是 null，update 里的 poll、震动、设置页都已判空。
+   */
+  _initGamepad() {
+    let connected = false;
+    try {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : null;
+      connected = !!pads && Array.from(pads).some((p) => !!p);
+    } catch (e) { connected = false; }
+    if (connected) this._loadGamepad();
+    // 插入时才去下这 30KB；handleConnected 里再 start() 一次，接上第一帧就生效。
+    window.addEventListener('gamepadconnected', () => { this._loadGamepad(); });
+  }
+
+  /** 加载 GamepadManager（重复调用共用同一个 promise） */
+  _loadGamepad() {
+    if (!this._gamepadPromise) {
+      this._gamepadPromise = import('./engine/gamepad.js')
+        .then(({ GamepadManager }) => {
+          if (this.gamepad) return this.gamepad;
+          this.gamepad = new GamepadManager({ input: this.input });
+          this.gamepad.start?.();
+          return this.gamepad;
+        })
+        .catch(() => { this._gamepadPromise = null; return null; });
+    }
+    return this._gamepadPromise;
+  }
+
   /** 每帧同步虚拟手柄状态（TouchPad 内部会判重，未变化时几乎零开销） */
   _syncTouchState() {
     const pad = this.pad;
@@ -841,6 +944,11 @@ class Game {
   _revealTitle() {
     if (this._bootDone) return;
     this._bootDone = true;
+    // 启动幕一揭，首屏该下的模块和标题图都已经到齐，链路正好空出来：
+    // 立刻在后台把进关才用得到的 game kit（stage 树 ~886KB + 剧情 ~122KB）拉下来。
+    // 玩家在标题页犹豫、挑难度、看选人页的这几秒正好把它吃掉，真进关时通常已就绪；
+    // 就算这里失败也没关系 —— 进关前 ensureGameKit() 还会再等一次。
+    this._prefetchGameKit();
     const reveal = () => {
       // 等两帧：确保 renderer 已经用补全后的标题插画画过至少一帧，再淡出启动幕
       requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -855,6 +963,18 @@ class Game {
     // index.html 的 __hksAfterCss 会在样式表就绪（或已弹出错误面板）后回调。
     if (typeof window.__hksAfterCss === 'function') window.__hksAfterCss(reveal);
     else reveal();
+  }
+
+  /**
+   * 后台预取进关模块。只在启动幕揭幕时触发一次。
+   * 用 requestIdleCallback 让标题开屏动画的首帧先走，避免下载把它挤出去。
+   */
+  _prefetchGameKit() {
+    if (this._kitPrefetchStarted) return;
+    this._kitPrefetchStarted = true;
+    const go = () => { loadGameKit().catch(() => { /* 失败留给进关时的 ensureGameKit 兜底 */ }); };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 1200 });
+    else setTimeout(go, 300);
   }
 
   /* ---------------- 标题开屏动画 ----------------
@@ -1031,8 +1151,29 @@ class Game {
    * 音乐回忆室：标题菜单进入，整屏接管。
    * 没通关也能进；没在旅途中听过的曲子显示成「？？？」，播放前会先询问一次。
    */
-  showMusicRoom() {
-    if (!this.musicRoom) return;
+  async showMusicRoom() {
+    // 回忆室模块 53KB，只有真的进去才下：菜单点进来时现拿，拿好前给个整屏提示
+    if (!this.musicRoom) {
+      kitLoading(true, '正在载入音乐回忆室…');
+      try {
+        const { MusicRoom } = await import('./game/musicRoom.js');
+        this.musicRoom = new MusicRoom({
+          audio: this.audio,
+          input: this.input,
+          host: this.uiEl,
+          isHeard: (key) => this._heardSongs.has(key),
+          markHeard: (key) => this._rememberSong(key),
+          onExit: () => this._leaveMusicRoom(),
+          onMute: () => this._toggleMute(),
+        });
+      } catch (err) {
+        console.error('[musicRoom] 载入失败', err);
+        kitLoading(true, '音乐回忆室载入失败，请检查网络后重试');
+        setTimeout(() => kitLoading(false), 2200);
+        return;
+      }
+      kitLoading(false);
+    }
     this.state = 'menu';
     this._hidePanel();
     this.hudEl?.classList.add('hidden');
@@ -1404,7 +1545,7 @@ class Game {
     } catch (e) { /* 预热失败不影响游玩 */ }
   }
 
-  startGame() {
+  async startGame() {
     this._hidePanel();
     this.inExtra = false;
     this.carryPower = 24;
@@ -1416,6 +1557,15 @@ class Game {
     this.hud.setMaxLives(this.lives, this.char);
     this.audio.unlock?.();
     this.audio.setMusic?.(this.musicOn !== false);
+
+    // 进关才用得到的模块（stage 树 ~886KB + 剧情 ~122KB）这里是第一次用到：
+    // 弱网首访要现下十几秒，await 之前先盖一张「载入中」，别让难度页按了 Enter 之后一动不动
+    if (!(await ensureGameKit())) {
+      kitLoading(false);
+      this.showDifficultySelect();   // 网络失败退回难度页，玩家可以再试一次
+      return;
+    }
+    kitLoading(false);
 
     // 开场对白这几秒正好让第 1 面的厚涂背景下载完，进关就不会先看到程序化天空；
     // 顺便把背景合成层也在对白期做好（warmStageBg 会等 safe 窗口，不抢进关首帧）
@@ -1432,7 +1582,7 @@ class Game {
    * @param {string} [charKey] 选人页选中的主角；不传时沿用最近一次选择，再不行用第一位已解锁的。
    *   只有已解锁的主角能进（重试不经过这里，直接走 `_startExtraStage` 沿用当前角色）。
    */
-  startExtra(charKey) {
+  async startExtra(charKey) {
     if (!this.unlockedExtra) return;
     // 只认已解锁的主角：非法参数 / 未解锁角色一律回退，不让她们偷渡进门
     const unlocked = this._extraCharKeys();
@@ -1455,15 +1605,23 @@ class Game {
     this.carryExtend = 0;
     this.hudEl?.classList.remove('hidden');
     this.hud.setMaxLives(this.lives, this.char);
+    // 进关才用得到的模块（stage 树 / 剧情）在这里第一次用到，弱网首访要现下
+    if (!(await ensureGameKit())) {
+      kitLoading(false);
+      this.showExtraCharSelect?.();
+      return;
+    }
+    kitLoading(false);
     // EXTRA 的厚涂背景也在开场对白期间先下好（EXTRA 只有一面，没有「上一面」可蹭）
     prefetchStageBg(EXTRA_STAGE()?.theme);
     this._warmStageBg(EXTRA_STAGE()?.theme);
     this._playDialogue(extraIntroFor(this.char), () => this._startExtraStage());
   }
 
-  _startExtraStage(opts = {}) {
+  async _startExtraStage(opts = {}) {
     const def = EXTRA_STAGE();
     if (!def) { this.showTitle(); return; }
+    if (!(await ensureGameKit())) { kitLoading(false); this.showTitle(); return; }
     // 连环战从第几场开始：新挑战 = 0（咲夜一阶段），失败接关 = 当前场次
     this._extraChainIdx = opts.chainFrom == null
       ? 0
@@ -1471,11 +1629,12 @@ class Game {
     this._createStage(def, 0, true, opts);
   }
 
-  startStage(index, opts) {
+  async startStage(index, opts) {
     const list = this._mainStages();
     if (!list.length) { this.showTitle(); return; }
     const def = list[index];
     if (!def) { this._onAllCleared(); return; }
+    if (!(await ensureGameKit())) { kitLoading(false); this.showTitle(); return; }
     this._createStage(def, index, false, opts);
   }
 
@@ -1561,7 +1720,7 @@ class Game {
    * 跳关本身不写任何存档，跳进去之后正常打完的结算规则与平时一致
    * （所以 EASY 也能跳第 6 面，但 EASY 没有真结局）。
    */
-  _warpToStage(n) {
+  async _warpToStage(n) {
     const all = MAIN_STAGES();
     if (!all.length) return;
     // 需求写的是 1–6；万一关卡表更短就夹到最后一关，绝不越界
@@ -1583,6 +1742,8 @@ class Game {
     this.carryPower = 24;
     this.levelIndex = index;
     this.audio.unlock?.();
+    if (!(await ensureGameKit())) { kitLoading(false); this.showTitle(); return; }
+    kitLoading(false);
     // skipIntro 只跳过开场对白；跳关是捷径，道中剧情也一并跳过（_skipBeats 会置 true）
     this._createStage(all[index], index, false, { skipIntro: true });
   }
@@ -2664,7 +2825,8 @@ class Game {
 
       /* ---- 操作与外设（触屏 / 蓝牙手柄专属；桌面无手柄时整组不出现） ---- */
       ...((this.input.touchDevice || (this.gamepad?.connected?.length > 0)) ? [
-        {
+        // 手柄模块是插入后才按需加载的，没插手柄时 this.gamepad 仍是 null，这组就不出现
+        ...(this.gamepad ? [{
           group: 'device', groupTitle: tr('操作'), glyph: '操',
           cls: 'set-row', key: 'J', hotkey: 'KeyJ',
           html: row(tr('手柄震动'), sw(!!this.gamepad.getVibration?.()), 'J'),
@@ -2675,11 +2837,10 @@ class Game {
             this._saveSettings();
             this._showSettings(i, origin);
           },
-        },
-        {
+        }, {
           group: 'device', cls: 'set-row info',
           html: row(tr('蓝牙手柄'), `<span class="qinfo">${this.gamepad.statusText?.() || tr('未连接')}</span>`, ''),
-        },
+        }] : []),
       ] : []),
       ...(this.pad?.active ? [
         {
@@ -3199,6 +3360,8 @@ class Game {
    * 单张精灵烘焙很便宜，但一帧里同时遇到几十个新变体就会顶出长帧。
    */
   _prewarmBulletSprites(rounds = 10, budgetMs = 6) {
+    // bullets.js 属于进关才加载的 game kit：首屏阶段还没到，直接跳过（别把 started 置起来）
+    if (typeof prewarmSpriteCache !== 'function') return;
     if (this._spritePrewarmStarted) return;
     this._spritePrewarmStarted = true;
     let left = rounds;
