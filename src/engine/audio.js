@@ -42,10 +42,15 @@ const MUSIC_FADE_OUT = 5;
  *    HTMLAudioElement 流式播放同一个 URL（边下边听），不再等 1~2 MB 的 mp3 全部下完。
  *  - AUDIO_STALL_MS：文件方式在这段时间内没有任何可播放进度（整首没下完、流式也没起来），
  *    或文件直接失败，就放弃文件、回退曲库里的合成数据——慢链路「永远 pending」不再发生。
- * 两个值导出是为了测试能读到；实例字段 _audioStreamGraceMs / _audioStallMs 可临时改小。
+ *    流式播放看的是「缓冲有没有增长」：只要 buffered / readyState 还在涨就续期，
+ *    完全没进度满 STALL_MS 才放弃，避免把饱和链路上正常缓冲的流式误杀。
+ *  - AUDIO_STREAM_MAX_WAIT_MS：流式从开始缓冲算起最长等这么久（有进度也会续期，但总等待封顶），
+ *    防止元素一直攒不够可播数据时永远静音、连合成器兜底都不触发。
+ * 三个值导出是为了测试能读到；实例字段 _audioStreamGraceMs / _audioStallMs 可临时改小。
  */
 export const AUDIO_STREAM_GRACE_MS = 2500;
 export const AUDIO_STALL_MS = 8000;
+export const AUDIO_STREAM_MAX_WAIT_MS = 30000;
 
 export class AudioEngine {
   constructor() {
@@ -974,9 +979,11 @@ export class AudioEngine {
       this._beginAudioBuffer(name, song, from, buf);
     }).catch(() => {
       if (gen !== this._audioGen) return;
-      this._clearAudioLoadTimers();
-      // 流式已经接上（正在缓冲或在放）：这是慢链路的正常路径，不算失败
+      // 流式已经接上（正在缓冲或在放）：这是慢链路的正常路径，不算失败。
+      // 关键：不能顺手清定时器——_startAudioStream 会主动 abort 这条整首 fetch，
+      // 它的 catch 正好在流式看门狗装好之后触发，清掉就等于把兜底静默关掉。
       if (this._audioStreaming || this._musicOn) return;
+      this._clearAudioLoadTimers();
       this._fallbackToSynth(name, song, from, gen);
     });
   }
@@ -1110,15 +1117,39 @@ export class AudioEngine {
     this._audioStreamSeq++;
     this._audioStreaming = true;
     this._audioMode = 'stream';
-    // 兜底计时重新起算：STALL_MS 要衡量「流式开始缓冲后有没有进度」，
-    // 不能把前面的 grace（2.5s）和首次缓冲一起算进 8s，否则 15KB/s 下
-    // 正常能出声的流式会被误判成失败、白退回合成器。
+    // 兜底看门狗：以「缓冲有没有增长」判进度，而不是以「有没有出声」判。
+    // 饱和链路（15KB/s 全站共享）下元素常常要十几秒才攒够可播数据，固定窗口
+    // 会把正常缓冲误杀；只要 buffered / readyState 还在涨就续期，完全没进度
+    // 满 STALL_MS 才回合成器。总等待封顶 AUDIO_STREAM_MAX_WAIT_MS，避免无声死等。
     if (this._audioStallTimer) { clearTimeout(this._audioStallTimer); this._audioStallTimer = null; }
-    this._audioStallTimer = setTimeout(() => {
-      this._audioStallTimer = null;
-      if (gen !== this._audioGen || this._audioPending !== name || this._musicOn) return;
-      this._fallbackToSynth(name, song, from, gen);
-    }, this._audioStallMs);
+    const streamT0 = Date.now();
+    let lastBufEnd = 0;
+    let lastReadyState = 0;
+    const armStreamStall = () => {
+      this._audioStallTimer = setTimeout(() => {
+        this._audioStallTimer = null;
+        if (gen !== this._audioGen || this._audioPending !== name || this._musicOn) return;
+        let bufEnd = 0;
+        try {
+          bufEnd = el.buffered && el.buffered.length ? el.buffered.end(el.buffered.length - 1) : 0;
+        } catch (e) {
+          bufEnd = 0;
+        }
+        const rs = Number(el.readyState) || 0;
+        // 缓冲在涨 / 元数据推进 / 连接仍在下载（networkState=LOADING）都算「有进度」：
+        // 15KB/s 饱和链路攒够首帧前 buffered/readyState 可能一直是 0，但字节确实在涨。
+        const progressed = bufEnd > lastBufEnd + 0.02 || rs > lastReadyState ||
+          Number(el.networkState) === 2; /* HTMLMediaElement.NETWORK_LOADING */
+        lastBufEnd = Math.max(lastBufEnd, bufEnd);
+        lastReadyState = Math.max(lastReadyState, rs);
+        if (progressed && Date.now() - streamT0 < AUDIO_STREAM_MAX_WAIT_MS) {
+          armStreamStall();
+          return;
+        }
+        this._fallbackToSynth(name, song, from, gen);
+      }, this._audioStallMs);
+    };
+    armStreamStall();
     const offset = Math.max(0, Number(from) || 0);
     const seq = this._audioStreamSeq;
     // 事件回调只在「这段流式仍然是当前曲目」时生效，切歌 / 停止后一律闭嘴
