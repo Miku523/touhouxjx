@@ -46,7 +46,6 @@
  */
 
 import { TITLE_FULL } from './title_full.js';
-import { linkTier, preloadWhenIdle } from '../lazy_preload.js';
 
 /**
  * 已加载曲目（实时集合）。首屏只有标题曲，其余由 ensureSong()/preloadSongs() 按需填入。
@@ -223,17 +222,68 @@ export function preloadSongs(names) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 第 1 面空闲预取                                                     */
+/* 音乐预热队列（warmSongs）                                            */
 /* ------------------------------------------------------------------ */
 /**
- * 进第 1 面时引擎会立刻请求道中曲 pre1；Boss 曲 stage1 通常 30s 后才用得上，
- * 真等按需加载，Boss 登场那一拍就会静音。所以拿到第 1 面曲目的第一次请求后，
- * 在空闲时段把另一首也预取好（pre1 多半已在按需加载中，天然去重）。
+ * 预热：把「马上要用」的曲目模块提前拉下来，让 playMusic 命中缓存而不是现场等。
  *
- * 时机：只在「进第 1 面」（ensureSong 被调用）之后才排队，所以标题画面首访
- * 不会多下任何曲目（这是首访只剩 title 的关键）；卡在弱网时 linkTier() 不是
- * 'fast' 就跳过，把带宽让给真正要用的素材（见 src/engine/lazy_preload.js）。
+ * 动因：曲库是懒加载的（首访只带 title 曲），按需加载意味着「等 playMusic 那一拍才发
+ * 请求」。弱网下每次换曲都要多等一个 RTT + 十几 KB 模块的下载，而 playMusic 会先掐掉
+ * 旧曲 —— 听起来就是进关 / Boss 登场先静音一阵（audio.js 的不静音换曲只能兜住其中
+ * 「模块还没到」这一段）。
+ *
+ * 调度：串行（一次只拉一个模块），排在空闲帧里。曲库模块本身很小（gzip 后 5~30KB），
+ * 但弱网带宽窄，和关卡背景 / 立绘抢带宽只会两边都慢，所以先让路一两个空闲帧。
+ * **刻意不按 linkTier() 跳过弱网**：弱网恰恰是最需要预热的地方，跳过等于回到「进关静音」。
+ *
+ * 只在进关 / 开局这类「已经离开标题页」的时机调用，首访字节不会多一个。
+ * @param {(string|null|undefined)[]} names 曲目 key；未知 / 已加载的自动跳过
  */
+const warmQueue = [];
+const warmSeen = new Set();
+let warmDraining = false;
+let warmScheduled = false;
+
+function warmDrain() {
+  if (warmDraining) return;
+  const name = warmQueue.shift();
+  if (!name) return;
+  warmDraining = true;
+  const done = () => {
+    warmDraining = false;
+    if (warmQueue.length) scheduleWarmDrain();
+  };
+  ensureSong(name).then(done, done);
+}
+
+/** 把 warmDrain 排到下一个空闲帧；弱网 / 帧不空闲时会由 timeout 逼出来 */
+function scheduleWarmDrain() {
+  if (warmScheduled || warmDraining) return;
+  warmScheduled = true;
+  const run = () => {
+    warmScheduled = false;
+    warmDrain();
+  };
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    window.requestIdleCallback(run, { timeout: 2500 });
+    return;
+  }
+  setTimeout(run, 800);
+}
+
+export function warmSongs(names) {
+  if (typeof window === 'undefined') return;
+  for (const name of names || []) {
+    if (!name || warmSeen.has(name) || !DEF_BY_KEY.has(name)) continue;
+    warmSeen.add(name);
+    if (getSong(name)) continue; // 已经在曲库里：不用排队
+    warmQueue.push(name);
+  }
+  if (warmQueue.length) scheduleWarmDrain();
+}
+
+/* 第 1 面的老兜底：拿到 pre1 / stage1 的第一次请求后，把同面另一首也排上
+   （正式预热在 main.js 的 _warmStageMusic，这里只是不走那套流程时的保险）。 */
 const STAGE1_SIBLINGS = { pre1: ['stage1'], stage1: ['pre1'] };
 let stage1WarmArmed = false;
 
@@ -242,10 +292,7 @@ function maybeWarmStage1(name) {
   const siblings = STAGE1_SIBLINGS[name];
   if (!siblings) return;
   stage1WarmArmed = true;
-  preloadWhenIdle(() => {
-    if (linkTier() !== 'fast') return;
-    preloadSongs(siblings);
-  });
+  warmSongs(siblings);
 }
 
 /* ------------------------------------------------------------------ */

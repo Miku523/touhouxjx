@@ -267,7 +267,7 @@
         L.push("已等待: " + Math.round(ms() / 1000) + "s / 样式表: " + load.css.landed + "/" + NAMES.length);
         L.push("style.css: " + (load.css.styleOk ? "已加载" : (load.css.retried ? "加载失败(已重试)" : "未完成")));
         L.push("主脚本: " + (load.flags.uiReady ? "已启动" : (window.__game ? "已存在" : "未启动")));
-        L.push("网络: " + ((navigator.onLine === false) ? "离线" : "在线") + " / 版本: 1.6.48");
+        L.push("网络: " + ((navigator.onLine === false) ? "离线" : "在线") + " / 版本: 1.6.49");
         if (load.css.failed.length) L.push("失败资源: " + load.css.failed.join(", "));
         if (load.errors.length) {
           var e0 = load.errors[load.errors.length - 1];
@@ -407,7 +407,7 @@
       }
       function retryStyle(link) {
         load.css.retried = true;
-        var href = "./src/style.css?v=1.6.48";
+        var href = "./src/style.css?v=1.6.49";
         try { if (link && link.getAttribute("href")) href = link.getAttribute("href"); } catch (e) {}
         var sep = href.indexOf("?") >= 0 ? "&" : "?";
         var url = href + sep + "hks_retry=" + Date.now();
@@ -529,19 +529,19 @@
         不会重复下载，只是把它的抓取优先级提到 high。 -->
   <!-- preload 失败也要计入引导状态机（net.md R3）：__hksCssFail 按 href 去重，
        同一次失败不会和下面 stylesheet 的 onerror 各触发一次 retryStyle()。 -->
-  <link rel="preload" as="style" href="./src/style.css?v=1.6.48" fetchpriority="high" onerror="__hksCssFail(this,'style')" />
-  <link rel="stylesheet" href="./src/style.css?v=1.6.48" media="print" data-css="style" onload="__hksCss(this,'style')" onerror="__hksCssFail(this,'style')" />
+  <link rel="preload" as="style" href="./src/style.css?v=1.6.49" fetchpriority="high" onerror="__hksCssFail(this,'style')" />
+  <link rel="stylesheet" href="./src/style.css?v=1.6.49" media="print" data-css="style" onload="__hksCss(this,'style')" onerror="__hksCssFail(this,'style')" />
   <!-- 标题开屏动画：单独成文件，只读 .overlay.title-mode.intro 下的入场状态，
         不动 style.css 里既有的标题版式，方便整体回滚。 -->
-  <link rel="stylesheet" href="./src/title-intro.css?v=1.6.48" media="print" data-css="intro" onload="__hksCss(this,'intro')" onerror="__hksCssFail(this,'intro')" />
+  <link rel="stylesheet" href="./src/title-intro.css?v=1.6.49" media="print" data-css="intro" onload="__hksCss(this,'intro')" onerror="__hksCssFail(this,'intro')" />
   <!-- 触屏虚拟手柄样式：只有 body.hks-pad-on 时才生效，桌面端零影响 -->
-  <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.48" media="print" data-css="mobile" onload="__hksCss(this,'mobile')" onerror="__hksCssFail(this,'mobile')" />
-  <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.48" media="print" data-css="platform" onload="__hksCss(this,'platform')" onerror="__hksCssFail(this,'platform')" />
+  <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.49" media="print" data-css="mobile" onload="__hksCss(this,'mobile')" onerror="__hksCssFail(this,'mobile')" />
+  <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.49" media="print" data-css="platform" onload="__hksCss(this,'platform')" onerror="__hksCssFail(this,'platform')" />
   <noscript>
-    <link rel="stylesheet" href="./src/style.css?v=1.6.48" />
-    <link rel="stylesheet" href="./src/title-intro.css?v=1.6.48" />
-    <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.48" />
-    <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.48" />
+    <link rel="stylesheet" href="./src/style.css?v=1.6.49" />
+    <link rel="stylesheet" href="./src/title-intro.css?v=1.6.49" />
+    <link rel="stylesheet" href="./src/ui/mobile.css?v=1.6.49" />
+    <link rel="stylesheet" href="./src/ui/platform.css?v=1.6.49" />
     <div style="position:fixed;left:0;right:0;bottom:0;z-index:9999;padding:14px 18px;background:#1a0f2a;color:#ffe4b0;font:13px/1.7 serif;text-align:center;">
       本作需要启用 JavaScript 才能运行，请在浏览器设置里允许 JavaScript 后刷新页面。
     </div>
@@ -600,7 +600,7 @@
   <link rel="preload" as="image" type="image/avif" href="./src/art/gen/reimu_title.avif" fetchpriority="high" />
   <link rel="preload" as="image" type="image/avif" href="./src/art/gen/marisa_title.avif" fetchpriority="high" />
 <!-- modulepreload:start（tools/gen_modulepreload.py 生成，勿手改） -->
-  <link rel="modulepreload" href="./src/main.js?v=1.6.48" />
+  <link rel="modulepreload" href="./src/main.js?v=1.6.49" />
   <link rel="modulepreload" href="./src/engine/renderer.js" />
   <link rel="modulepreload" href="./src/engine/input.js" />
   <link rel="modulepreload" href="./src/ui/platform.js" />
@@ -738,7 +738,7 @@
           </div>
         </div>
         <div class="title-deco" aria-hidden="true">
-          <span class="title-ver">Chronicle of Gensokyo · ver 1.6.48</span>
+          <span class="title-ver">Chronicle of Gensokyo · ver 1.6.49</span>
         </div>
       </div>
 
@@ -835,7 +835,7 @@
     </div>
   </div>
 
-  <script type="module" src="./src/main.js?v=1.6.48"></script>
+  <script type="module" src="./src/main.js?v=1.6.49"></script>
   <!-- 版本戳（net.md R5）：把入口脚本上的 ?v= 暴露成 window.__hksHtmlVer。
        放在 module 脚本之后是对的：内联经典脚本在解析时就执行，而 module 是 defer 的，
        所以平台层（src/ui/platform.js）读到它时一定已经写好。

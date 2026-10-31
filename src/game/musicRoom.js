@@ -15,7 +15,7 @@
  */
 
 import { MUSIC_TRACKS } from './musicTracks.js';
-import { getSong, ensureSong } from '../engine/songs/index.js';
+import { getSong, ensureSong, warmSongs } from '../engine/songs/index.js';
 import { tr as i18n, localizeDom, getLang } from '../i18n/index.js';
 
 const EQ_BARS = 18;
@@ -73,6 +73,7 @@ export class MusicRoom {
     this._acc = 0;
     this._hideTimer = 0;
     this._playToken = 0;   // 起播批次号：连点/离场让旧的懒加载回调作废，不串曲
+    this._loadingKey = null; // 正在等模块到货的曲目 key：状态栏显示「载入中」，别让玩家以为点了没反应
   }
 
   /* ============================================================
@@ -94,10 +95,14 @@ export class MusicRoom {
     if (hit >= 0) this.index = hit;
 
     this.el.classList.remove('hidden');
+    this._loadingKey = null;
     this._paint();
     this._paintList();
     localizeDom(this.el);
     this._reveal();
+    // 打开回忆室后顺手把「当前选中 + 后面两首」的模块预取好：玩家真要听的时候
+    // 就不必再现场等一个模块（曲库是懒加载的，首次点播那一下最容易被听成「卡住」）
+    this._warmNext(this.tracks[this.index], 2);
     // 下一帧再加 is-in，让 CSS 的淡入真的发生
     requestAnimationFrame(() => {
       if (this.visible) this.el.classList.add('is-in');
@@ -107,6 +112,7 @@ export class MusicRoom {
   hide() {
     if (!this.el || !this.visible) return;
     this.visible = false;
+    this._loadingKey = null; // 离场时不留下「载入中」状态（在途回调也会被 token 作废）
     this._playToken++; // 离场：还没加载完的曲目到货后不许再起播
     this._preview = null;
     this._previewDone = false;
@@ -233,6 +239,7 @@ export class MusicRoom {
     if (same && this.audio.musicOn) {
       // 再按一次 = 停：留声机抬针
       this._playToken++; // 顺带作废还没到货的加载
+      this._loadingKey = null;
       this.audio.setMusic(false);
       this.audio.play?.('menu');
       this.markHeard(tr.key);
@@ -259,6 +266,7 @@ export class MusicRoom {
     const token = ++this._playToken;
     const start = (song) => {
       if (token !== this._playToken || !this.visible) return;
+      this._loadingKey = null;
       if (!song) {
         // 曲目加载失败：保持安静，不抛错（audio 侧会警告一次）
         this._syncStatus();
@@ -269,13 +277,33 @@ export class MusicRoom {
       this._paint();
       this._paintList();
       this._syncStatus();
+      // 这首正在放了，再预取后面两首——放曲目的这几十秒足够它们下完，
+      // 连续试听时就不会每一首都重新「转一圈才出声」
+      this._warmNext(tr, 2);
     };
     const cached = getSong(tr.key);
     if (cached) {
       start(cached);
       return;
     }
+    this._loadingKey = tr.key; // 状态栏先显示「载入中」，别让玩家以为按钮没反应
+    this._syncStatus();
     ensureSong(tr.key).then(start, () => start(null));
+  }
+
+  /**
+   * 预取后面几首的曲库模块（列表顺序，环回）。串行预热队列，不会和正在下发的
+   * 模块抢同一条连接；已经加载过的由 warmSongs 自己跳过。
+   * @param {object|undefined} tr 起播的曲目
+   * @param {number} ahead 往后预取几首
+   */
+  _warmNext(tr, ahead = 2) {
+    const at = this.tracks.indexOf(tr);
+    if (at < 0) return;
+    const n = this.tracks.length;
+    const keys = [];
+    for (let k = 1; k <= ahead; k++) keys.push(this.tracks[(at + k) % n]?.key);
+    try { warmSongs(keys); } catch (e) { /* 预热失败不影响试听 */ }
   }
 
   /** 曲目 BPM：未加载时返回 null（界面显示「—」），加载后自动变成真实数值 */
@@ -291,6 +319,7 @@ export class MusicRoom {
     if (!tr) return;
     if (this._preview && this._preview.key === tr.key) {
       this._playToken++; // 收针：作废还没到货的懒加载
+      this._loadingKey = null;
       this.audio.setMusic(false);
       this._preview = null;
       this._previewDone = false;
@@ -316,10 +345,12 @@ export class MusicRoom {
     const start = (song) => {
       // 到货时已经换了曲目 / 收了针 / 离开了房间：这次试听作废，绝不串曲
       if (token !== this._playToken || !this.visible) return;
+      this._loadingKey = null;
       if (!song) {
         this._syncStatus();
         return;
       }
+      this._warmNext(tr, 2);
       this.audio.playMusic(tr.key);
       this.audio.setMusic(true);
       this._preview = { key: tr.key, left: PREVIEW_SEC };
@@ -338,6 +369,7 @@ export class MusicRoom {
       start(cached);
       return;
     }
+    this._loadingKey = tr.key; // 试听同样先亮「载入中」
     this._paint();
     this._paintList();
     this._syncStatus();
@@ -453,11 +485,13 @@ export class MusicRoom {
     const playing = this.tracks.find((t) => t.key === this.audio.currentSong);
     this.d.state.textContent = this._preview
       ? i18n('试听中')
-      : this._previewDone && !on
-        ? i18n('试听结束')
-        : on
-          ? (playing ? i18n('播放中') : i18n('待机'))
-          : i18n('停止中');
+      : this._loadingKey
+        ? i18n('载入中')
+        : this._previewDone && !on
+          ? i18n('试听结束')
+          : on
+            ? (playing ? i18n('播放中') : i18n('待机'))
+            : i18n('停止中');
     if (this.d.previewTag) {
       this.d.previewTag.classList.toggle('hidden', !this._preview);
       if (this._preview) {

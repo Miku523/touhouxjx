@@ -19,7 +19,7 @@
  *    分别作用于两条总线，静音（muted）作用于 master，互不干扰。
  */
 
-import { getSong, ensureSong } from './songs/index.js';
+import { getSong, hasSong, ensureSong } from './songs/index.js';
 
 /** MIDI 音高 → 频率（Hz） */
 function midiToFreq(m) {
@@ -114,6 +114,7 @@ export class AudioEngine {
     this._songLoadToken = 0;       // 曲库懒加载的批次号：切歌/关音乐时自增，作废未完成的加载
     this._songLoadPending = null;  // 正在等曲库模块的曲目 { token, name }
     this._songLoadFrom = 0;        // 等模块期间记下的起播偏移，见 _queueSongLoad()
+    this._songSwap = null;         // 不静音换曲：等待新曲模块时还在响的旧曲 key（见 playMusic）
     this._warnedSongs = new Set(); // 曲目加载失败只警告一次，不刷屏
   }
 
@@ -225,6 +226,21 @@ export class AudioEngine {
     // 已经在放的这首不用再摆位置：从中间接上的请求本来就该落在它现在的位置附近。
     if (this._songName === name && this._musicOn && this._fadeTimer === null) return;
     const from = opts && Number.isFinite(opts.from) ? Math.max(0, opts.from) : 0;
+    // 不静音换曲：新曲模块还没到、旧曲正好好地在循环 → 先让旧曲继续响，
+    // 等模块到货再把它接上（见 _queueSongLoad）。
+    // 否则下面那句 _stopMusic() 会先把旧曲掐掉：弱网下进关 / Boss 登场就是几秒死寂，
+    // 这就是「曲库已经懒加载了，音乐还是出来得很慢」的听感来源。
+    // 「耳朵里实际在响」的那首：桥接等待期里 _songName 已经是新曲，_songSwap 才是旧曲。
+    // 所以切曲链 A→B（B 还在下）→C 时，记的是 A 而不是 B。
+    const sounding = this._songSwap || this._songName;
+    if (sounding && sounding !== name && this._canBridgeSwitch(name)) {
+      this._songName = name;
+      this._startFrom = from;
+      this._songSwap = sounding;
+      this._queueSongLoad(name, from);
+      return;
+    }
+    this._songSwap = null;
     this._songName = name;
     this._startFrom = from; // 起播偏移：_startMusic 消费一次就清掉
     // 正在播就立刻换：先掐掉旧曲排期的节点，避免两首叠在一起。
@@ -234,9 +250,34 @@ export class AudioEngine {
     if (this._musicRequested && this.ctx) this._startMusic();
   }
 
-  /** 供外部查询当前曲目 key */
+  /**
+   * 能不能「不静音换曲」：新曲是曲库里真实存在的一首、只是模块还没到，
+   * 而旧曲正处在正常循环里（没有渐出 / 收尾 / 一次性播放）。
+   *
+   * 任一条不满足就走原来的硬切路径：宁可立刻静音，也不能把两首搅在一起，
+   * 更不能为一个不存在的曲名让旧曲一直响下去。
+   * @param {string} name 新曲 key
+   */
+  _canBridgeSwitch(name) {
+    if (!this._musicOn || !this._musicRequested || !this.ctx) return false;
+    if (this._fadeTimer !== null || this._songPlayOut || this._playOutTimer !== null) return false;
+    return hasSong(name) && !getSong(name);
+  }
+
+  /** 供外部查询当前曲目 key（刚请求的那首；等模块期间可能还没出声） */
   get currentSong() {
     return this._songName;
+  }
+
+  /**
+   * 此刻耳朵里真正在响的曲目 key。
+   * 不静音换曲的等待期里 currentSong 已经是「刚请求的新曲」，但放的还是旧曲；
+   * 战斗曲进度记账（main.js 的 _playChainMusic）必须按这个来，否则会把新曲的位置记成旧曲的。
+   * @returns {string|null}
+   */
+  get soundingSong() {
+    if (!this._musicOn) return null;
+    return this._songSwap || this._songName;
   }
 
   /**
@@ -878,9 +919,15 @@ export class AudioEngine {
         return;
       }
       if (this._songName !== name) return;
-      if (!this._musicRequested || !this.ctx || this._musicOn) return;
+      if (!this._musicRequested || !this.ctx) return;
       const nextFrom = this._songLoadFrom;
       this._songLoadFrom = 0;
+      // 不静音换曲的等待期（_songSwap 还挂着旧曲）：到货这一刻才收旧曲、接新曲。
+      // 没有 _songSwap 却已经在放，说明是别处起的另一首，保持原样别打断。
+      if (this._musicOn) {
+        if (!this._songSwap) return;
+        this._stopMusic();
+      }
       this._startMusic(nextFrom);
     });
   }
@@ -1434,6 +1481,7 @@ export class AudioEngine {
     // 让还在路上的曲库懒加载作废：停音乐 / 切歌 / silence 之后到货的模块不许再起播
     this._songLoadToken++;
     this._songLoadPending = null;
+    this._songSwap = null; // 旧曲已经被收掉：桥接状态结束
     this._musicOn = false;
     this._audioPending = null;
     this._songPlayOut = 0;
