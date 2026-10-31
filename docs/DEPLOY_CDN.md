@@ -5,12 +5,47 @@
 
 ---
 
-## 现状（2026-11-01 00:00）
+## 现状（2026-11-01 01:10）
 
 | 路线 | 状态 | 说明 |
 |---|---|---|
 | **① GitHub Actions 发布 dist** | ✅ **已启用** | 线上 `src/main.js` 已是 87837B 压缩产物；版本 1.6.54 |
-| **② Cloudflare Pages** | ⬜ 待做 | 额外拿到 brotli + anycast，TTFB 可从 0.6–1.7s 降到 0.1–0.4s |
+| **② Cloudflare Pages** | ✅ **已上线** | <https://touhouxjx.pages.dev>（临时域名，未绑自定义域） |
+
+两条路线**同时在跑**：每次 push 到 main，GitHub Actions 与 Cloudflare Pages 各构建部署一次，
+互不影响。现有 `mikuascendlog.com` 仍指向 GitHub Pages；`touhouxjx.pages.dev` 是独立的第二条路。
+
+### 两条路的实测对比（2026-11-01 01:05）
+
+|  | Cloudflare Pages | GitHub Pages（现有） |
+|---|---|---|
+| 传输压缩 | **br（brotli）** | gzip |
+| TTFB（curl 单次） | **0.54s** | 1.23s |
+| 到菜单（3 次中位，headless CDP） | **1.48s** | 1.66s |
+| 版本 / 产物 | 1.6.54 / `src/main.js` 87837B | 1.6.54 / `src/main.js` 87837B |
+
+测量口径：`PT_BASE=https://touhouxjx.pages.dev node tools/_perf_measure.mjs --runs=3 --label=cfpages`。
+
+**提升没有想象的大**，原因：GitHub Pages 那条路本来就已经 1.66s，TTFB 省下的 0.7s 被
+CDN 预热和并发下载摊薄了一部分。真正的收益在**移动网络和跨洋访问** —— brotli 少 15–20%
+传输字节，anycast 边缘节点把 RTT 压下来。桌面宽带直连的差别就只有这 0.2s。
+
+### Cloudflare Pages 验收记录（全过）
+
+- 入口 200、42278B、标题页含 `1.6.54`
+- `src/main.js` = 87837B（压缩产物确实生效，不是源码）
+- `Content-Encoding: br`、`Server: cloudflare`
+- 进关冒烟（`stageCtor:"Stage"`、二次进关）PASS
+- 结局冒烟 PASS
+- 设置页 / 音乐回忆室冒烟 PASS
+- 全程 0 JS 错误、0 网络失败、0 个 4xx/5xx
+- 标题页截图与 GitHub Pages 版逐像素级一致
+
+### 还没做的事
+
+- **绑自定义域名**（`mikuascendlog.com` 或新的）：需要先在 Cloudflare 接管 DNS。
+  注意 **换域名 = 换存档**，`localStorage` 按域名隔离，老存档不会跟过去。
+  建议先用 `pages.dev` 跑几天，确认音频、背景图、手机端都正常再切。
 
 ---
 
@@ -50,7 +85,7 @@ Source 从「Deploy from a branch」改成 **「GitHub Actions」**。
 | Project name | `touhouxjx`（决定临时域名 `touhouxjx.pages.dev`，重名会报错，可加后缀） |
 | Production branch | `main` |
 | Framework preset | **None** |
-| Build command | `npm install --no-save --no-audit --no-fund esbuild@0.24.0 && node tools/minify_build.mjs --stats` |
+| Build command | `bash tools/build_ci.sh` |
 | Build output directory | `dist` |
 
 再展开 **Environment variables (advanced)**，加一条：
@@ -59,8 +94,13 @@ Source 从「Deploy from a branch」改成 **「GitHub Actions」**。
 |---|---|
 | `NODE_VERSION` | `20` |
 
-> 构建命令必须是一整行 `&&` 连起来的。仓库里没有 `package.json` 依赖声明，
-> esbuild 是现场 `--no-save` 装的，split 成两条会失败。
+> **Build command 只填这一行短的。** 真正干活的 `npm i esbuild` + `node tools/minify_build.mjs`
+> 都在 `tools/build_ci.sh` 里。原因很实际：那个输入框宽度有限，长命令会被**视觉截断**
+> （这次就踩了 —— 输入框里只剩 `npm install --no-save --no-au`，后半截看不见，
+> 构建直接失败）。封进脚本后命令短到不会再被截断，以后改构建逻辑也只改脚本。
+>
+> 仓库里没有 `package.json` 依赖声明，esbuild 是现场 `--no-save` 装的；
+> `set -euo pipefail` 保证哪一步挂了整条就挂，不会带着半成品部署。
 
 ### 第 3 步：首次构建（约 2–3 分钟）
 
@@ -117,15 +157,17 @@ Cloudflare 应该更快，主要省在 TTFB（0.6s → 0.1–0.2s）。
 
 ## 两个方案怎么选
 
-| | GitHub Actions（已开） | Cloudflare Pages |
+| | GitHub Actions（已开） | Cloudflare Pages（已开） |
 |---|---|---|
 | 压缩 | ✔ | ✔ 同一套 `dist/` |
 | brotli | ✘ 只有 gzip | ✔ 比 gzip 再省 15–20% |
-| TTFB | 0.6–1.7s | 约 0.1–0.4s |
-| 你要做的 | 无（已完成） | 第 0–4 步，约 10 分钟 |
+| TTFB（实测） | 1.23s | **0.54s** |
+| 到菜单（实测中位） | 1.66s | **1.48s** |
+| 你要做的 | 无（已完成） | 无（已完成） |
 | 存档影响 | 无 | 换域名才换存档，同域名不换 |
 
-两个可以同时存在（GitHub Pages 留作兜底），实际访问走哪个域名由 DNS 决定。
+两条现在**同时在跑**，每次都各自构建部署一次。实际用户访问哪个地址由 DNS 决定 ——
+现在 `mikuascendlog.com` 还指着 GitHub Pages，`touhouxjx.pages.dev` 是另一条并行的路。
 
 ---
 
