@@ -86,47 +86,160 @@ const _bgCache = new Map();
  *  只要网络恢复就还能把厚涂背景补回来，不让整面关卡永久退回程序化天空。 */
 const BG_RETRY_DELAYS = [1200, 3000, 8000, 20000];
 
+/* ------------------------------------------------------------------
+ * 低清档（见 tools/gen_bg_lq.py）
+ * 高清档 2048 宽、单张 135–460KB；线上实测弱网下十几张并发时单张要 10–40s 才落地，
+ * 期间关卡只能画程序化天空（深紫星空 + 黑剪影）——这就是「2–6 面和 EX 画面都不对」
+ * 的直接原因。低清档 1280 宽、单张 30–80KB，先到先贴；高清档到货后由
+ * _bgScheduleUpgrade() 在空闲帧把合成层换成高清，画面无缝升档。
+ * ------------------------------------------------------------------ */
+const BG_LQ_RETRY = [1500, 5000, 15000];
+/** 看门狗：请求发出后这么久还没落地就换个查询串重发。
+ *  弱网 / 部分链路会出现「连接挂住，既不 error 也不 load」，只靠 onerror 重试兜不住。 */
+const BG_LQ_STALL_MS = 9000;
+const BG_HD_STALL_MS = 25000;
+
+function _bgRetryUrl(base, tag) {
+  return base + (base.indexOf('?') >= 0 ? '&' : '?') + 'r=' + tag;
+}
+
 function _bgEntry(theme, idx) {
   const key = idx > 0 ? theme + '_' + (idx + 1) : theme;
   let e = _bgCache.get(key);
   if (e) return e;
-  e = { img: typeof Image !== 'undefined' ? new Image() : null, ok: false, failed: false, idx, tries: 0, src: '' };
+  e = {
+    theme,
+    idx,
+    key,
+    img: typeof Image !== 'undefined' ? new Image() : null,
+    ok: false,
+    hdDecoded: false,
+    failed: false,
+    tries: 0,
+    src: '',
+    lq: typeof Image !== 'undefined' ? new Image() : null,
+    lqOk: false,
+    lqDecoded: false,
+    lqFailed: false,
+    lqTries: 0,
+    lqSrc: '',
+    hdStarted: false,
+    lqStall: 0,
+    hdStall: 0,
+  };
   if (e.img) {
     e.src = new URL('../art/gen/bg/' + key + '.webp', import.meta.url).href;
-    e.img.decoding = 'async';
-    e.img.onload = () => {
-      e.ok = true;
-      e.failed = false;
-      // 后台 decode：不预热时首次 drawImage 会在渲染关键帧里同步解码 WebP
-      // （软件光栅下这道解码是进关首帧大峰值的来源之一）
-      try {
-        const p = e.img.decode?.();
-        if (p && p.catch) p.catch(() => {});
-      } catch (err) { /* 解码失败不影响后续绘制 */ }
-    };
-    // 一次瞬时失败（弱网 / Service Worker 离线兜底返回 504）不该让这一面整局都退回
-    // 程序化天空：退避重试几次，成功之后照常切回厚涂背景（配 draw 里的淡入）。
-    e.img.onerror = () => {
-      // AVIF 不可用/加载失败：先退回 .webp（只回退一次），别把一次 AVIF 失败算进退避重试
-      if (onArtError(e.img, e.src)) return;
-      e.failed = true;
-      const delay = BG_RETRY_DELAYS[e.tries];
-      if (delay === undefined) return;
-      e.tries += 1;
-      // 带一个一次性查询串，绕开可能被缓存住的失败响应
-      const retrySrc = e.src + (e.src.indexOf('?') >= 0 ? '&' : '?') + 'retry=' + e.tries;
-      setTimeout(() => {
-        if (e.ok) return;
-        e.failed = false;
-        e.img.src = retrySrc;
-      }, delay);
-    };
-    e.img.src = artUrl(e.src);
+    e.lqSrc = new URL('../art/gen/bg/' + key + '_lq.webp', import.meta.url).href;
+    _bgLoadLq(e);
   } else {
     e.failed = true;
+    e.lqFailed = true;
   }
   _bgCache.set(key, e);
   return e;
+}
+
+/** 请求低清档；到货后才发高清档，别让高清先把弱网连接占满 */
+function _bgLoadLq(e) {
+  const img = e.lq;
+  if (!img) { e.lqFailed = true; _bgLoadHd(e); return; }
+  img.decoding = 'async';
+  img.onload = () => {
+    e.lqOk = true;
+    e.lqFailed = false;
+    // decode 完成后才算「能画」（见 _bgSource）；顺便把高清档也排上
+    _bgDecodeInto(img, () => {
+      e.lqDecoded = true;
+      _bgScheduleUpgrade(e);
+    });
+    _bgLoadHd(e);
+  };
+  img.onerror = () => {
+    e.lqFailed = true;
+    const delay = BG_LQ_RETRY[e.lqTries];
+    if (delay === undefined) { _bgLoadHd(e); return; }   // 低清真没有：直接上高清
+    e.lqTries += 1;
+    // 带一个一次性查询串，绕开可能被缓存住的失败响应
+    const retrySrc = _bgRetryUrl(e.lqSrc, e.lqTries);
+    setTimeout(() => {
+      if (e.lqOk) return;
+      e.lqFailed = false;
+      img.src = retrySrc;
+    }, delay);
+  };
+  _bgStallGuard(e, true);
+  img.src = e.lqSrc;
+}
+
+/** 请求高清档（artUrl 会优先 AVIF，失败自动退回 WebP） */
+function _bgLoadHd(e) {
+  if (!e.img || e.hdStarted) return;
+  e.hdStarted = true;
+  e.img.decoding = 'async';
+  e.img.onload = () => {
+    e.ok = true;
+    e.failed = false;
+    // 同低清：decode 完成再升档，否则会合成出一张全透明的层
+    _bgDecodeInto(e.img, () => {
+      e.hdDecoded = true;
+      _bgScheduleUpgrade(e);
+    });
+  };
+  // 一次瞬时失败（弱网 / Service Worker 离线兜底返回 504）不该让这一面整局都退回
+  // 程序化天空：退避重试几次，成功之后照常切回厚涂背景（配 draw 里的淡入）。
+  e.img.onerror = () => {
+    // AVIF 不可用/加载失败：先退回 .webp（只回退一次），别把一次 AVIF 失败算进退避重试
+    if (onArtError(e.img, e.src)) return;
+    e.failed = true;
+    const delay = BG_RETRY_DELAYS[e.tries];
+    if (delay === undefined) return;
+    e.tries += 1;
+    const retrySrc = _bgRetryUrl(e.src, e.tries);
+    setTimeout(() => {
+      if (e.ok) return;
+      e.failed = false;
+      e.img.src = retrySrc;
+    }, delay);
+  };
+  _bgStallGuard(e, false);
+  e.img.src = artUrl(e.src);
+}
+
+/** 看门狗：挂住不报错的请求，只有重新赋值 src 才会被取消重发 */
+function _bgStallGuard(e, isLq) {
+  const settled = () => (isLq ? (e.lqOk || e.lqFailed) : (e.ok || e.failed));
+  const step = () => {
+    if (settled()) return;
+    const n = isLq ? (e.lqStall += 1) : (e.hdStall += 1);
+    if (n > 3) return;
+    const img = isLq ? e.lq : e.img;
+    const base = isLq ? e.lqSrc : e.src;
+    if (!img || !base) return;
+    img.src = _bgRetryUrl(base, (isLq ? 'lq' : 'hd') + n);
+    setTimeout(step, isLq ? BG_LQ_STALL_MS : BG_HD_STALL_MS);
+  };
+  setTimeout(step, isLq ? BG_LQ_STALL_MS : BG_HD_STALL_MS);
+}
+
+/** 已经用低清档合成过的层，等高清档到货后在空闲帧里换成高清（绝不塞进弹幕帧） */
+function _bgScheduleUpgrade(e) {
+  if (!e || !e.ok) return;
+  const key = _bgLayerKey(e.theme, e.idx);
+  const cur = BG_LAYER_CACHE.get(key);
+  if (!cur || cur.__tier === 1) return;
+  if (_bgWarmBusy.has(key)) return;
+  _bgWarmBusy.add(key);
+  const put = () => {
+    try {
+      const now = BG_LAYER_CACHE.get(key);
+      if (!now || now.__tier !== 1) _bgLayerPut(e.theme, e.idx, composeBgLayer(e, e.theme, e.idx));
+    } catch (err) { /* 换档失败：继续用低清层，不影响正确性 */ }
+    _bgWarmBusy.delete(key);
+  };
+  try {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(put, { timeout: 2000 });
+    else setTimeout(put, 32);
+  } catch (err) { setTimeout(put, 32); }
 }
 
 function _bgFor(theme) {
@@ -150,6 +263,47 @@ function _bgFor(theme) {
 export function prefetchStageBg(theme) {
   if (!theme) return;
   try { _bgFor(theme); } catch (e) { /* 预取失败不影响运行 */ }
+}
+
+/**
+ * 这一面的厚涂背景是否已经能画（低清档到货就算，高清档会自己升档）。
+ * 给 main.js 在进关前判断要不要盖「正在准备关卡画面…」，避免遮罩白闪一下。
+ * @param {string} theme 关卡主题
+ */
+export function stageBgReady(theme) {
+  if (!theme) return true;
+  try {
+    const e = _bgEntry(theme, 0);
+    return !!_bgSource(e);
+  } catch (err) { return true; }
+}
+
+/**
+ * 等这一面的厚涂背景到货（低清档即可）。
+ *
+ * 进关前调用：弱网下背景图往往还在路上，直接进关会先画程序化天空，玩家看到的就是
+ * 「整面关卡的画面不对」。低清档单张 30–80KB，正常情况下 1–2s 内到货；超时也不阻塞
+ * 进关，照旧退回 fallback + 后台重试。
+ *
+ * @param {string} theme 关卡主题
+ * @param {number} [timeoutMs] 最长等待（默认 9s）
+ * @returns {Promise<boolean>} true = 已就绪；false = 超时（继续后台加载）
+ */
+export function waitStageBg(theme, timeoutMs = 9000) {
+  if (!theme) return Promise.resolve(true);
+  let e;
+  try { e = _bgEntry(theme, 0); } catch (err) { return Promise.resolve(false); }
+  if (!e) return Promise.resolve(false);
+  if (_bgSource(e)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = () => {
+      if (_bgSource(e)) { resolve(true); return; }
+      if (Date.now() - started >= timeoutMs) { resolve(false); return; }
+      setTimeout(tick, 80);
+    };
+    tick();
+  });
 }
 
 const smoothstep = (a, b, x) => {
@@ -517,6 +671,30 @@ function _bgLayerPut(theme, variant, cv) {
   }
 }
 
+/** 合成层用哪一档原图：有高清用高清，只有低清就用低清（tier 0 → 之后会被升档换掉）。
+ *  只认「load + decode 都完成」的图：刚 onload 时像素还没解出来，这时候 drawImage
+ *  画不出东西——会得到一张全透明层并被缓存下来，表现就是整面关卡全黑。 */
+function _bgSource(a) {
+  if (!a) return null;
+  if (a.ok && a.hdDecoded && a.img && a.img.naturalWidth) return { img: a.img, tier: 1 };
+  if (a.lqOk && a.lqDecoded && a.lq && a.lq.naturalWidth) return { img: a.lq, tier: 0 };
+  return null;
+}
+
+/**
+ * 等图片真正可画（decode 完成）再回调；decode 不可用或失败也回调（回退到 drawImage 自身行为）。
+ * @param {HTMLImageElement} img 图片
+ * @param {() => void} done 可画之后要做的事
+ */
+function _bgDecodeInto(img, done) {
+  const finish = () => { try { done(); } catch (err) { /* 回调异常不影响加载流程 */ } };
+  try {
+    const p = img && img.decode ? img.decode() : null;
+    if (p && p.then) { p.then(finish, finish); return; }
+  } catch (err) { /* decode 不可用：直接认为可画 */ }
+  finish();
+}
+
 function composeBgLayer(a, theme, variant) {
   const W = VIEW_W, H = VIEW_H;
   const OVER = 420;                 // 右侧多留出横移余量
@@ -526,18 +704,28 @@ function composeBgLayer(a, theme, variant) {
   const c = cv.getContext('2d');
   if (!c) return null;
 
-  if (!a || !a.img || !a.img.naturalWidth) return null;
+  const srcInfo = _bgSource(a);
+  if (!srcInfo) return null;
+  const srcImg = srcInfo.img;
 
   // cover 到 (W+OVER) x H
-  const s = Math.max(cv.width / a.img.naturalWidth, cv.height / a.img.naturalHeight);
-  const iw = a.img.naturalWidth * s;
-  const ih = a.img.naturalHeight * s;
+  const s = Math.max(cv.width / srcImg.naturalWidth, cv.height / srcImg.naturalHeight);
+  const iw = srcImg.naturalWidth * s;
+  const ih = srcImg.naturalHeight * s;
   c.imageSmoothingEnabled = true;
   c.imageSmoothingQuality = 'high';
   // 统一调色：提高对比与饱和、压低整体亮度，让 AI 图不再「灰白平」
   c.filter = 'saturate(1.14) contrast(1.10) brightness(0.94)';
-  c.drawImage(a.img, (cv.width - iw) / 2, (cv.height - ih) / 2, iw, ih);
+  c.drawImage(srcImg, (cv.width - iw) / 2, (cv.height - ih) / 2, iw, ih);
   c.filter = 'none';
+
+  // 兜底自检：图还没真正解出来时 drawImage 是空操作，采样点会全透明。
+  // 这种层一旦缓存（尤其带 __tier=1）就是永久黑屏，所以直接判失败、不缓存，
+  // 下一帧 _bgSource() 会换档 / 退回程序化天空。
+  try {
+    const probe = c.getImageData((cv.width / 2) | 0, (H * 0.5) | 0, 1, 1).data;
+    if (!probe[3]) return null;
+  } catch (err) { /* 取不到像素（跨域/受限环境）就不做这道自检 */ }
 
   // 雾之湖那张图里有一颗「白描边太阳」，用带体积的月盘盖住
   if (theme === 'lake' && !variant) {
@@ -647,10 +835,12 @@ function composeBgLayer(a, theme, variant) {
     if (ec) {
       ec.filter = 'brightness(' + ex.toFixed(4) + ')';
       ec.drawImage(cv, 0, 0);
+      exp.__tier = srcInfo.tier;
       return exp;
     }
   }
 
+  cv.__tier = srcInfo.tier;
   return cv;
 }
 
@@ -689,7 +879,7 @@ function _warmBgVariant(theme, idx, isSafe) {
   let tries = 0;
   const tick = () => {
     if (++tries > 900) { finish(); return; }   // 约 3 分钟都等不到安全窗口：放弃（进关时兜底）
-    if (!e.ok) { setTimeout(tick, 120); return; }     // 图还在路上
+    if (!_bgSource(e)) { setTimeout(tick, 120); return; }   // 图还在路上（decode 完才算能画）
     if (!safe()) { setTimeout(tick, 200); return; }   // 关卡进行中：等过场/菜单
     // decode 把 WebP 解码挪出关键帧：首次 drawImage 才解码会正好压在进关第一帧上
     try {
@@ -2125,9 +2315,13 @@ export class Stage {
     }
 
     // cover：图片比例 16:9，略放大留出横移余量；
-    // 随关卡进度缓慢推近（1.10 → 1.20），让静态背景也有镜头运动
-    const s = Math.max(W / 2048, H / 1160) * (1.10 + prog * 0.10);
-    const iw = 2048 * s, ih = 1160 * s;
+    // 随关卡进度缓慢推近（1.10 → 1.20），让静态背景也有镜头运动。
+    // 尺寸按实际原图算：低清档是 1280 宽，写死 2048 会把它缩得比视口还小。
+    const srcA = _bgSource(a) || {};
+    const sw = srcA.img?.naturalWidth || 2048;
+    const sh = srcA.img?.naturalHeight || 1160;
+    const s = Math.max(W / sw, H / sh) * (1.10 + prog * 0.10);
+    const iw = sw * s, ih = sh * s;
     const drift = 34 + prog * 90;              // 随进度缓慢横移
     const x = (W - iw) * 0.5 - drift + (cam.x || 0) * 0.02;
     const y = (H - ih) * 0.5 - 12;
@@ -2136,10 +2330,11 @@ export class Stage {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = this.lowSpec ? 'low' : 'high';
     ctx.globalAlpha = fade;
-    ctx.drawImage(a.img, x, y, iw, ih);
-    if (mixK > 0.001 && b !== a && b.ok) {
+    if (srcA.img) ctx.drawImage(srcA.img, x, y, iw, ih);
+    const srcB = _bgSource(b);
+    if (mixK > 0.001 && b !== a && srcB && srcB.img) {
       ctx.globalAlpha = mixK * fade;
-      ctx.drawImage(b.img, x, y, iw, ih);
+      ctx.drawImage(srcB.img, x, y, iw, ih);
       ctx.globalAlpha = 1;
     }
     // 还在从程序化天空淡入：这一帧只贴图，压暗/色调等 wash 等淡入完成后再叠，
@@ -2318,9 +2513,12 @@ export class Stage {
     const theme = this.level.theme;
     const cam = this.camera.viewAt(alpha);
 
-    // 背景（屏幕坐标系）：优先使用厚涂背景图，程序化天空作为 fallback
+    // 背景（屏幕坐标系）：优先使用厚涂背景图（低清档先到先贴，高清档随后升档），
+    // 程序化天空作为最后的 fallback
     const bgs = _bgFor(theme);
-    const usable = bgs.filter((e) => e.ok);
+    // 只认「真的能画」的图（load + decode 完成）：否则一帧透明层就会把天空画黑，
+    // 这时候不如继续画程序化天空，下一帧再切厚涂。
+    const usable = bgs.filter((e) => !!_bgSource(e));
     if (usable.length) {
       // 图刚到位时从程序化天空淡入（约 0.2s），不至于硬切一下；
       // 进关第一帧就已经有图（预取过）时 _bgFade 是 1，直接贴图、不做淡入。

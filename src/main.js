@@ -28,6 +28,7 @@ import { DIFFICULTY_KEYS, DIFFICULTIES, getDifficulty } from './game/difficulty.
    首屏一揭幕就立刻在后台开始下（见 _prefetchGameKit），玩家看菜单的这几秒正好下载。
    ============================================================ */
 let Stage = null, EXTRA_CHAIN = null, prefetchStageBg = null, warmStageBg = null;
+let waitStageBg = null, stageBgReady = null;
 let prewarmSpriteCache = null;
 let STORY = null, openingFor = null, stageStoryFor = null,
   extraIntroFor = null, extraPostFor = null, midbossPreFor = null, midbossPostFor = null;
@@ -52,6 +53,8 @@ function loadGameKit() {
     EXTRA_CHAIN = stage.EXTRA_CHAIN;
     prefetchStageBg = stage.prefetchStageBg;
     warmStageBg = stage.warmStageBg;
+    waitStageBg = stage.waitStageBg;
+    stageBgReady = stage.stageBgReady;
     prewarmSpriteCache = bullets.prewarmSpriteCache;
     STORY = story.STORY;
     openingFor = story.openingFor;
@@ -1940,6 +1943,8 @@ class Game {
     if (!(await ensureGameKit())) { kitLoading(false); this.showTitle(); return; }
     // EXTRA 三道曲目（ex_pre / ex_mid / extra）在这里补齐；通常开场对白期间已预热完
     await this._ensureStageMusic(def);
+    // 厚涂背景图（低清档）：EXTRA 没有「上一面」可蹭，开场对白期间没下完就在这里等
+    await this._ensureStageBg(def);
     // 连环战从第几场开始：新挑战 = 0（咲夜一阶段），失败接关 = 当前场次
     this._extraChainIdx = opts.chainFrom == null
       ? 0
@@ -1955,7 +1960,31 @@ class Game {
     if (!(await ensureGameKit())) { kitLoading(false); this.showTitle(); return; }
     // 本关曲目模块（启动幕门禁只保第 1 面，后续面在这里补齐；通常已预热，0ms）
     await this._ensureStageMusic(def);
+    // 厚涂背景图（低清档）：没到就先等，别进关后先画程序化天空再突变
+    await this._ensureStageBg(def);
     this._createStage(def, index, false, opts);
+  }
+
+  /**
+   * 进关前保一下这一面的厚涂背景（见 docs/BG_PROGRESSIVE.md）。
+   *
+   * 高清档单张 135–460KB，线上弱网实测单张要 10–40s；等到它才进关等于让玩家干等。
+   * 所以 stage.js 里每张背景都配了一份 1280 宽的低清档（30–80KB，1–2s 到货），
+   * 这里只等低清档：到货就进关，画面已经是厚涂图，高清档随后在空闲帧静默升档。
+   * 已经预热过的关（标题页、上一面顺带下的）零等待、连遮罩都不会闪。
+   * @param {object} def 关卡定义
+   */
+  async _ensureStageBg(def) {
+    const theme = def && def.theme;
+    if (!theme || typeof waitStageBg !== 'function') return;
+    let ready = false;
+    try { ready = !!(stageBgReady && stageBgReady(theme)); } catch (err) { ready = false; }
+    if (ready) return;
+    // 低清还没到：顺带把高清也排上（_bgEntry 内部幂等，重复调用无副作用）
+    try { prefetchStageBg?.(theme); } catch (err) { /* 预取失败不影响进关 */ }
+    kitLoading(true, '正在准备关卡画面…');
+    try { await waitStageBg(theme, 9000); } catch (err) { /* 超时也照常进关 */ }
+    kitLoading(false);
   }
 
   /**
@@ -2064,6 +2093,8 @@ class Game {
     this.audio.unlock?.();
     if (!(await ensureGameKit())) { kitLoading(false); this.showTitle(); return; }
     kitLoading(false);
+    // 跳关 / 重开：背景图同样要先保到能画，否则玩家一进关就看到程序化天空
+    await this._ensureStageBg(all[index]);
     // skipIntro 只跳过开场对白；跳关是捷径，道中剧情也一并跳过（_skipBeats 会置 true）
     this._createStage(all[index], index, false, { skipIntro: true });
   }
