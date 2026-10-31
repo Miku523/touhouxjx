@@ -35,6 +35,9 @@ let STORY = null, openingFor = null, stageStoryFor = null,
 let _gameKitPromise = null;
 /** 启动幕门禁的硬超时：15KB/s 弱网下首屏 + 整棵 game kit 本身就要 ~90s，这里只防连接挂死 */
 const BOOT_GATE_TIMEOUT_MS = 90000;
+/** 启动幕门禁的软上限：超过这么久还没全绿就先揭幕，剩下两路继续在后台下（真机网络实测：
+ *  三路全绿在 4G 上要 40s+，而玩家只想快点看到标题，进门再等那一次是可接受的）。 */
+const BOOT_GATE_SOFT_MS = 2500;
 /** 进关依赖图模块数的估计值（tools/gen_modulepreload.py 统计约 49 项）；只用于进度条观感刻度 */
 const KIT_MODULE_EST = 49;
 /** 载入进关才用得到的模块；并发调用共享同一个 promise，失败后允许重试 */
@@ -1002,6 +1005,14 @@ class Game {
     const tasks = gateOff
       ? [this._bootGateTitleArt()]
       : [this._bootGateTitleArt(), this._bootGateGameKit(), this._bootGateStage1Music()];
+    // 软上限：真机网络下「进关模块 + 第 1 面曲目」往往要几十秒，不能让启动幕一直盖着。
+    // 到点先揭幕，未就绪的那几路继续下载，进关前的 ensureGameKit / _ensureStageMusic 还有二次兜底。
+    const softCap = new Promise((resolve) => setTimeout(() => {
+      if (gate.done) return;
+      gate.softTimeout = true;
+      gate.failed.push('soft-timeout');
+      resolve();
+    }, BOOT_GATE_SOFT_MS));
     const hardCap = new Promise((resolve) => setTimeout(() => {
       if (gate.done) return;
       gate.failed.push('timeout');
@@ -1010,7 +1021,7 @@ class Game {
       }
       resolve();
     }, BOOT_GATE_TIMEOUT_MS));
-    Promise.race([Promise.all(tasks), hardCap])
+    Promise.race([Promise.all(tasks), softCap, hardCap])
       .then(() => {
         gate.done = true;
         gate.finishedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
