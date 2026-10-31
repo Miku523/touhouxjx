@@ -116,6 +116,8 @@ export class AudioEngine {
     this._songLoadFrom = 0;        // 等模块期间记下的起播偏移，见 _queueSongLoad()
     this._songSwap = null;         // 不静音换曲：等待新曲模块时还在响的旧曲 key（见 playMusic）
     this._warnedSongs = new Set(); // 曲目加载失败只警告一次，不刷屏
+    this._songRetryTimer = null;   // 曲库模块加载失败后的自愈重试定时器（见 _scheduleSongRetry）
+    this._songRetryCounts = new Map(); // 曲名 → 已重试次数（1.5s / 3s / 6s 退避，最多 3 次，到货即清账）
   }
 
   /* ------------------------------------------------------------------ */
@@ -224,7 +226,9 @@ export class AudioEngine {
     if (!name || typeof name !== 'string') return;
     // 同一首且正在播就直接返回；但正在渐出收尾时不算「在播」，要重新起播把它拉回来。
     // 已经在放的这首不用再摆位置：从中间接上的请求本来就该落在它现在的位置附近。
-    if (this._songName === name && this._musicOn && this._fadeTimer === null) return;
+    // 桥接等待期（_songSwap 还挂着旧曲）不算「正在放这首」：同名再请求要真的再拉一次模块，
+    // 否则某次加载失败后，玩家手动重试 / 回忆室再点同一首都会被这里早退吞掉。
+    if (this._songName === name && this._musicOn && this._fadeTimer === null && !this._songSwap) return;
     const from = opts && Number.isFinite(opts.from) ? Math.max(0, opts.from) : 0;
     // 不静音换曲：新曲模块还没到、旧曲正好好地在循环 → 先让旧曲继续响，
     // 等模块到货再把它接上（见 _queueSongLoad）。
@@ -916,8 +920,12 @@ export class AudioEngine {
       this._songLoadPending = null;
       if (!song) {
         this._warnMissingSong(name);
+        // 失败一次不代表这关就废了：弱网抖一下、发布后 SW 缓存刚好失效，都可能只失败一次。
+        // 不重试的话整关 BGM 判死刑（桥接的旧曲永久残留，或旧曲已停时彻底没声），见 _scheduleSongRetry。
+        this._scheduleSongRetry(name);
         return;
       }
+      this._songRetryCounts.delete(name); // 到货即清账：下次真失败重新按 1.5s 起算
       if (this._songName !== name) return;
       if (!this._musicRequested || !this.ctx) return;
       const nextFrom = this._songLoadFrom;
@@ -940,6 +948,56 @@ export class AudioEngine {
       console.warn('[audio] 曲目不可用，保持安静：' + name);
     } catch (e) {
       // 忽略
+    }
+  }
+
+  /**
+   * 曲库模块加载失败的自我修复：过一会儿再试。
+   *
+   * 真实故障场景（tools/_music_fault.mjs 故障注入实测）：弱网 / 4G 抖一下，或者发布后
+   * SW 缓存刚好失效，某首曲子的模块请求失败一次——老逻辑只 console.warn 一句就放弃，
+   * 于是：正在桥接等待的新曲永远不来（旧曲一直响），旧曲又已被停掉时整关没声。
+   * 这里按 1.5s / 3s / 6s 退避重试，最多 3 次；期间旧曲继续响，重试成功即无缝接班。
+   * @param {string} name 曲名 key
+   */
+  _scheduleSongRetry(name) {
+    if (!name) return;
+    const tries = this._songRetryCounts.get(name) || 0;
+    if (tries >= 3) return;                    // 三次都不行：认了，保持现状（旧曲 / 安静）
+    if (this._songRetryTimer !== null) return; // 同一时刻只排一个重试，到点再按当时的曲目决定拉谁
+    const delay = 1500 * Math.pow(2, tries);   // 1.5s / 3s / 6s
+    this._songRetryCounts.set(name, tries + 1);
+    this._songRetryTimer = setTimeout(() => {
+      this._songRetryTimer = null;
+      this._retrySongLoad();
+    }, delay);
+  }
+
+  /** 重试定时器到点：按「此刻」的曲目 / 意图重拉模块（期间切歌、关音乐、静音都作废这次重试） */
+  _retrySongLoad() {
+    const name = this._songName;
+    if (!name || !this._musicRequested || !this.ctx) return;
+    if (this._songLoadPending) return;                    // 已有在途加载，让它的回调负责
+    if (this._audioPending || this._audioStream) return;   // 音频文件那条链路正在走
+    if (this._fadeTimer !== null || this._playOutTimer !== null) return; // 正在渐出 / 收尾
+    const from = this._songLoadFrom || 0;
+    if (!getSong(name)) {
+      if (!hasSong(name)) return;
+      this._queueSongLoad(name, from);
+      return;
+    }
+    // 模块其实已经到货（别的路径拉好了 / 这次是数据侧失败）：把缺的那一步补上
+    this._songLoadFrom = 0;
+    if (!this._musicOn) {
+      this._startFrom = from;
+      this._startMusic();
+      return;
+    }
+    if (this._songSwap) {
+      // 桥接等待期：旧曲还在响，收到货就收旧曲、接新曲（起播偏移接着用）
+      this._stopMusic();
+      this._startFrom = from;
+      this._startMusic();
     }
   }
 
@@ -1442,7 +1500,11 @@ export class AudioEngine {
     this._songSoft = !!song.soft;
     this._songWarm = !!song.warm;
     this._events = this._getEvents(name, song);
-    if (!this._events || !this._events.length) return;
+    if (!this._events || !this._events.length) {
+      // 曲库里这首没有音符事件（音频文件链路刚失败 / 数据缺失）：别静默判死，排一次自愈重试
+      this._scheduleSongRetry(name);
+      return;
+    }
     this._audioMode = 'synth';
     this._audioStreaming = false;
     // 真正开始发声时才算「听见」：音乐关着时切歌不会误解锁回忆室里的曲目
