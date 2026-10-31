@@ -27,6 +27,24 @@ function loadAudioModule() {
   return _audioModulePromise;
 }
 
+/**
+ * 只取曲库索引（songs/index.js + title_full.js，纯数据，不建 AudioContext）。
+ *
+ * 启动幕门禁要等第 1 面曲目模块，而 1.6.54 把曲库索引也挪到了首次手势之后，
+ * 门禁这一路就没东西可等（恒为空转通过）。曲库索引本身不碰音频硬件、不违反
+ * 浏览器的手势策略，所以首屏单独取下来；audio.js 真身仍然留到手势后再加载。
+ */
+let _songsIndexPromise = null;
+function loadSongsIndex() {
+  if (_songsIndexPromise) return _songsIndexPromise;
+  _songsIndexPromise = import('./engine/songs/index.js').then((s) => {
+    warmSongs = s.warmSongs;
+    preloadSongs = s.preloadSongs;
+    isSongLoaded = s.isSongLoaded;
+  }).catch((err) => { _songsIndexPromise = null; throw err; });
+  return _songsIndexPromise;
+}
+
 /** 首屏音频占位：方法全是空操作，常用属性给安全默认值；真身到货后由 _unlockAudio() 整体换掉 */
 function createAudioStub() {
   const DEFAULTS = {
@@ -68,11 +86,9 @@ let STORY = null, openingFor = null, stageStoryFor = null,
   extraIntroFor = null, extraPostFor = null, midbossPreFor = null, midbossPostFor = null;
 
 let _gameKitPromise = null;
-/** 启动幕门禁的硬超时：15KB/s 弱网下首屏 + 整棵 game kit 本身就要 ~90s，这里只防连接挂死 */
-const BOOT_GATE_TIMEOUT_MS = 90000;
-/** 启动幕门禁的软上限：超过这么久还没全绿就先揭幕，剩下两路继续在后台下（真机网络实测：
- *  三路全绿在 4G 上要 40s+，而玩家只想快点看到标题，进门再等那一次是可接受的）。 */
-const BOOT_GATE_SOFT_MS = 2500;
+/** 启动幕门禁的硬超时：只在「连接挂住不报错」时兜底，量级按最慢可达链路放宽到 3 分钟
+ *  （15KB/s 下首屏 + 整棵 game kit + 第 1 面曲目本就要 90s+，不能让安全阀自己先跳闸）。 */
+const BOOT_GATE_TIMEOUT_MS = 180000;
 /** 进关依赖图模块数的估计值（tools/gen_modulepreload.py 统计约 49 项）；只用于进度条观感刻度 */
 const KIT_MODULE_EST = 49;
 /** 载入进关才用得到的模块；并发调用共享同一个 promise，失败后允许重试 */
@@ -1028,7 +1044,9 @@ class Game {
    * game kit 已在内存里、第一面 BGM 模块也已在曲库，进关不再有黑屏载入遮罩与静音。
    * 任何一路失败都只记进 failed[] 并 console.warn，依旧放行：宁可退回程序化素材，
    * 也不能一直黑屏；进关时 ensureGameKit() / _ensureStageMusic() 还有二次兜底。
-   * 90s 硬超时只防「连接挂住不报错」把启动幕卡死（量级见 BOOT_GATE_TIMEOUT_MS）。
+   * 不做「到点先揭幕」的软上限（1.6.53 曾加过 2.5s 软上限，等于把门禁架空，1.6.65 撤回）：
+   * 玩家要的是「都加载好再进游戏」，宁可多等一会儿进度条，也不要先进游戏再等黑屏。
+   * 只剩 BOOT_GATE_TIMEOUT_MS 一条硬超时，且只防「连接挂住不报错」。
    */
   _waitBootReady() {
     const gate = this._bootGate;
@@ -1042,23 +1060,15 @@ class Game {
     const tasks = gateOff
       ? [this._bootGateTitleArt()]
       : [this._bootGateTitleArt(), this._bootGateGameKit(), this._bootGateStage1Music()];
-    // 软上限：真机网络下「进关模块 + 第 1 面曲目」往往要几十秒，不能让启动幕一直盖着。
-    // 到点先揭幕，未就绪的那几路继续下载，进关前的 ensureGameKit / _ensureStageMusic 还有二次兜底。
-    const softCap = new Promise((resolve) => setTimeout(() => {
-      if (gate.done) return;
-      gate.softTimeout = true;
-      gate.failed.push('soft-timeout');
-      resolve();
-    }, BOOT_GATE_SOFT_MS));
     const hardCap = new Promise((resolve) => setTimeout(() => {
       if (gate.done) return;
       gate.failed.push('timeout');
       if (typeof console !== 'undefined') {
-        console.warn('[boot] 门禁 90s 硬超时，先揭幕；未就绪的模块交给进关前的兜底再等');
+        console.warn('[boot] 门禁硬超时，先揭幕；未就绪的模块交给进关前的兜底再等');
       }
       resolve();
     }, BOOT_GATE_TIMEOUT_MS));
-    Promise.race([Promise.all(tasks), softCap, hardCap])
+    Promise.race([Promise.all(tasks), hardCap])
       .then(() => {
         gate.done = true;
         gate.finishedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -1159,18 +1169,29 @@ class Game {
     const def = this._mainStages()[0];
     const names = this._stageSongs(def);
     if (!names.length) { gate.music = true; return Promise.resolve(); }
-    // 音频引擎要等第一次手势才加载，首屏阶段这路必然还没就绪：不算失败，进关前 _ensureStageMusic 兜底
-    if (typeof preloadSongs !== 'function') { gate.music = true; return Promise.resolve(); }
-    return preloadSongs(names).then(() => {
-      const missing = names.filter((n) => !isSongLoaded(n));
-      if (missing.length) {
+    // 1.6.54 起曲库索引跟音频引擎一起挪到了首次手势之后，这一路就恒为空转通过（门禁形同废除）。
+    // 曲库索引只是数据模块、不碰 AudioContext，首屏可以单独取（见 loadSongsIndex）；
+    // audio.js 真身仍留到手势后，这里只等「第 1 面曲目模块真的进了曲库」。
+    const ready = typeof preloadSongs === 'function' ? Promise.resolve() : loadSongsIndex();
+    return ready.then(() => {
+      if (typeof preloadSongs !== 'function') {
         gate.failed.push('music');
-        if (typeof console !== 'undefined') console.warn('[boot] 第 1 面曲目模块未就绪：', missing);
-      } else {
-        gate.music = true;
+        if (typeof console !== 'undefined') console.warn('[boot] 曲库索引未就绪，第 1 面曲目无法预载');
+        return;
       }
-      this._refreshBootStatus();
-    });
+      return preloadSongs(names).then(() => {
+        const missing = names.filter((n) => !isSongLoaded(n));
+        if (missing.length) {
+          gate.failed.push('music');
+          if (typeof console !== 'undefined') console.warn('[boot] 第 1 面曲目模块未就绪：', missing);
+        } else {
+          gate.music = true;
+        }
+      });
+    }).catch((err) => {
+      gate.failed.push('music');
+      if (typeof console !== 'undefined') console.warn('[boot] 第 1 面曲目预载失败，先揭幕；进关时会再等一次', err);
+    }).then(() => { this._refreshBootStatus(); });
   }
 
   /**
