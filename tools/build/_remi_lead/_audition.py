@@ -8,10 +8,14 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, '..', '..', '..', 'src', 'assets', 'bgm', 'remilia_septette.wav')
+if not os.path.exists(SRC):
+    SRC = os.path.join(HERE, '..', '..', '..', 'tools', 'build', '_remi_kit', 'remilia_septette_stereo.wav')
 SEC = json.load(open(os.path.join(HERE, 'secs.json'), encoding='utf-8'))
 with wave.open(SRC) as w:
-    sr = w.getframerate(); n = w.getnframes()
+    sr = w.getframerate(); n = w.getnframes(); nch = w.getnchannels()
     x = np.frombuffer(w.readframes(n), dtype='<i2').astype(np.float64) / 32768.0
+if nch > 1:
+    x = x.reshape(-1, nch).mean(axis=1)
 t = np.arange(len(x)) / sr
 names = {f.name for f in font_manager.fontManager.ttflist}
 for f in ('Microsoft YaHei', 'SimHei', 'Noto Sans CJK SC', 'DejaVu Sans'):

@@ -171,7 +171,7 @@ def main():
     stab = track('brass', 'square', 0.055)
     stab.notes += midi_layer(dict(ch=11, poly=2, max_dur=0.5, wins=W(
         (17, 25, 0.9), (25, 49, 0.65), (49, 92, 0.45))))
-    organ = track('pad', 'sine', 0.082)
+    organ = track('pad', 'sine', 0.104)
     organ.notes += midi_layer(dict(ch=14, poly=3, wins=W((49, 66, 0.9))))
     strhi = track('strings', 'sawtooth', 0.075)
     strhi.notes += midi_layer(dict(ch=12, poly=2, wins=W((49, 92, 0.8))))
@@ -192,6 +192,10 @@ def main():
     tutti = track('brass', 'square', 0.110)
     chor2 = track('choir', 'sine', 0.060)
     ped = track('bass', 'triangle', 0.080)
+    brasslo = track('brass', 'sawtooth', 0.055)    # 小号低八度锯齿层：军团厚度
+    organ16 = track('pad', 'sine', 0.075)          # 圣咏段 16 分管风琴分解
+    organ2 = track('pad', 'square', 0.045)         # 管风琴 2' 泛音层
+    tick = track('tick', 'square', 0.035)          # 引子钟摆
 
     def W_(tr, nb, beat, p, d, v):
         tr.notes.append([T(nb, beat), p, round(d, 4), int(v)])
@@ -267,28 +271,74 @@ def main():
         if nb in (69, 73, 77, 81, 85):
             W_(ped, nb, 0, _p - 12, (_b1 - _b0) * 0.99, 56)
 
-    # 尾声 86-89：全奏 Bb 小调终止
+    # 尾声 86-89：四小节收束 —— 86 全奏落地、87 只剩余响、88-89 悬置接回引子
     W_(tutti, 86, 0, 58, 2.0, 104)
     W_(tutti, 86, 0, 62, 2.0, 96)
     W_(tutti, 86, 0, 65, 2.0, 100)
     W_(tutti, 86, 0, 70, 2.0, 92)
-    W_(tutti, 87, 0, 58, 4 * BL(88) * 0.9, 66)
-    W_(tutti, 87, 0, 65, 4 * BL(88) * 0.9, 60)
     W_(chor2, 86, 0, 46, 2.0, 84)
     W_(chor2, 86, 0, 53, 2.0, 80)
     W_(chor2, 86, 0, 58, 2.0, 76)
-    W_(chor2, 87, 0, 46, 4 * BL(88) * 0.9, 54)
-    W_(chor2, 87, 0, 53, 4 * BL(88) * 0.9, 50)
     W_(swell, 86, 0, 34, 2.0, 92)
     W_(swell, 86, 0, 41, 2.0, 84)
-    W_(swell, 87, 0, 34, 4 * BL(88) * 0.9, 60)
-    W_(pad, 87, 0, 34, 4 * BL(88), 54)
-    W_(pad, 88, 0, 34, 4 * BL(89), 40)
-    W_(pad, 89, 0, 34, 4 * BL(90) * 0.98, 32)
     W_(ped, 86, 0, 34, 2.0, 92)
-    W_(ped, 87, 0, 34, 4 * BL(88), 62)
-    W_(ped, 88, 0, 30, 4 * BL(89), 44)
-    W_(ped, 89, 0, 29, 4 * BL(90) * 0.98, 40)
+    # 87：只剩低音与两把号的长音，让 86 的和弦自己衰减
+    W_(tutti, 87, 0, 58, 2 * BL(87) * 0.9, 62)
+    W_(tutti, 87, 0, 65, 2 * BL(87) * 0.9, 56)
+    W_(chor2, 87, 0, 46, 2 * BL(87) * 0.9, 50)
+    W_(swell, 87, 0, 34, 2 * BL(87) * 0.9, 58)
+    W_(ped, 87, 0, 34, 2 * BL(87) * 0.9, 58)
+    # 88-89：钟声泛音 + 低音尾巴 + 末拍 Eb 大和弦悬置（等下一轮引子的那面墙）
+    W_(bell, 88, 0, 58, 3.0, 40)
+    W_(bell, 88, 0, 70, 2.6, 30)
+    W_(pad, 88, 0, 34, 2 * BL(88), 34)
+    W_(ped, 88, 0, 34, 2 * BL(88), 40)
+    W_(pad, 89, 0, 39, 2 * BL(89) * 0.98, 30)
+    W_(pad, 89, 0, 46, 2 * BL(89) * 0.98, 26)
+    W_(pad, 89, 0, 51, 2 * BL(89) * 0.98, 22)
+    W_(bell, 89, 0, 63, 2.4, 26)
+
+    # ---- 织体增补 v2（用户「全改」七条）
+    # ① 圣咏段（新 53-68）16 分管风琴分解：跟该小节最低贝斯音走 根-五-八-十 的钟摆
+    for nb in range(53, 69):
+        _t0, _t1 = T(nb, 0), T(nb + 1, 0)
+        _lo = [n[1] for n in bass.notes if _t0 - 0.01 <= n[0] < _t1]
+        if not _lo:
+            continue
+        _r = min(_lo)
+        _pat = [_r + 12, _r + 19, _r + 24, _r + 27, _r + 24, _r + 19, _r + 24, _r + 31]
+        for i in range(16):
+            W_(organ16, nb, i * 0.25, _pat[i % 8], BL(nb) * 0.24,
+               40 + (10 if i % 4 == 0 else 0))
+    # ② B 段（新 45-52）弦乐高八度加倍：半音模进要咬在琶音上面
+    for n in list(lead.notes):
+        if T(45, 0) <= n[0] < T(53, 0) and n[1] + 12 <= 100:
+            lead_s.notes.append([n[0], n[1] + 12, n[2], int(n[3] * 0.55)])
+    # ③ A 段（新 13-20）小号把主题吹完整：主奏抬 8%，琶音退到伴奏位置
+    for n in lead.notes:
+        if T(13, 0) <= n[0] < T(21, 0):
+            n[3] = min(127, int(round(n[3] * 1.08)))
+    for n in arp.notes:
+        if T(13, 0) <= n[0] < T(21, 0):
+            n[3] = max(1, int(round(n[3] * 0.82)))
+    # ④ 小号低八度锯齿层：军团厚度
+    for n in lead.notes:
+        if n[1] - 12 >= 33:
+            brasslo.notes.append([n[0], n[1] - 12, n[2], int(n[3] * 0.5)])
+    # ⑤ 管风琴 2' 泛音层
+    for n in organ.notes:
+        if n[1] + 12 <= 100:
+            organ2.notes.append([n[0], n[1] + 12, n[2], int(n[3] * 0.70)])
+    # ⑥ 引子（新 1-4）钟摆：每拍一下，第一拍重
+    for nb in range(1, 5):
+        for b in (0, 1, 2, 3):
+            W_(tick, nb, b, 88, 0.09, 40 if b % 2 == 0 else 30)
+    # ⑦ 终曲 II（新 77-85）整体升半音：最后十二秒把王座再抬一层
+    _f2a, _f2b = T(77, 0), T(86, 0)
+    for t in TRACKS:
+        for n in t.notes:
+            if _f2a <= n[0] < _f2b:
+                n[1] = min(106, n[1] + 1)
 
     # ---- 鼓组
     D = []
@@ -366,10 +416,10 @@ def main():
     for i, k in enumerate((6, 6, 5, 5, 6, 6, 5, 5)):
         dr(48, 2.0 + i * 0.25, k, 88 + i * 4)
     roll(52, 2.0, 2.0, 86); dr(53, 0, 8, 100)
-    # 圆舞段（原曲 b49-64）：宏大
+    # 圆舞段（原曲 b49-64）：宏大（底鼓/军鼓略收 1dB，让小号主题浮在最上面）
     for nb in range(53, 69):
-        dr(nb, 0, 0, 110); dr(nb, 2, 0, 106)
-        dr(nb, 1, 1, 96); dr(nb, 3, 1, 98)
+        dr(nb, 0, 0, 102); dr(nb, 2, 0, 98)
+        dr(nb, 1, 1, 90); dr(nb, 3, 1, 92)
         for i in range(8):
             dr(nb, i * 0.5, 7, 46)
     for nb in (53, 61):
@@ -380,6 +430,9 @@ def main():
     for i, k in enumerate((6, 6, 5, 5, 6, 6, 5, 5)):
         dr(68, 1.0 + i * 0.25, k, 80 + i * 4)
     roll(68, 2.5, 1.5, 88); dr(69, 0, 8, 104)
+    # 圣咏段定音鼓根音：每小节 0 与 2.5 各一下，压住教堂的墙
+    for nb in range(53, 69):
+        dr(nb, 0, 5, 54); dr(nb, 2.5, 5, 44)
     # 终曲（原曲 b65-81）：全曲最重
     for nb in range(69, 86):
         dr(nb, 0, 0, 90); dr(nb, 2, 0, 88); dr(nb, 3.5, 0, 82)
@@ -394,10 +447,11 @@ def main():
         for i, k in enumerate((6, 6, 5, 5, 6, 6, 5, 5)):
             dr(nb, 2.0 + i * 0.25, k, 86 + i * 4)
     roll(84, 2.0, 2.0, 96); roll(85, 0.0, 2.0, 100)
-    # 尾声 86-89
+    # 尾声 86-89：一记落地 + 渐行渐远的余响
     dr(86, 0, 4, 120); dr(86, 0, 0, 118); dr(86, 0, 5, 104); dr(86, 2.5, 5, 92)
-    dr(87, 0, 0, 92); dr(87, 2, 5, 80)
-    dr(89, 0, 0, 76)
+    dr(87, 0, 0, 92); dr(87, 2, 5, 76)
+    roll(88, 0.0, 2.0, 40)
+    dr(89, 0, 0, 60)
 
     # ---- 写盘
     TRACKS[:] = [dict(name=t.name, wave=t.wave, gain=t.gain, notes=t.notes) for t in TRACKS]
@@ -419,7 +473,10 @@ def main():
     lines.append(' * 定音鼓式底鼓、军鼓进行曲、通鼓过门、吊镲、ride、反向吊镲。')
     lines.append(' *   引子 1-4（管风琴踏板 + 弦乐渐强 + 钟）')
     lines.append(' *   原曲 b1-81 -> 新 b5-85（引子 / 主题 A / 王座间奏 / 主题再现 / 半音段 / 圆舞段 / 终曲）')
-    lines.append(' *   尾声 86-89（全奏 Bb 小调终止 + 定音鼓 + 钟，末拍接回引子）')
+    lines.append(' *   尾声 86-89（全奏 Bb 小调终止 -> 余响 -> 末拍 Eb 悬置，接回引子）')
+    lines.append(' * v2（用户「全改」）：圣咏段 16 分管风琴分解 + 定音鼓根音 + 管风琴 +2dB、')
+    lines.append(' *   B 段弦乐高八度加倍、终曲 II 整体升半音、尾声收短为四小节且末拍悬置、')
+    lines.append(' *   引子钟摆、小号低八度锯齿层、管风琴 2\' 泛音层、A 段主奏抬 8% 琶音退 18%。')
     lines.append(' * tools/build/_remi_compose.py 生成，勿手改。')
     lines.append(' */')
     lines.append('export const REMILIA_EX = {')

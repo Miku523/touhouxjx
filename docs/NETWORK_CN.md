@@ -140,22 +140,22 @@ DNS 侧：主域名只有两条 A（`185.199.108.153` / `185.199.109.153`，TTL 
 - 引用改造：`src/art/genboss.js`、`src/art/genchars.js`、`src/art/genfairy.js`、`src/game/dialogue.js`（`AI_PORTRAITS`）、`src/game/ending.js`、`src/game/spellCutin.js`、`src/game/stage.js`、`src/main.js`；`index.html` 三条首屏 preload 加 `type="image/webp"` 并指向 `.webp`。
 - 逐张体积 / PSNR 表：`tools/_opt/webp_table.md`，机器可读：`tools/_opt/webp_report.json`；运行时验收：`node tools/_opt_art_check.mjs`（62 张 decode 与尺寸一致、全部 `200 + image/webp`、0 4xx）。
 
-### 3.2 预渲染 BGM 转 MP3（3 首，−15.0 MB）
+### 3.2 预渲染 BGM 转 MP3（4 首）
 
 | 曲目 | 用途 | WAV | MP3 |
 | --- | --- | --- | --- |
 | `sakuya_ex` | EXTRA 道中 | 5,292,044 B | **1,369,893 B** |
 | `festival_box` | EXTRA 结局（八音盒） | 9,664,118 B | **2,545,365 B** |
 | `flandre_devil` | EXTRA 终盘（恶魔之妹） | 6,615,044 B | **1,698,472 B** |
-| `remilia_septette` | EXTRA 中段（七重奏） | 6,555,862 B | **1,668,508 B** |
-| 合计 | | 28,127,068 B | **7,282,238 B（−74.1%）** |
+| `remilia_septette` | EXTRA 中段（七重奏） | —（母版 26,223,316 B 不入库） | **3,182,409 B** |
+| 合计 | | 21,571,206 B | **8,796,139 B（−59.2%）** |
 
-- 脚本：`python tools/optimize_audio_mp3.py`（MPEG-2 Layer III / 22050 Hz / 单声道 / VBR ≈ 91.8 kbps）。源是 22.05 kHz 单声道母版，所以用 MPEG-2 L3，不用 44.1k 的 MPEG-1。
-- 关键在于**别让循环接缝变形**：lame 默认不写 Xing/Info 头，播放器只能猜时长；这里自己构造 Xing/Info + LAME tag，按 `n = 576 × 帧数 − delay − padding` 反解精确 padding、TOC 用真实帧偏移。验收（`node tools/verify_audio_mp3.mjs`，49 pass / 0 fail）：
-  - Edge `decodeAudioData` 时长差 **0.000000 s**、采样数差 **0**（22050 native 与 48000 两种 context 都比过）；
-  - 与 WAV 互相关 lag = 0、corr 0.9994–0.99998；
-  - `AudioBufferSourceNode.loop = true` 真实循环渲染，跨边界 SNR 25.0–26.2 dB，跳变与 WAV 同量级（且低于该曲平均相邻样本跳变，没有咔哒声）。
-- 运行时只改 `src/engine/songs/index.js` 的三行 `audio` 路径；`audio.js` 一行没动（解码失败自动回退合成曲的 `catch` 本来就覆盖了）。三首 WAV 母版仍在仓库里。
+- 脚本：`python tools/optimize_audio_mp3.py`。前三首源是 22.05 kHz 单声道母版，用 MPEG-2 Layer III / 单声道 / VBR ≈ 91 kbps；`remilia_septette` 的母版是 44.1 kHz 立体声，改走 MPEG-1 Layer III / 192 kbps CBR（帧长 1152、side info 32 B），LAME tag 的 padding 要跟着补 `spf − delay` 的差（MPEG-1 多 576），才能解出和母版一模一样的采样数。
+- 关键在于**别让循环接缝变形**：lame 默认不写 Xing/Info 头，播放器只能猜时长；这里自己构造 Xing/Info + LAME tag，按 `n = spf × 帧数 − delay − padding` 反解精确 padding（MPEG-2 spf=576、MPEG-1 spf=1152）、TOC 用真实帧偏移。验收（`node tools/verify_audio_mp3.mjs`，4 首 65 pass / 0 fail）：
+  - Edge `decodeAudioData` 时长差 **0.000000 s**、采样数差 **0**（22050 native、44100 native、48000 三种 context 都比过）；
+  - 与 WAV 互相关 lag = 0、corr 0.9994–0.99998（remilia 立体声 0.9999）；
+  - `AudioBufferSourceNode.loop = true` 真实循环渲染，跨边界 SNR 25.0–30.0 dB，跳变与 WAV 同量级（且低于该曲平均相邻样本跳变，没有咔哒声）。
+- 运行时只改 `src/engine/songs/index.js` 的四行 `audio` 路径；`audio.js` 一行没动（解码失败自动回退合成曲的 `catch` 本来就覆盖了）。三首单声道 WAV 母版仍在仓库里；`remilia_septette` 的 44.1kHz 立体声母版 26,223,316 B（25.01 MiB）超过 Cloudflare Pages 单文件 25 MiB 上限，只留 MP3，母版放在 `tools/build/_remi_kit/`（不进版本库），重编 MP3 时脚本会自动回落到这份母版。
 
 ### 3.3 入口 modulepreload（85 个模块，4 波瀑布 → 1 波）
 
@@ -294,7 +294,7 @@ DEPLOY_WAIT_STEPS=900 CDP_PORT=9377 node tools/_deploy_check.mjs 'https://mikuas
 | 改动 | 回滚方式 |
 | --- | --- |
 | 图片 WebP | 把 `src/` 与 `index.html` 里的 `.webp` 引用改回 `.png/.jpg`（原图都在磁盘上），并升版本串 |
-| BGM MP3 | `src/engine/songs/index.js` 三行 `audio` 路径改回 `.wav` |
+| BGM MP3 | `src/engine/songs/index.js` 四行 `audio` 路径改回 `.wav` |
 | modulepreload | 删掉 `index.html` 里 `<!-- modulepreload:start … -->` 到 `<!-- modulepreload:end -->` 之间那块（或 `git checkout` 该段） |
 | 预取闸门 | `src/engine/lazy_preload.js` 里把 `linkTier()` 恒返回 `'fast'`，或还原该文件 |
 | 延迟非关键图 | 四处 `preloadWhenIdle(...)` 拆掉包一层，恢复构造期直接加载；`main.js` 的 `preloadAssets` 那行删掉 |

@@ -121,7 +121,7 @@ const DEFS = [
   // audio 让引擎直接播离线渲染成品 src/assets/bgm/remilia_septette.mp3，
   // fetch 失败时自动回退 remilia_septette.js 里的合成数据。
   { id: 'remilia_septette', url: './remilia_septette.js', keys: ['ex_mid'],
-    pick: (m) => ({ ex_mid: m.REMILIA_EX?.ex_mid ? { ...m.REMILIA_EX.ex_mid, audio: 'src/assets/bgm/remilia_septette.mp3?v=1.6.55' } : undefined }) },
+    pick: (m) => ({ ex_mid: m.REMILIA_EX?.ex_mid ? { ...m.REMILIA_EX.ex_mid, audio: 'src/assets/bgm/remilia_septette.mp3?v=1.6.56' } : undefined }) },
 ];
 
 /** key → 所属动态模块 */

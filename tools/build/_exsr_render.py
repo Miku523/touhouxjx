@@ -20,11 +20,18 @@ tools/build/_exsr_render.py —— 「东方新纪行」band arrange 离线渲�
 内部以 2 × 输出采样率（44100Hz）合成，再 2:1 抽取到 22050Hz，与 extra_mad.wav /
 festival_box.wav 一致。
 
+--stereo：输出立体声 WAV（默认 44.1kHz，内部 88.2kHz 再 2:1 抽取）。每轨按
+name 做常数功率声像（PAN_TABLE，中心 0.707/0.707；drums 恒居中），大厅/room
+用两条同参数不同 seed 的 IR 给左右去相关，右声道 short delay tap 多 7.5ms；
+母带 tanh 与归一化用同一个共享增益作用在左右两声道（声像不被压扁）。
+不加 --stereo 时单声道路径与旧版逐字节一致。
+
 用法（正式曲）：
     python tools/build/_exsr_render.py --file src/engine/songs/sakuya_ex.js \
         --export SAKUYA_EX --key ex_pre --out src/assets/bgm/sakuya_ex.wav
 
 调试 / 自检：
+    --stereo / --sr  立体声渲染（默认 44100Hz；不加 --stereo 仍按 --sr 默认 22050）
     --stems DIR      导出各声部干声（22.05kHz 单声道）供 selfcheck 分析
     --json PATH      把分析指标写成 JSON
     --no-reverb      不挂大厅混响
@@ -565,6 +572,31 @@ SHAPES = {
 DELAY_SEND = {'lead': 0.32, 'counter': 0.18, 'arp': 0.22, 'bell': 0.15, 'knife': 0.08}
 
 
+# ============================================================ 立体声（--stereo）
+# 常数功率 pan 表：-1 全左 … +1 全右；未列出的声部（含 wave: 回退音色）居中。
+# 中心 0.707/0.707：左右总功率与单声道一致，mono 折叠回来电平不变。
+# 说明：任务里 pad 与 organ(pad) 两条规则冲突——真正叫 pad 的声部按 0.0 居中；
+#       若将来数据用 name='organ' 表示管风琴垫，则用 -0.10。drums 恒居中。
+PAN_TABLE = {
+    'bass': 0.0, 'sub': 0.0, 'pad': 0.0,
+    'lead': -0.18, 'brass': -0.18, 'strings': -0.28, 'strhi': 0.25,
+    'choir': 0.30, 'counter': 0.22, 'organ': -0.10,
+    'piano': -0.12, 'harpsi': 0.12, 'arp': -0.35, 'bell': 0.38,
+}
+PAN_DEFAULT = 0.0
+HALF_SQRT2 = 0.7071067811865476
+STEREO_DELAY_OFFSET_MS = 7.5     # 右声道 delay tap 比左声道晚 7.5ms（去相关用，不改变节奏感）
+HALL_IR_SEED_OFFSET = 7919       # 右声道大厅 IR 用不同 seed（同参数去相关）
+ROOM_IR_SEED_OFFSET = 4391       # 右声道鼓组 room IR 同样去相关
+
+
+def pan_gain(pan):
+    """常数功率 pan → (左增益, 右增益)；中心 = 0.707/0.707。"""
+    p = max(-1.0, min(1.0, float(pan)))
+    th = (p + 1.0) * 0.25 * np.pi
+    return float(np.cos(th)), float(np.sin(th))
+
+
 # ============================================================ 鼓组
 _HAT_PARTIALS = [6030.0, 7480.0, 8190.0, 9310.0, 10480.0, 11900.0, 13700.0, 15200.0]
 _HAT_PHASES = [0.0, 1.1, 2.3, 3.7, 4.9, 5.6, 0.7, 2.9]
@@ -727,8 +759,12 @@ def circ_conv(x, ir, n):
     return np.fft.irfft(np.fft.rfft(x, n) * H, n)
 
 
-def short_delay(x, n, bpm, mix=DELAY_MIX, fb=DELAY_FB, taps=DELAY_TAPS):
-    """1/8 拍短 delay；用环形移位实现，回声尾巴折回开头。"""
+def short_delay(x, n, bpm, mix=DELAY_MIX, fb=DELAY_FB, taps=DELAY_TAPS, offset=0):
+    """1/8 拍短 delay；用环形移位实现，回声尾巴折回开头。
+
+    offset：额外的样本延迟（立体声右声道用 STEREO_DELAY_OFFSET_MS 去相关；
+    单声道默认 0，输出与旧版逐样本一致）。
+    """
     if bpm is None or bpm <= 0:
         bpm = 160.0
     d = int(round((60.0 / float(bpm)) / DELAY_DIV * SR))
@@ -736,8 +772,9 @@ def short_delay(x, n, bpm, mix=DELAY_MIX, fb=DELAY_FB, taps=DELAY_TAPS):
         return np.zeros(n)
     xd = tilt(x, lambda f: lp(f, 4200.0, 1) * hp(f, 180.0, 1))
     out = np.zeros(n)
+    off = int(offset)
     for k in range(1, taps + 1):
-        out += (mix * fb ** (k - 1)) * np.roll(xd, k * d)
+        out += (mix * fb ** (k - 1)) * np.roll(xd, k * d + off)
     return out
 
 
@@ -1088,6 +1125,241 @@ def write_stem(path, buf, sr, out_sr):
     sf.write(path, np.clip(stem * 32767.0, -32768, 32767).astype('<i2'), out_sr, subtype='PCM_16')
 
 
+def _render_song_stereo(song, out_sr=44100, wet=HALL_WET, drive=SAT_DRIVE,
+                        target_peak=TARGET_PEAK, target_rms=TARGET_RMS,
+                        use_reverb=True, use_delay=True, master_eq=True, seed=20261027,
+                        stems_dir=None, verbose=True, section_gain=None, sidechain=True,
+                        sidechain_depth=SIDECHAIN_DEPTH, sidechain_tau=SIDECHAIN_TAU,
+                        dedupe_drums_events=True):
+    """--stereo：立体声渲染（默认 44.1kHz）。
+
+    与单声道版共用同一套音色/鼓组/母带链，区别只有三处：
+      1. 每轨按 PAN_TABLE 做常数功率声像（中心 0.707/0.707，折叠回 mono 电平不变）；
+      2. 大厅 / 鼓组 room 用两条同参数不同 seed 的 IR 给左右去相关，
+         右声道 short delay 的 tap 再多 7.5ms 偏移（只做去相关，不改节奏）；
+      3. 母带 tanh / 归一化用同一个共享增益作用在左右两声道上（声像不被压扁）。
+    返回的 y 是 (n_out, 2) 的 float64；RMS 用左右总功率计（与 mono 同读数），
+    另给 rms_db_ch = 每声道独立计的常规立体声 RMS（比总功率低 3.01dB）。
+    """
+    global SR
+    SR = 2 * int(out_sr)
+    sr = SR
+    dur = float(song['duration'])
+    n_out = int(round(dur * out_sr))
+    n = 2 * n_out
+    t_start = time.time()
+
+    warnings = []
+    busL = np.zeros(n, dtype=np.float64)
+    busR = np.zeros(n, dtype=np.float64)
+    sendL = np.zeros(n, dtype=np.float64)
+    sendR = np.zeros(n, dtype=np.float64)
+    drums_dry = np.zeros(n, dtype=np.float64)
+    track_stats = []
+    n_notes = 0
+
+    sc_env = None
+    sc_kicks = 0
+    if sidechain:
+        sc_env, sc_kicks = kick_duck_env(song.get('drums'), n, dur,
+                                         depth=sidechain_depth, tau=sidechain_tau)
+
+    for i, tr in enumerate(song.get('tracks') or []):
+        voice = resolve_voice(tr, warnings)
+        buf, used = render_track(tr, voice, n, dur, seed + i * 7919)
+        n_notes += used
+        shape = SHAPES.get(voice)
+        if shape is not None:
+            buf = tilt(buf, shape)
+        ducked = bool(sidechain and voice == SIDECHAIN_TRACK and sc_env is not None)
+        if ducked:
+            buf = buf * sc_env
+        pan = float(PAN_TABLE.get(voice, PAN_DEFAULT))
+        gl, gr = pan_gain(pan)
+        busL += buf * gl
+        busR += buf * gr
+        if voice in DELAY_SEND:
+            dsn = DELAY_SEND[voice]
+            sendL += buf * (gl * dsn)
+            sendR += buf * (gr * dsn)
+        track_stats.append({'index': i, 'name': voice,
+                            'gain': float(tr.get('gain') or 0.0),
+                            'notes': used, 'sidechain': ducked, 'pan': pan,
+                            'rms_db': db(float(np.sqrt(np.mean(buf * buf)))) if used else -120.0})
+        if stems_dir:
+            write_stem(os.path.join(stems_dir, '%02d_%s.wav' % (i, voice.replace(':', ''))), buf, sr, out_sr)
+
+    drums, drum_counts, drums_merged = render_drums(
+        song.get('drums'), n, dur, seed, song.get('bpm'), dedupe=dedupe_drums_events)
+    if drums_merged and verbose:
+        print('[exsr] 同刻同 kind 重复鼓事件 %d 个：合并为单次命中（避免 +6dB 同相位叠加）'
+              % drums_merged)
+    if any(drum_counts.values()):
+        drums = tilt(drums, DRUM_SHAPE)
+        drums_dry = drums
+        busL += drums * HALF_SQRT2
+        busR += drums * HALF_SQRT2
+
+    n_drums = sum(drum_counts.values())
+    n_notes += n_drums
+
+    # 鼓组 short room：左右用不同 seed 的 room IR 去相关
+    if use_reverb and n_drums > 0:
+        roomL = circ_conv(drums_dry, room_ir(seed=seed + 31), n)
+        roomR = circ_conv(drums_dry, room_ir(seed=seed + ROOM_IR_SEED_OFFSET), n)
+        busL += (ROOM_WET * HALF_SQRT2) * roomL
+        busR += (ROOM_WET * HALF_SQRT2) * roomR
+
+    # 1/8 短 delay：右声道 tap 多 7.5ms（只做去相关）
+    if use_delay and (sendL.any() or sendR.any()):
+        off = int(round(STEREO_DELAY_OFFSET_MS * 1e-3 * SR))
+        busL += short_delay(sendL, n, song.get('bpm'), mix=DELAY_MIX, fb=DELAY_FB)
+        busR += short_delay(sendR, n, song.get('bpm'), mix=DELAY_MIX, fb=DELAY_FB, offset=off)
+
+    # 大厅混响：左右两条同参数不同 seed 的 IR（湿声只挂 190Hz 以上）
+    if use_reverb:
+        wetL = tilt(circ_conv(busL, hall_ir(seed=seed), n), lambda f: hp(f, 190.0, 2))
+        wetR = tilt(circ_conv(busR, hall_ir(seed=seed + HALL_IR_SEED_OFFSET), n),
+                    lambda f: hp(f, 190.0, 2))
+        busL = busL + float(wet) * wetL
+        busR = busR + float(wet) * wetR
+
+    # ---- 母线：去直流 → 高通 → 软饱和（左右共享同一个增益函数）
+    busL -= float(np.mean(busL))
+    busR -= float(np.mean(busR))
+    busL = tilt(busL, lambda f: hp(f, 33.0, 2))
+    busR = tilt(busR, lambda f: hp(f, 33.0, 2))
+    if master_eq:
+        g_low = 10.0 ** (MASTER_LOW_DB / 20.0)
+        g_hi = 10.0 ** (MASTER_HIGH_DB / 20.0)
+        eqfn = (lambda f: (g_low + (1.0 - g_low) * (1.0 - lp(f, MASTER_LOW_HZ))) *
+                bell(f, MASTER_MID_HZ, MASTER_MID_OCT, MASTER_MID_DB) *
+                (g_hi + (1.0 - g_hi) * (1.0 - lp(f, MASTER_HIGH_HZ))))
+        busL = tilt(busL, eqfn)
+        busR = tilt(busR, eqfn)
+    pk0 = float(max(np.max(np.abs(busL)), np.max(np.abs(busR))))
+    if pk0 > 1e-9:
+        gsat = float(drive) / pk0
+        busL = np.tanh(busL * gsat) / np.tanh(float(drive))
+        busR = np.tanh(busR * gsat) / np.tanh(float(drive))
+    pk1 = float(max(np.max(np.abs(busL)), np.max(np.abs(busR))))
+    xL = antialias(busL, sr, out_sr)
+    xR = antialias(busR, sr, out_sr)
+    yL = 0.5 * (xL[0::2] + xL[1::2])
+    yR = 0.5 * (xR[0::2] + xR[1::2])
+    if len(yL) < n_out:
+        yL = np.concatenate([yL, np.zeros(n_out - len(yL))])
+        yR = np.concatenate([yR, np.zeros(n_out - len(yR))])
+    yL = yL[:n_out]
+    yR = yR[:n_out]
+    yL -= float(np.mean(yL))
+    yR -= float(np.mean(yR))
+
+    # ---- 段平衡：左右共用同一条增益包络
+    if section_gain:
+        env = np.ones(n_out, dtype=np.float64)
+        for a, b, gdb in section_gain:
+            a = max(0.0, float(a))
+            b = min(dur, float(b))
+            if b <= a:
+                continue
+            g = 10.0 ** (float(gdb) / 20.0)
+            ramp = min(0.4, 0.25 * (b - a))
+            i0 = int(round(a * out_sr))
+            i1 = int(round(b * out_sr))
+            seg = np.full(max(0, i1 - i0), g, dtype=np.float64)
+            nr = max(1, int(round(ramp * out_sr)))
+            if len(seg) > 2 * nr:
+                w = 0.5 - 0.5 * np.cos(np.linspace(0.0, np.pi, nr))
+                seg[:nr] = 1.0 + (g - 1.0) * w
+                seg[-nr:] = 1.0 + (g - 1.0) * w[::-1]
+            env[i0:i1] *= seg
+        yL = yL * env
+        yR = yR * env
+
+    # ---- 母带归一化：左右共享同一个增益 k（峰值取两声道最大，RMS 取总功率）
+    pk = float(max(np.max(np.abs(yL)), np.max(np.abs(yR))))
+    rms_sum = float(np.sqrt(np.mean(yL * yL + yR * yR)))
+    lim = 10.0 ** (float(target_rms) / 20.0)
+    k = min(float(target_peak) / max(pk, 1e-9), lim / max(rms_sum, 1e-9))
+    yL = yL * k
+    yR = yR * k
+    rms_out = float(np.sqrt(np.mean(yL * yL + yR * yR)))   # 归一化后的实际 RMS（总功率口径）
+
+    smL = seam_metrics(yL, out_sr)
+    smR = seam_metrics(yR, out_sr)
+    sm = {'seam': max(smL['seam'], smR['seam']),
+          'seam_lf': max(smL['seam_lf'], smR['seam_lf']),
+          'seam_pctile': max(smL['seam_pctile'], smR['seam_pctile']),
+          'seam_slope_err': max(smL['seam_slope_err'], smR['seam_slope_err'])}
+    metrics = analyze_stereo(yL, yR, out_sr)
+
+    if stems_dir and drums_dry.any():
+        write_stem(os.path.join(stems_dir, '90_drums.wav'), drums_dry, sr, out_sr)
+
+    out = {
+        'song': song.get('title') or '',
+        'stereo': True,
+        'channels': 2,
+        'duration': dur,
+        'bpm': song.get('bpm'),
+        'out_sr': int(out_sr),
+        'samples': int(n_out),
+        'samples_expected': int(round(dur * out_sr)),
+        'peak': float(max(np.max(np.abs(yL)), np.max(np.abs(yR)))),
+        'peak_l': float(np.max(np.abs(yL))),
+        'peak_r': float(np.max(np.abs(yR))),
+        'rms_db': db(rms_out),                       # 左右总功率（与 mono 同口径）
+        'rms_db_ch': db(rms_out / np.sqrt(2.0)),     # 每个声道的常规立体声 RMS
+        'rms_pre_norm_db': db(rms_sum),              # 归一化前电平（调试用）
+        'pre_peak': pk0,
+        'pre_peak_sat': pk1,
+        'gain': float(k),
+        'seam': sm['seam'],
+        'seam_l': smL['seam'],
+        'seam_r': smR['seam'],
+        'seam_lf': sm['seam_lf'],
+        'seam_pctile': sm['seam_pctile'],
+        'seam_slope_err': sm['seam_slope_err'],
+        'seam_rms_ratio': sm['seam'] / max(1e-9, rms_sum),
+        'tracks': track_stats,
+        'drums': {str(k2): int(v) for k2, v in drum_counts.items()},
+        'drums_merged': int(drums_merged),
+        'drums_events_data': int(len(song.get('drums') or [])),
+        'drums_events_rendered': int(sum(drum_counts.values())),
+        'notes': int(n_notes),
+        'warnings': warnings,
+        'render_sec': time.time() - t_start,
+        'bands': metrics['bands'],
+        'centroid_hz': metrics['centroid_hz'],
+        'hf_db': metrics['hf_db'],
+        'clips': metrics['clips'],
+        'dc': metrics['dc'],
+        'dc_l': metrics['dc_l'],
+        'dc_r': metrics['dc_r'],
+        'corr': metrics['corr'],
+        'width_db': metrics['width_db'],
+        'width_ratio': metrics['width_ratio'],
+        'side_mid_db': metrics['side_mid_db'],
+        'pan_table': {k2: float(v) for k2, v in PAN_TABLE.items()},
+        'pan_default': float(PAN_DEFAULT),
+        'stereo_delay_offset_ms': float(STEREO_DELAY_OFFSET_MS),
+        'hall_ir_seed_offset': int(HALL_IR_SEED_OFFSET),
+        'room_ir_seed_offset': int(ROOM_IR_SEED_OFFSET),
+        'section_gain': [[float(a), float(b), float(g)] for a, b, g in (section_gain or [])],
+        'kick_body': float(KICK_BODY),
+        'master_eq': {'low_db': float(MASTER_LOW_DB), 'low_hz': float(MASTER_LOW_HZ),
+                      'mid_db': float(MASTER_MID_DB), 'mid_hz': float(MASTER_MID_HZ),
+                      'high_db': float(MASTER_HIGH_DB), 'high_hz': float(MASTER_HIGH_HZ)},
+        'sidechain': {'enabled': bool(sidechain and sc_env is not None),
+                      'target': SIDECHAIN_TRACK, 'src_kind': 0,
+                      'depth': float(sidechain_depth), 'tau': float(sidechain_tau),
+                      'kicks': int(sc_kicks)},
+    }
+    out['y'] = np.stack([yL, yR], axis=1)
+    return out
+
+
 # ============================================================ 分析
 BAND_EDGES = [20.0, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0, 22050.0]
 
@@ -1133,6 +1405,52 @@ def analyze(y, sr):
     }
 
 
+def analyze_stereo(yL, yR, sr):
+    """立体声指标：频段能量按左右功率和计（与单声道同口径），另给相关度与宽度。"""
+    yL = np.asarray(yL, dtype=np.float64)
+    yR = np.asarray(yR, dtype=np.float64)
+    n = len(yL)
+    if n == 0 or len(yR) != n:
+        return {'bands': {}, 'centroid_hz': 0.0, 'hf_db': -120.0, 'clips': 0,
+                'dc': 0.0, 'dc_l': 0.0, 'dc_r': 0.0, 'corr': 0.0,
+                'width_db': -120.0, 'width_ratio': 0.0, 'side_mid_db': -120.0}
+    w = np.hanning(n)
+    SL = np.abs(np.fft.rfft(yL * w))
+    SR_ = np.abs(np.fft.rfft(yR * w))
+    f = np.fft.rfftfreq(n, 1.0 / sr)
+    p = SL * SL + SR_ * SR_
+    total = max(float(np.sum(p)), 1e-20)
+    bands = {}
+    for a, b in zip(BAND_EDGES[:-1], BAND_EDGES[1:]):
+        m = (f >= a) & (f < b)
+        bands['%g-%g' % (a, b)] = float(10.0 * np.log10(max(float(np.sum(p[m])), 1e-20) / total))
+    cent = float(np.sum(f * p) / total)
+    hf_mask = f >= 5000.0
+    hf = float(10.0 * np.log10(max(float(np.sum(p[hf_mask])), 1e-20) / total))
+    mid = 0.5 * (yL + yR)
+    side = 0.5 * (yL - yR)
+    mid_rms = float(np.sqrt(np.mean(mid * mid)))
+    side_rms = float(np.sqrt(np.mean(side * side)))
+    denom = float(np.sqrt(np.sum(yL * yL) * np.sum(yR * yR)))
+    corr = float(np.sum(yL * yR) / denom) if denom > 1e-20 else 0.0
+    width = side_rms / max(mid_rms, 1e-12)
+    dc_l = float(np.mean(yL))
+    dc_r = float(np.mean(yR))
+    return {
+        'bands': bands,
+        'centroid_hz': cent,
+        'hf_db': hf,
+        'clips': int(np.sum(np.abs(yL) >= 0.9999) + np.sum(np.abs(yR) >= 0.9999)),
+        'dc': float(max(abs(dc_l), abs(dc_r))),
+        'dc_l': dc_l,
+        'dc_r': dc_r,
+        'corr': corr,
+        'width_ratio': float(width),
+        'width_db': float(20.0 * np.log10(max(width, 1e-12))),
+        'side_mid_db': float(20.0 * np.log10(max(side_rms, 1e-12) / max(mid_rms, 1e-12))),
+    }
+
+
 # ============================================================ CLI
 def main():
     global KICK_BODY, MASTER_HIGH_DB
@@ -1142,7 +1460,11 @@ def main():
     ap.add_argument('--export', required=True, help='导出常量名（如 SAKUYA_EX）')
     ap.add_argument('--key', required=True, help='曲目 key（如 ex_pre）')
     ap.add_argument('--out', required=True, help='输出 wav 路径')
-    ap.add_argument('--sr', type=int, default=DEFAULT_OUT_SR, help='输出采样率（默认 22050）')
+    ap.add_argument('--sr', type=int, default=None,
+                    help='输出采样率（默认 22050；--stereo 时默认 44100）')
+    ap.add_argument('--stereo', action='store_true',
+                    help='立体声渲染（默认 44.1kHz）：常数功率 pan + 左右去相关混响/delay；'
+                         '单声道路径（不加 --stereo）逐字节不变')
     ap.add_argument('--peak', type=float, default=TARGET_PEAK, help='峰值上限（默认 0.55）')
     ap.add_argument('--rms', type=float, default=TARGET_RMS, help='RMS 目标 dBFS（默认 -19.5）')
     ap.add_argument('--wet', type=float, default=HALL_WET, help='大厅湿声（默认 %.2f）' % HALL_WET)
@@ -1166,6 +1488,8 @@ def main():
                     help='段平衡（mix 自动化）：给 START-END 秒加 DB 增益，归一化前作用，'
                          '余弦 0.4s 斜坡；可重复，如 --section-gain 78:90:1.0')
     args = ap.parse_args()
+    if args.sr is None:
+        args.sr = 44100 if args.stereo else DEFAULT_OUT_SR
 
     if args.kick_body is not None:
         KICK_BODY = float(args.kick_body)
@@ -1189,22 +1513,23 @@ def main():
     if not song or 'duration' not in song:
         raise SystemExit('读不到曲目数据：%s / %s / %s' % (args.file, args.export, args.key))
 
-    res = render_song(song, out_sr=args.sr, wet=args.wet, drive=args.drive,
-                      target_peak=args.peak, target_rms=args.rms,
-                      use_reverb=not args.no_reverb, use_delay=not args.no_delay,
-                      master_eq=not args.no_eq,
-                      seed=args.seed, stems_dir=args.stems, verbose=True,
-                      section_gain=section_gain,
-                      sidechain=not args.no_sidechain,
-                      sidechain_depth=args.sc_depth, sidechain_tau=args.sc_tau,
-                      dedupe_drums_events=not args.keep_dups)
+    kw = dict(out_sr=args.sr, wet=args.wet, drive=args.drive,
+              target_peak=args.peak, target_rms=args.rms,
+              use_reverb=not args.no_reverb, use_delay=not args.no_delay,
+              master_eq=not args.no_eq,
+              seed=args.seed, stems_dir=args.stems, verbose=True,
+              section_gain=section_gain,
+              sidechain=not args.no_sidechain,
+              sidechain_depth=args.sc_depth, sidechain_tau=args.sc_tau,
+              dedupe_drums_events=not args.keep_dups)
+    res = _render_song_stereo(song, **kw) if args.stereo else render_song(song, **kw)
     y = res.pop('y')
     res['file'] = args.out
     res['source_file'] = args.file
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-    sf.write(args.out, np.clip(y * 32767.0, -32768, 32767).astype('<i2'),
-             args.sr, subtype='PCM_16')
+    data = np.clip(np.asarray(y) * 32767.0, -32768, 32767).astype('<i2')
+    sf.write(args.out, data, args.sr, subtype='PCM_16')
 
     if args.json_path:
         os.makedirs(os.path.dirname(os.path.abspath(args.json_path)), exist_ok=True)
@@ -1231,8 +1556,18 @@ def main():
           % (res['pre_peak'], args.drive, res['pre_peak_sat'], res['gain']))
     print('  成品：峰值 %.3f / RMS %.1f dBFS / 削顶 %d'
           % (res['peak'], res['rms_db'], res['clips']))
-    print('  接缝：|y0-y-1| = %.4f（滑差 %.4f，全曲分位 %.1f%%；<1kHz %.4f）'
-          % (res['seam'], res['seam_rms_ratio'], res['seam_pctile'], res['seam_lf']))
+    if res.get('stereo'):
+        print('  立体声：L/R 相关 %.3f / 宽度 %.1f dB（side/mid %.3f）'
+              % (res['corr'], res['width_db'], res['width_ratio']))
+        print('  RMS：左右总功率 %.2f dBFS（与 mono 同口径），每声道折算 %.2f dBFS'
+              % (res['rms_db'], res['rms_db_ch']))
+    if res.get('stereo'):
+        print('  接缝：max(|y0-y-1| L/R) = %.4f（L %.4f / R %.4f；滑差 %.4f，分位 %.1f%%；<1kHz %.4f）'
+              % (res['seam'], res['seam_l'], res['seam_r'], res['seam_rms_ratio'],
+                 res['seam_pctile'], res['seam_lf']))
+    else:
+        print('  接缝：|y0-y-1| = %.4f（滑差 %.4f，全曲分位 %.1f%%；<1kHz %.4f）'
+              % (res['seam'], res['seam_rms_ratio'], res['seam_pctile'], res['seam_lf']))
     print('  频段(相对总能量)：%s'
           % '  '.join('%s %.1fdB' % (k, v) for k, v in res['bands'].items()))
     print('  谱心 %.0f Hz，5kHz 以上占比 %.1f dB' % (res['centroid_hz'], res['hf_db']))
@@ -1242,8 +1577,9 @@ def main():
     if res['warnings']:
         for w in res['warnings']:
             print('  [warn] %s' % w)
-    print('  写入 %s  %.2fMB'
-          % (args.out, os.path.getsize(args.out) / 1048576.0))
+    print('  写入 %s  %.2fMB%s'
+          % (args.out, os.path.getsize(args.out) / 1048576.0,
+             '（立体声 2ch）' if res.get('stereo') else '（单声道 1ch）'))
 
 
 if __name__ == '__main__':

@@ -54,6 +54,9 @@ BGM = ROOT / "src" / "assets" / "bgm"
 # 目标曲目（离线渲染产物，原 WAV 一律保留）
 TRACKS = ("sakuya_ex", "flandre_devil", "festival_box", "remilia_septette")
 
+# 母版不在 src/assets/bgm 的曲目（体积超过 Cloudflare Pages 单文件 25 MiB 上限，只发 MP3）
+MASTERS = {"remilia_septette": ROOT / "tools" / "build" / "_remi_kit" / "remilia_septette_stereo.wav"}
+
 SR = 22050          # 离线渲染采样率（WAV 侧，MP3 不做重采样）
 SPF = 576           # MPEG-1/2 Layer III 每帧采样数
 DEFAULT_MODE = "vbr"     # 与 CBR 96k 体积/质量等效，但更省（实测 91.8kbps 均值）
@@ -64,53 +67,67 @@ ENC_DELAY = 576     # LAME 编码器延迟；写进 tag，浏览器据此丢弃�
 MIN_PAD = 1105      # 浏览器对 padding 的下限（528 + 576 + 1），低于它会少修剪
 MAX_PAD = 4095      # LAME tag 里 padding 是 12bit
 
-# MPEG-2 LSF Layer III 帧长 = 72 * bitrate / samplerate (+ padding bit)
-def frame_len(bitrate_kbps: int, sr: int, pad_bit: int) -> int:
-    return 72 * bitrate_kbps * 1000 // sr + pad_bit
+# Layer III 帧长：MPEG-1 = 144*br/sr（spf 1152），MPEG-2 LSF = 72*br/sr（spf 576）
+def frame_len(bitrate_kbps: int, sr: int, pad_bit: int, mpeg1: bool = False) -> int:
+    coef = 144 if mpeg1 else 72
+    return coef * bitrate_kbps * 1000 // sr + pad_bit
 
 
 # MPEG-2 / 2.5 Layer III 允许的码率（22050Hz 下只可能用到这一张表）
 MPEG2_L3_BITRATES = (0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0)
+# MPEG-1 Layer III 码率表（44100Hz 立体声）
+MPEG1_L3_BITRATES = (0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0)
 
 
-def frame_at(buf: bytes, i: int):
+def fmt(sr: int, nch: int):
+    """返回 (mpeg1, spf, side_bytes, bitrate_table)；支持 22050 单声道 / 44100 立体声。"""
+    if sr == 44100:
+        return True, 1152, (32 if nch == 2 else 17), MPEG1_L3_BITRATES
+    if sr == 22050:
+        return False, 576, (9 if nch == 1 else 17), MPEG2_L3_BITRATES
+    raise SystemExit(f"不支持的采样率 {sr}（只支持 22050 / 44100）")
+
+
+def frame_at(buf: bytes, i: int, sr: int = SR):
     """如果 buf[i:] 是一个合法 MPEG-2 Layer III 帧头，返回 (长度, 码率kbps)，否则 None。"""
     if i + 4 > len(buf) or buf[i] != 0xFF or (buf[i + 1] & 0xE0) != 0xE0:
         return None
-    ver = (buf[i + 1] >> 3) & 0x3          # 2 = MPEG-2 (22050Hz)
+    ver = (buf[i + 1] >> 3) & 0x3          # 3 = MPEG-1 (44100Hz)，2 = MPEG-2 (22050Hz)
     layer = (buf[i + 1] >> 1) & 0x3        # 1 = Layer III
-    if ver != 2 or layer != 1:
+    if ver not in (3, 2) or layer != 1:
         return None
     br_index = (buf[i + 2] >> 4) & 0xF
     sr_index = (buf[i + 2] >> 2) & 0x3
-    br = MPEG2_L3_BITRATES[br_index]
+    mpeg1 = ver == 3
+    br = (MPEG1_L3_BITRATES if mpeg1 else MPEG2_L3_BITRATES)[br_index]
     if not br or sr_index == 3:
         return None
     pad = (buf[i + 2] >> 1) & 1
-    return frame_len(br, SR, pad), br
+    return frame_len(br, sr, pad, mpeg1), br
 
 
 def read_wav(path: Path):
     with wave.open(str(path), "rb") as w:
         nch, sw, sr, n = w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()
         pcm = w.readframes(n)
-    if nch != 1 or sw != 2:
-        raise SystemExit(f"{path.name}: 只支持单声道 PCM16，实际 channels={nch} sampwidth={sw}")
-    if sr != SR:
-        raise SystemExit(f"{path.name}: 采样率应为 {SR}，实际 {sr}")
-    if len(pcm) != n * 2:
-        raise SystemExit(f"{path.name}: 数据长度不符 {len(pcm)} != {n * 2}")
-    return sr, n, pcm
+    if sw != 2:
+        raise SystemExit(f"{path.name}: 只支持 PCM16，实际 sampwidth={sw}")
+    if not ((nch == 1 and sr == 22050) or (nch == 2 and sr == 44100)):
+        raise SystemExit(f"{path.name}: 只支持 22050 单声道 / 44100 立体声，实际 {sr}Hz {nch}ch")
+    if len(pcm) != n * nch * 2:
+        raise SystemExit(f"{path.name}: 数据长度不符 {len(pcm)} != {n * nch * 2}")
+    return sr, nch, n, pcm
 
 
 # ------------------------------------------------------------------ 编码
-def encode_mp3(pcm: bytes, bitrate: int, mode: str = "cbr", vbr_q=None) -> bytes:
+def encode_mp3(pcm: bytes, bitrate: int, mode: str = "cbr", vbr_q=None,
+               sr: int = SR, nch: int = 1) -> bytes:
     import lameenc  # 纯 python wheel，仓库内其它脚本也用它
 
     enc = lameenc.Encoder()
-    enc.set_in_sample_rate(SR)
-    enc.set_out_sample_rate(SR)
-    enc.set_channels(1)
+    enc.set_in_sample_rate(sr)
+    enc.set_out_sample_rate(sr)
+    enc.set_channels(nch)
     enc.set_quality(2)             # 2 = 最高质量档
     if mode == "vbr":
         enc.set_vbr(3)             # 3 = vbr_mtrh，LAME 质量最好的 VBR 算法
@@ -123,7 +140,7 @@ def encode_mp3(pcm: bytes, bitrate: int, mode: str = "cbr", vbr_q=None) -> bytes
     return enc.encode(pcm) + enc.flush()
 
 
-def scan_frames(buf: bytes):
+def scan_frames(buf: bytes, sr: int = SR):
     """按 MPEG 帧头切帧（逐帧读码率，CBR/VBR 都适用），返回 [(offset, length), ...]。
 
     遇到非法字节就前跳重同步；尾部不足一帧的残余字节丢弃。
@@ -132,7 +149,7 @@ def scan_frames(buf: bytes):
     i = 0
     n = len(buf)
     while i + 4 <= n:
-        h = frame_at(buf, i)
+        h = frame_at(buf, i, sr)
         if h and i + h[0] <= n:
             frames.append((i, h[0]))
             i += h[0]
@@ -143,17 +160,25 @@ def scan_frames(buf: bytes):
 
 # ------------------------------------------------------- Xing/Info + LAME tag
 def build_info_frame(n_frames: int, total_bytes: int, delay: int, padding: int,
-                     bitrate: int, mode: str = "cbr", frames=None) -> bytes:
+                     bitrate: int, mode: str = "cbr", frames=None,
+                     sr: int = SR, nch: int = 1) -> bytes:
     """构造 1 个「空」MPEG 帧，承载 Info( Xing ) 头 + 36 字节 LAME tag。
 
     帧结构（MPEG-2 LSF mono）：4B 帧头 + 9B side info + 'Info' + flags/frames/
     bytes/toc/quality + LAME tag。总长等于普通音频帧（313B@96k）。
     """
-    fl = frame_len(bitrate, SR, 0)
+    mpeg1, _spf, side, table = fmt(sr, nch)
+    fl = frame_len(bitrate, sr, 0, mpeg1)
     f = bytearray(fl)
-    # 帧头：MPEG-2 / Layer III / 无 CRC / 该码率 / 22050Hz / 无 padding / 单声道
-    f[0:4] = bytes([0xFF, 0xF3, 0xA0, 0xC4])
-    off = 4 + 9                      # 跳过 side info（MPEG-2 mono = 9 字节）
+    br_index = table.index(bitrate)
+    # 帧头：MPEG-1/2 Layer III / 无 CRC / 该码率 / sr_index 0（44100 或 22050）/ 无 padding
+    f[0] = 0xFF
+    f[1] = 0xFB if mpeg1 else 0xF3
+    # 历史 mono 22050 路径的 Info 帧头固定写 0xA0（96k 标称，保持逐字节可复现）；
+    # 44100 立体声按真实 VBR mean 码率表写。
+    f[2] = (br_index << 4) if mpeg1 else (0xA0 if nch == 1 else (br_index << 4))
+    f[3] = 0x44 if nch == 2 else 0xC4  # 立体声用 joint stereo；单声道 mono
+    off = 4 + side                   # 跳过 side info（MPEG-2 mono=9 / stereo=17，MPEG-1 stereo=32）
     f[off:off + 4] = b"Xing" if mode == "vbr" else b"Info"
     off += 4
     f[off:off + 4] = struct.pack(">I", 0x0F)      # frames|bytes|toc|quality
@@ -196,11 +221,18 @@ def build_info_frame(n_frames: int, total_bytes: int, delay: int, padding: int,
 
 def parse_info_frame(buf: bytes):
     """回读自己写的 Info/LAME tag，返回 (n_frames, total_bytes, delay, padding)。"""
-    if len(buf) < 4 + 9 + 4 + 4:
+    if len(buf) < 4 + 32 + 4 + 4:
         return None
     if buf[0] != 0xFF or (buf[1] & 0xE0) != 0xE0:
         return None
-    off = 4 + 9
+    ver = (buf[1] >> 3) & 0x3
+    mode = (buf[3] >> 6) & 0x3
+    nch = 1 if mode == 3 else 2
+    if nch == 1:
+        side = 17 if ver == 3 else 9
+    else:
+        side = 32 if ver == 3 else 17
+    off = 4 + side
     magic = bytes(buf[off:off + 4])
     if magic not in (b"Info", b"Xing"):
         return None
@@ -224,22 +256,23 @@ def parse_info_frame(buf: bytes):
 def build_track(wav: Path, bitrate: int, dry_run: bool, mode: str = "cbr", out_dir: str = "",
                 vbr_q=None):
     t0 = time.time()
-    sr, n_samples, pcm = read_wav(wav)
+    sr, nch, n_samples, pcm = read_wav(wav)
     src_bytes = wav.stat().st_size
+    mpeg1, spf, _side, _table = fmt(sr, nch)
 
     attempts = []
     pad_zeros = 0
     for _ in range(6):
-        data = pcm + b"\x00\x00" * pad_zeros
-        stream = encode_mp3(data, bitrate, mode, vbr_q)
-        frames = scan_frames(stream)
+        data = pcm + b"\x00\x00" * (pad_zeros * nch)
+        stream = encode_mp3(data, bitrate, mode, vbr_q, sr, nch)
+        frames = scan_frames(stream, sr)
         if not frames:
             raise SystemExit(f"{wav.name}: 编码结果里找不到 MPEG 帧")
         s0, s1 = frames[0][0], frames[-1][0] + frames[-1][1]
         body = stream[s0:s1]
         n_frames = len(frames)
         # 尾部余量 = 编码覆盖的采样数 - 原曲采样数（浏览器会按 padding 修剪掉）
-        slack = n_frames * SPF - n_samples
+        slack = n_frames * spf - n_samples
         attempts.append({"pad_zeros": pad_zeros, "frames": n_frames, "slack": slack})
         if MIN_PAD <= slack <= MAX_PAD:
             break
@@ -250,8 +283,13 @@ def build_track(wav: Path, bitrate: int, dry_run: bool, mode: str = "cbr", out_d
     else:
         raise SystemExit(f"{wav.name}: 补零重试后仍无法满足 padding >= {MIN_PAD}")
 
-    total = len(body) + frame_len(bitrate, SR, 0)
-    info = build_info_frame(n_frames + 1, total, ENC_DELAY, slack, bitrate, mode, frames)
+    # LAME tag 的 padding 需补上 spf-ENC_DELAY 的差：MPEG-2（spf=576）时就是 slack，
+    # MPEG-1（spf=1152）时多 576，这样「解码长度 = 总帧采样 - delay - padding」才等于原曲长度。
+    pad_tag = slack + (spf - ENC_DELAY)
+    if pad_tag > 4095:
+        raise SystemExit(f"{wav.name}: padding {pad_tag} 超出 12bit 上限")
+    total = len(body) + frame_len(bitrate, sr, 0, mpeg1)
+    info = build_info_frame(n_frames + 1, total, ENC_DELAY, pad_tag, bitrate, mode, frames, sr, nch)
     mp3 = info + body
     out = (Path(out_dir) / f"{wav.stem}.mp3") if out_dir else wav.with_suffix(".mp3")
     elapsed = time.time() - t0
@@ -269,10 +307,10 @@ def build_track(wav: Path, bitrate: int, dry_run: bool, mode: str = "cbr", out_d
         "bitrate_kbps": round(len(mp3) * 8 / (n_samples / sr) / 1000, 2),
         "frames": n_frames + 1,
         "delay": ENC_DELAY,
-        "padding": slack,
+        "padding": pad_tag,
         "padded_source_samples": pad_zeros,
         # 解码长度 = 576 * (tag 里的帧数, 含 Info 帧) - delay - padding
-        "expected_decoded_samples": (n_frames + 1) * SPF - ENC_DELAY - slack,
+        "expected_decoded_samples": (n_frames + 1) * spf - ENC_DELAY - pad_tag,
         "attempts": attempts,
         "elapsed_s": round(elapsed, 2),
         "written": False,
@@ -285,7 +323,7 @@ def build_track(wav: Path, bitrate: int, dry_run: bool, mode: str = "cbr", out_d
         rep["written"] = True
         # 回读校验
         got = parse_info_frame(out.read_bytes()[:512])   # LAME tag 在 Info 帧 offset 133
-        if got is None or got[2] != ENC_DELAY or got[3] != slack:
+        if got is None or got[2] != ENC_DELAY or got[3] != pad_tag:
             raise SystemExit(f"{out.name}: 回读 tag 校验失败 {got}")
     return rep
 
@@ -307,16 +345,22 @@ def main(argv=None):
     for name in TRACKS:
         wav = BGM / f"{name}.wav"
         if not wav.exists():
-            print(f"!! 缺少 {wav}", file=sys.stderr)
-            continue
+            alt = MASTERS.get(name)
+            if alt is not None and alt.exists():
+                wav = alt
+                print(f".. {name}: 母版不在仓库，用 {alt.relative_to(ROOT)}")
+            else:
+                print(f"!! 缺少 {wav}", file=sys.stderr)
+                continue
         if args.only and args.only not in name:
             continue
-        mp3 = (Path(args.out_dir) / f"{name}.mp3") if args.out_dir else wav.with_suffix(".mp3")
+        mp3 = (Path(args.out_dir) / f"{name}.mp3") if args.out_dir else (BGM / f"{name}.mp3")
         if (mp3.exists() and not args.force and not args.dry_run and not args.out_dir
                 and mp3.stat().st_mtime >= wav.stat().st_mtime):
             print(f"= {name}: 已最新，跳过（--force 重编）")
             continue
-        rep = build_track(wav, args.bitrate, args.dry_run, args.mode, args.out_dir, args.vbr_q)
+        out_dir = args.out_dir or ("" if wav.parent == BGM else str(BGM))
+        rep = build_track(wav, args.bitrate, args.dry_run, args.mode, out_dir, args.vbr_q)
         reports.append(rep)
         if not args.json:
             print(f"  {rep['track']:<14} {rep['mode']:<4} {rep['before_bytes']:>9,}B -> {rep['after_bytes']:>8,}B  "
