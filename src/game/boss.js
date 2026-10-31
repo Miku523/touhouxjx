@@ -44,6 +44,7 @@ const EX_TINT = {
   remilia: [
     [0, 0, 0],        // 咒诅「弗拉德·特佩斯」：纯猩红
     [8, 5, 0],        // 天罚「大卫之星」：略偏洋红、更亮
+    [-6, 6, 0.04],    // 红符「不夜城红」：更亮更饱和的「永远鲜红」（2026-11-01 第十五轮新增卡）
   ],
   flandre: [
     [0, 0, 0],        // 蔓越莓陷阱
@@ -206,9 +207,11 @@ function firePattern(p, boss, api, fireT) {
 
   // 速度：招式变体倍率 + 每发小抖动，再夹到难度给出的单发速度上限。
   // 逐卡弹速倍率（如文「风神少女」的加速卡）允许把上限放宽 15%，保证「明显更快」手感。
-  const speedCap = boss.speedCap * ((boss.cardSpeedMul || 1) > 1 ? 1.15 : 1);
+  // 逐卡弹速倍率：speedMul（静态）× speedRamp（按卡进度插值，用于「由快到慢」这类卡）。
+  const cardSpeed = boss._cardSpeedNow ? boss._cardSpeedNow() : (boss.cardSpeedMul || 1);
+  const speedCap = boss.speedCap * (cardSpeed > 1 ? 1.15 : 1);
   const varySpeed = (base, k = 1) =>
-    Math.min(speedCap, Math.max(20, (base || 120) * pat.speedScale * k * (boss.cardSpeedMul || 1) * boss.rnd(0.9, 1.08)));
+    Math.min(speedCap, Math.max(20, (base || 120) * pat.speedScale * k * cardSpeed * boss.rnd(0.9, 1.08)));
   // 瞄准抖动：wild 越高越飘，但上限 0.2 rad（约 11°），不会变成无解散射
   const aimJitter = clamp(0.04 + wild * 0.09, 0.04, 0.2);
   const aim = () => Math.atan2(py - boss.y, px - boss.x) + boss.rnd(-aimJitter, aimJitter);
@@ -747,6 +750,9 @@ function firePattern(p, boss, api, fireT) {
         let accel = 0;
         let homing = 0;
         let hold = 0;
+        // 出生点：默认从枪口出手；紫罗兰改在半空（见下）——「被定住的刀」而不是「悬停延迟弹」
+        let sx = boss.x;
+        let sy = boss.y;
         switch (idx) {
           case 0: sp *= 1.9; break;                        // I   绯红：直冲快刃
           case 1: sp *= 0.55; accel = 150; break;          // II  琥珀：延迟弹（越飞越快）
@@ -754,10 +760,20 @@ function firePattern(p, boss, api, fireT) {
           case 3: sp *= 0.5; lf += 1.6; break;             // IV  翡翠：减速带
           case 4: turn = 1.1 * pat.dir; break;             // V   青：环形散射（原地兜圈）
           case 5: sp *= 2.6; lf = Math.min(lf, 2.4); break; // VI  湛蓝：激光式直刃
-          default: hold = clamp(p.stop || 1.2, 0.6, 2.0); break; // VII 紫罗兰：时停静止弹
+          default:
+            // VII 紫罗兰：时停静止弹。刀不出自枪口，而是直接「停在半空」——
+            // 沿弹道方向外移 96~168px 生成，停帧结束才沿这个方向飞出去，
+            // 观感是场地里被定住的一圈刀，而不是 Boss 手里悬着的延迟弹。
+            hold = clamp(p.stop || 1.2, 0.6, 2.0);
+            {
+              const rad = 96 + boss.rnd(0, 72);
+              sx = boss.x + Math.cos(a) * rad;
+              sy = boss.y + Math.sin(a) * rad;
+            }
+            break;
         }
         b.spawn({
-          x: boss.x, y: boss.y,
+          x: sx, y: sy,
           vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
           color: col, r, type, life: lf, rot: a,
           turn, accel, homing, holdT: hold,
@@ -767,20 +783,37 @@ function firePattern(p, boss, api, fireT) {
   }
 
   if (p.typeName === 'sakuyaStop') {
-    // 时符「Private Square」：把场上所有弹幕定住 freeze 秒，同时凝出一圈紫罗兰静止刃；
-    // 领域一结束，凝滞的刀和补发的刀同一拍一起飞出来（设计稿 §2-2 的「停 → 补」）。
-    const freeze = clamp(p.freeze || 1.2, 0.6, 2.0);
+    // 时符「Private Square」（2026-11-01 第十七轮重做）：
+    //   ① b.freezeAll 不再是「给在场弹写 holdT」，而是把**整个弹池的时钟**抽走——
+    //      停帧期间连新生成的弹也停，解冻后 0.3s 平滑回暖（见 bullets.js 的 freezeT/thawT）；
+    //   ② 紫罗兰静止刃不再从枪口喷出后原地悬停，而是直接摆在场地里的三层刀阵上
+    //      （半径 radius / +gap / +2gap，刀尖朝外），停帧结束整圈同时起飞；
+    //   ③ 停帧里 Boss 自己会短距换位（boss._stopDash）——世界定住了，只有从者还在走。
+    // 弹幕在停帧期不推进，所以这三层刀是「冻结画面里的构型」，解冻那一拍才会动。
+    const freeze = clamp(p.freeze || 1.15, 0.6, 2.0);
     b.freezeAll(freeze);
-    const n = ringN(p.n || 14, 8, 26);
-    for (let i = 0; i < n; i++) {
-      const a = pat.angle + (i / n) * TAU + boss.rnd(-0.01, 0.01);
-      const sp = varySpeed(p.speed || 175);
-      b.spawn({
-        x: boss.x, y: boss.y,
-        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-        color: SAKUYA_KNIFE_COLORS[6], r, type, life, rot: a, holdT: freeze,
-      });
+    const n = ringN(p.n || 12, 8, 26);
+    const shells = clamp(Math.round(p.shells || 3), 1, 3);
+    const rad0 = Math.max(40, p.radius || 78);
+    const gap = Math.max(30, p.gap || 76);
+    for (let s = 0; s < shells; s++) {
+      const rad = rad0 + s * gap;
+      // 外圈更密：越靠外的刀阵弧长越长，保持每把刀之间的缝差不多宽
+      const cnt = Math.max(6, Math.round(n * (0.72 + s * 0.26)));
+      for (let i = 0; i < cnt; i++) {
+        const a = pat.angle + (i / cnt) * TAU + (s * TAU) / (cnt * 2) + boss.rnd(-0.01, 0.01);
+        const sp = varySpeed(p.speed || 175) * (1 - s * 0.06);
+        b.spawn({
+          x: boss.x + Math.cos(a) * rad,
+          y: boss.y + Math.sin(a) * rad,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          color: SAKUYA_KNIFE_COLORS[6], r, type, life, rot: a,
+          // 错开 0~0.08s 解冻：整圈不是同一帧满速弹墙，而是一道向外推开的刀浪
+          holdT: freeze + s * 0.03 + boss.rnd(0, 0.05),
+        });
+      }
     }
+    boss._stopDash(freeze);
   }
 
   if (p.typeName === 'sakuyaParadox') {
@@ -1176,11 +1209,13 @@ export const BOSS_DEFS = {
 
   /**
    * EXTRA 的中途 Boss：雷米莉亚。
-   * 只打两张符卡（第一张高难、第二张中偏高），打完让路，关底仍是芙兰。
-   * 血量按「EX 档 × 2 分钟」估：单张有效约 5000，两张合计约 2 分钟。
+   * 打三张符卡（高难 → 中偏高 → 新增的压轴），打完让路，关底仍是芙兰。
+   * 2026-11-01 第十五轮起限时 52s + 50s + 45s = 147s（原 60 + 60 = 120s，两张卡）。
    */
   remilia: {
-    name: '雷米莉亚·斯卡雷特', title: '永远鲜红的幼月', hp: 4500, accent: '#ff4d6a',
+    // 这里的 hp 只是「调参表没登记时」的兜底总和（= 三张卡兜底 hp 2400 + 2100 + 1800）；
+    // 运行期血量一律取 bossTuning.js 的 BOSS_CARD_TUNING.remilia 逐卡显式 hp × hpAdjust × 终局 1.1681。
+    name: '雷米莉亚·斯卡雷特', title: '永远鲜红的幼月', hp: 6300, accent: '#ff4d6a',
     phases: [
       {
         // 第一张：弹幕密度最高 —— 血枪雨 + 多层螺旋 + 追踪蝙蝠，缝合式压场
@@ -1199,6 +1234,19 @@ export const BOSS_DEFS = {
           { typeName: 'ring', n: 26, speed: 145, color: '#ffd0e0', rate: 0.95, r: 6, rings: 2, spinAngle: 0.35, weight: 0.9 },
           { typeName: 'spiral', arms: 4, speed: 165, color: '#ff4d6a', rate: 0.1, spin: -3.2, r: 5, type: 3, weight: 0.85 },
           { typeName: 'arc', n: 4, arcs: 4, gap: 0.45, speed: 205, rate: 0.62, color: '#ff8fa8', r: 5, turn: 1.2, weight: 0.9 },
+        ],
+      },
+      {
+        // 第三张（2026-11-01 第十五轮新增，用户口述「另加1个符卡，比（1）（2）稍难」）：
+        // 不夜城的血月城墙 —— 八方向血枪齐射 + 八臂血枪螺旋 + 双层环弹 + 血激光 + 追踪扇 + 收拢笼。
+        // 六招轮转，逐招 rate 都比 #1 低一档（更密），档 5；限时 45s，血量在 bossTuning 显式给。
+        name: '红符「不夜城红」', hp: 1800, patterns: [
+          { typeName: 'cross', n: 5, dirs: 8, spread: 0.38, speed: 220, color: '#ff8fa8', rate: 0.62, r: 5 },
+          { typeName: 'spiral', arms: 8, speed: 190, color: '#ff4d6a', rate: 0.05, spin: 4.4, r: 5, type: 3, weight: 0.95 },
+          { typeName: 'ring', n: 28, speed: 150, color: '#ffd0e0', rate: 0.85, r: 6, rings: 2, spinAngle: 0.4, weight: 0.9 },
+          { typeName: 'laser', n: 10, speed: 620, color: '#ffd0e0', rate: 0.45, angle: 0 },
+          { typeName: 'aimed', n: 8, spread: 0.3, speed: 380, color: '#ff8fa8', rate: 0.45, r: 4, weight: 0.9 },
+          { typeName: 'cage', n: 22, gaps: 2, radius: 250, speed: 105, rate: 1.3, color: '#ff4d6a', r: 4, weight: 0.85 },
         ],
       },
     ],
@@ -1302,7 +1350,7 @@ export const BOSS_DEFS = {
    *   （0.77 × 45s × dps），这里的 hp 只是「调参表没登记时」的兜底值。
    */
   sakuya: {
-    name: '十六夜咲夜', title: '完美而潇洒的从者', hp: 39670, accent: '#c9d8ff',
+    name: '十六夜咲夜', title: '完美而潇洒的从者', hp: 40859, accent: '#c9d8ff',
     phases: [
       {
         // 第一张：银符「Perfect Maid」
@@ -1316,13 +1364,16 @@ export const BOSS_DEFS = {
         ],
       },
       {
-        // 第二张：时符「Private Square」
-        //   sakuyaStop 把场上所有弹幕真的定住 1.2s（bullets.freezeAll / b.holdT），
-        //   同时凝出一圈紫罗兰静止刃，领域结束一起飞出来；
-        //   灰色球形领域用 cage 围出球面，慢速七色环是「停住的那一层」。
+        // 第二张：时符「Private Square」（2026-11-01 第十七轮重做）
+        //   sakuyaStop 把**整个弹池**真的定住 1.15s（bullets.freezeAll → freezeT 全局时钟），
+        //   停帧期弹幕全停、Boss 只滑步不开火；紫罗兰静止刃直接摆在三层刀阵上
+        //   （radius 78 / +76 / +152），解冻后错拍 0~0.08s 向外推开。
+        //   rate 2.0 → 2.6：停帧从「只停在场弹」变成「整屏定格」之后单次分量重得多，所以把间隔略拉长——
+        //   旧版约 6 次/张（1.2s×6 ≈ 占 16%），新版实测 4–6 次/张（1.15s，占 10–15%，6 局均值 4.2 次）、
+        //   每次都是重拍而不是常态；停帧里靠三层刀阵 + 表盘领域给信息，解冻再补一手银扇。
         name: '时符「Private Square」', hp: 2350, patterns: [
-          { typeName: 'sakuyaStop', n: 14, speed: 175, freeze: 1.2, rate: 2.0, r: 7, type: B_KNIFE },
-          { typeName: 'sakuyaSeven', n: 12, speed: 118, rate: 1.6, r: 7, type: B_KNIFE, turn: 0.14, rings: 1, stop: 1.2, weight: 0.95 },
+          { typeName: 'sakuyaStop', n: 12, speed: 175, freeze: 1.15, rate: 2.6, shells: 3, radius: 78, gap: 76, r: 7, type: B_KNIFE },
+          { typeName: 'sakuyaSeven', n: 12, speed: 118, rate: 1.6, r: 7, type: B_KNIFE, turn: 0.14, rings: 1, stop: 1.15, weight: 0.95 },
           { typeName: 'cage', n: 22, gaps: 2, radius: 250, speed: 92, rate: 1.9, color: '#4c7bff', r: 4, type: B_KNIFE, weight: 0.85 },
           { typeName: 'ring', n: 18, speed: 96, color: '#a86bff', rate: 1.5, r: 7, type: B_KNIFE, rings: 2, spinAngle: 0.4, weight: 0.8 },
         ],
@@ -1436,6 +1487,14 @@ export class Boss {
         const tm = tierMultipliers(t.tier);
         ph.densityMul = (Number(t.densityMul) > 0 ? Number(t.densityMul) : 1) * tm.density;
         ph.speedMul = (Number(t.speedMul) > 0 ? Number(t.speedMul) : 1) * tm.speed;
+        // 逐卡开火频率倍率（2026-11-01 第十五轮新增 rateMul，默认 1）：
+        // >1 = 开火更密（间隔 ÷ rateMul），只动频率、不动弹数与弹速，方便和 hpAdjust 分开调。
+        ph.rateMul = Number(t.rateMul) > 0 ? Number(t.rateMul) : 1;
+        // 逐卡弹速斜坡（2026-11-01 第十六轮新增 speedRamp，默认 null）：
+        // [起速, 终速] 是相对 cardSpeedMul 的乘数，按 cardElapsed / cardLimit 线性插值
+        // （「弹速由快到慢」= [1.3, 0.85]）；只在开火时读取，新弹一批比一批慢。
+        const ramp = Array.isArray(t.speedRamp) ? t.speedRamp.map(Number) : null;
+        ph.speedRamp = ramp && ramp.length === 2 && ramp.every((v) => Number.isFinite(v) && v > 0) ? ramp : null;
         ph.tier = Number(t.tier) || 3;
         // 弹幕：优先用创造模式的逐卡设计，否则保留 BOSS_DEFS 原表
         if (Array.isArray(t.patterns) && t.patterns.length) {
@@ -1543,6 +1602,8 @@ export class Boss {
     this.cardEffect = null;      // 玩家效果 key（cardEffects.js）
     this.cardAccent = def.accent;
     this.cardSpeedMul = 1;
+    this.cardSpeedRamp = null;   // 逐卡弹速斜坡（speedRamp）：_cardSpeedNow() 按卡进度插值
+    this.cardRateMul = 1;        // 逐卡开火频率倍率（rateMul）：_rollRate 里除以它
     this.lastCardResult = null;  // 最近一张卡的结算快照（验收 / 调试可读）
     this._cardResultCb = null;
     // 延迟弹幕队列：meteor / mine 这类「先飞、再爆/分裂」的招用它排队。
@@ -1563,6 +1624,8 @@ export class Boss {
     this.dead = false;
     this.drift = 0;
     this.volleys = 0;
+    // 全局时停（时符「Private Square」）的上一帧状态：用来在进入 / 解冻各打一拍特效与补弹
+    this._frozenPrev = false;
 
     /* ---------- 平台关近战系统（STG 关不启用） ----------
      * 非 STG 的 Boss 战原本只有「站桩开枪 + 冲刺撞一下」，平台操作在 Boss 战里
@@ -1968,6 +2031,8 @@ export class Boss {
     this.cardEffect = ph.effect || null;
     this.cardAccent = ph.accent || this.def.accent;
     this.cardSpeedMul = Number(ph.speedMul) > 0 ? Number(ph.speedMul) : 1;
+    this.cardSpeedRamp = Array.isArray(ph.speedRamp) ? ph.speedRamp : null;
+    this.cardRateMul = Number(ph.rateMul) > 0 ? Number(ph.rateMul) : 1;
     // 逐卡弹量倍率：只乘弹数（nScale / armScale），不碰弹速
     this.density = this._baseDensity * (Number(ph.densityMul) > 0 ? Number(ph.densityMul) : 1);
     if (ph.name) {
@@ -1977,6 +2042,18 @@ export class Boss {
     this.spellMaxHp = Math.max(1, Number(ph.hp) || this.spellMaxHp || 100);
     this.spellHp = this.spellMaxHp;
     this.cardRatio = 1;
+  }
+
+  /**
+   * 当前生效的逐卡弹速倍率：cardSpeedMul 为基，speedRamp 存在时按本卡进度线性插值。
+   * 只在开火时读取（新弹取当时的速度），所以观感是「整张卡的弹一批比一批慢」。
+   */
+  _cardSpeedNow() {
+    const base = this.cardSpeedMul || 1;
+    const ramp = this.cardSpeedRamp;
+    if (!ramp || !(this.cardLimit > 0)) return base;
+    const t = clamp(this.cardElapsed / this.cardLimit, 0, 1);
+    return base * (ramp[0] + (ramp[1] - ramp[0]) * t);
   }
 
   /** 每帧推进卡计时；生存卡到点即置 spellBroken，走统一切卡流程（= 玩家坚持成功） */
@@ -2048,7 +2125,8 @@ export class Boss {
 
   _rollRate(p) {
     const base = p.rate || 1;
-    return clamp(base * this._pat.rateScale * this.rnd(0.9, 1.1), 0.045, 12);
+    // rateMul > 1 时把开火间隔压小（更密）；夹紧区间与旧版一致，避免极值下刷屏。
+    return clamp(base * this._pat.rateScale * this.rnd(0.9, 1.1) / (this.cardRateMul || 1), 0.045, 12);
   }
 
   /** 随机换下一招：按 weight 抽，且不会连续抽到同一招 */
@@ -2129,6 +2207,25 @@ export class Boss {
       if (this._moveWait <= 0) this._pickMoveTarget(fx);
     }
     this._clampPhantom();
+  }
+
+  /**
+   * 时停里的短距换位（时符「Private Square」）：世界被定住，只有从者还在走。
+   * 复用 _move 通道，dur 取停帧的一半，所以解冻那一刻 Boss 已经不在原来的位置，
+   * 停住的刀阵留在原地——「刚才站的位置现在空了」。
+   * @param {number} sec 停帧总时长
+   */
+  _stopDash(sec) {
+    const mv = this._move;
+    const rx = 120;
+    const ry = 44;
+    mv.sx = this.x;
+    mv.sy = this.y;
+    mv.t = 0;
+    mv.tx = clamp(this.homeX + this.rnd(-rx, rx), this.homeX - rx - 20, this.homeX + rx + 20);
+    mv.ty = clamp(this.homeY + this.rnd(-ry, ry), this.homeY - ry - 10, this.homeY + ry + 10);
+    mv.dur = Math.max(0.2, sec * 0.55);
+    mv.dashing = false;
   }
 
   /* ---------------- 计划外变招 ---------------- */
@@ -2410,6 +2507,44 @@ export class Boss {
 
     // 随机移动（替代原来的正弦漂浮）
     this._updateMovement(dt, fx);
+
+    /* ---------- 全局时停：时符「Private Square」 ----------
+     * bullets.freezeAll 把整个弹池的时钟抽走，但咲夜自己在停帧里仍在走，所以这里：
+     *   进入帧：白闪 + 冷紫/冰蓝双环（时间被捏住的那一下）；
+     *   停帧期：不开火、不推延迟弹、不变招，只保留移动（BOSS 会滑到别处，刀阵留在原地）；
+     *   解冻帧：冰裂环 + 补一手五连银扇，把「时间恢复」变成必须读的一拍。
+     * 停帧倒计时在 bullets.update 里推进，这里只读 freezeT 做门控与观感。
+     */
+    const frozenNow = !!(bullets && bullets.freezeT > 0);
+    if (frozenNow !== this._frozenPrev) {
+      this._frozenPrev = frozenNow;
+      const fy = this.y - 70;
+      if (frozenNow) {
+        fx?.flash(this.x, fy, '#cfe4ff', 42);
+        fx?.shockwave(this.x, fy, '#a86bff', 16, 980, 0.55);
+        fx?.shockwave(this.x, fy, '#cfe4ff', 10, 640, 0.4);
+      } else {
+        fx?.burst(this.x, fy, '#cfe4ff', 14, 300);
+        fx?.shockwave(this.x, fy, '#cfe4ff', 26, 860, 0.46);
+        fx?.shockwave(this.x, fy, '#a86bff', 12, 520, 0.38);
+        if (bullets) {
+          const pcx = this._playerCenter(player);
+          const aimA = Math.atan2(pcx.y - this.y, pcx.x - this.x);
+          bullets.skinMap = skinMapper(this.key, this.spellIdx);
+          try {
+            bullets.fan(this.x, this.y, 5, 0.42, aimA, 320, {
+              color: '#eef2ff', r: 7, type: B_KNIFE, life: 6, rot: aimA,
+            });
+          } finally {
+            bullets.skinMap = null;
+          }
+        }
+      }
+    }
+    if (frozenNow) {
+      this.fireT = 0;   // 停帧期不攒开火条：解冻后从零开始，不会一解冻就同时甩出三招
+      return;
+    }
 
     // 延迟弹幕（meteor / mine 的壳弹到点爆裂）：每帧推进一次，和主开火共用同一帧时钟
     if (this._laterQ.length) {

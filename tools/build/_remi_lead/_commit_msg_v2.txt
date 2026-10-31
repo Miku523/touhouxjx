@@ -1,0 +1,12 @@
+feat(extra): 《红月王座编》第二版（44.1kHz 立体声 + 七处补强）+ 版本串 1.6.56
+
+- 作曲 tools/build/_remi_compose.py：圆舞圣咏段补 16 分管风琴分解与定音鼓、
+  B 段主题升八度、终曲 II 末 12 秒整体升半音、尾声压到四小节收在悬置降 E、
+  引子加钟摆与心跳、铜管/管风琴/弦乐叠层；26 轨 8221 音 1024 鼓。
+- 渲染：44.1kHz 立体声母版 26,223,316 B（peak 0.349 / RMS -19.50 dBFS /
+  接缝 0.0009 / L-R 相关 0.69 / 宽度 -7.3 dB / 谱心 913 Hz）。
+  母版 25.01 MiB 超 Cloudflare Pages 单文件 25 MiB 上限，只入库 MP3。
+- MP3：tools/optimize_audio_mp3.py 支持 MPEG-1 立体声（spf=1152、padding 补
+  spf-delay 的差），编出 3,182,409 B / 171 kbps gapless，浏览器 4 首 65 pass。
+- 接入：ex_mid.audio → remilia_septette.mp3?v=1.6.56；musicTracks/i18n 三语、
+  README、docs/NETWORK_CN 同步；版本串 1.6.55 → 1.6.56。

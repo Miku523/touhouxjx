@@ -10,6 +10,7 @@ from matplotlib import font_manager
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, '..', '..', '..', 'tools', 'build', '_rumia_kit', 'youma_stage1_stereo.wav')
 SEC = json.load(open(os.path.join(HERE, 'secs.json'), encoding='utf-8'))
+SEC.setdefault('_dur', 103.748)
 
 with wave.open(SRC) as w:
     sr = w.getframerate(); n = w.getnframes(); nch = w.getnchannels()
@@ -51,7 +52,7 @@ ax3.set_ylim(-46, -4); ax3.legend(loc='lower right', fontsize=8); ax3.set_xlabel
 
 label = {'intro': '引子\n八音盒·心跳', 'organ': '原曲 I\n风琴前奏', 'vibes': '铁琴\n过门',
          'theme': '主题\n长笛首现', 'theme2': '主题 II\n钢琴对句', 'bridge': '黑暗桥段\n声音被吃掉',
-         'var1': '主题变奏\n八音盒高八度', 'var2': '变奏推进\n全奏', 'coda': '尾声\n回八音盒'}
+         'var1': '主题变奏\n八音盒高八度', 'var2': '变奏 II\n呼吸 / 全奏', 'coda': '尾声\n回八音盒'}
 for k, v in SEC.items():
     if k.startswith('_') or not isinstance(v, (list, tuple)):
         continue
@@ -63,16 +64,16 @@ for k, v in SEC.items():
     ax.text((a0 + a1) / 2, -6.2, label.get(k, k), ha='center', va='bottom', fontsize=8.2, color='#222')
 for axi in (ax, ax2, ax3):
     axi.set_xlim(0, SEC['_dur'])
-fig.suptitle('《妖魔夜行（宵暗夜路编）》 112.998s · 146→144BPM · 降 E 小调 —— 波形 / 声谱 / 频段能量', fontsize=12.5)
+fig.suptitle('《妖魔夜行（宵暗夜路编）》 103.748s · 146BPM · 降 E 小调 —— 波形 / 声谱 / 频段能量', fontsize=12.5)
 out = os.path.join(HERE, 'audition.png')
 fig.savefig(out, bbox_inches='tight')
 print('wrote', out)
 
 # ---- 切片 ----
 CLIPS = [
-    ('01_引子八音盒', 0.0), ('02_风琴前奏', 11.0), ('03_铁琴过门', 24.3), ('04_主题首现', 37.25),
-    ('05_主题对句', 46.85), ('06_吉他切分', 55.2), ('07_黑暗桥段', 64.8), ('08_主题变奏', 74.8),
-    ('09_变奏推进', 84.4), ('10_尾声回八音盒', 102.2),
+    ('01_引子八音盒', 0.0), ('02_风琴前奏', 6.0), ('03_铁琴过门', 19.3), ('04_主题首现', 32.25),
+    ('05_主题对句', 45.0), ('06_吉他切分', 52.0), ('07_黑暗桥段', 59.8), ('08_主题变奏', 69.8),
+    ('09_变奏II呼吸', 83.55), ('10_尾声回八音盒', 97.2),
 ]
 cdir = os.path.join(HERE, 'clips')
 os.makedirs(cdir, exist_ok=True)

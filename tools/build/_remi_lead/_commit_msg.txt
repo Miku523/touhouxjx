@@ -1,0 +1,24 @@
+feat(extra): EXTRA 中段曲重制《献给已逝王女的七重奏（红月王座编）》 + 版本串 1.6.55
+
+把 EX 关雷米莉亚拦路战（ex_mid）从旧版 137s 合成改编换成 ZUN 原曲 MIDI 逐音搬入的重新配器版，
+路线与 EXTRA 终盘《恶魔之妹》v7 一致：不写新旋律，全部音高来自原曲，改的只有配器、鼓组与动态。
+
+- 网格修正：原 MIDI 全部 note-on 落在 tick%480==440，真实小节线 = 文件小节线 + 440；
+  MUSIC0=2360 为原曲第 1 小节起点，改用 midi2js.tick_to_sec 精确换算出变拍点，
+  原曲 b1-81 落到新 b5-85，新写引子 1-4 与尾声 86-89，总长 148.658s（旧 137.081s）。
+- 配器：22 轨 7248 音 991 鼓。ch3+ch10 双小号八度叠为主旋律（brass + strings 同度 + counter 低八度），
+  ch4 弦乐、ch5 尼龙吉他分解、ch6/ch7 fiddle+小号2、ch11 失真吉他、ch12 高音弦乐、ch13 钢琴左手、
+  ch14 教堂管风琴、ch9 打击乐按 GM 映射到 10 种鼓（含 sidestick 进行曲层）。
+- 新写部分：引子和弦床（Ebm/B/Db）、管风琴 16' 踏板、终曲 69-85 每小节持续音与高八度加倍，
+  钟声只敲主音八度（去掉会与旋律撞小二度的 F），段首吊镲从 11 减到 5。
+- 渲染（tools/build/_exsr_render.py）：WAV 6,555,862 B / 148.658s / 22050 单声道 PCM16 /
+  peak 0.485 / RMS -19.50 / 0 削顶 / 接缝 0.0004（滑差 1.7% 分位）/ 谱心 858 Hz；
+  段增益 引子 +4dB、终曲 +0.8/+1.0dB，终曲段 -16.9dB 为全曲最响。
+- 分轨复核：终曲主旋律比鼓高 0.9-1.7dB，A 段 -23.0dB 与鼓 -25.0dB，lead 不再被埋。
+- MP3：1,668,508 B / VBR 89.79 kbps（tools/optimize_audio_mp3.py --only remilia_septette --force）。
+- 接入：songs/index.js DEFS 由 septette_ex 换成 remilia_septette（ex_mid.audio 挂带 ?v= 的 MP3，
+  失败回退合成数据）；musicTracks NO.15 改题名/时间 148.7/新解说；i18n 三语补 note；
+  README 音乐章节、docs/NETWORK_CN 资产表、AUDIT_CURRENT 曲表同步。
+- 版本串 1.6.54 → 1.6.55（index.html 14 处、platform.js 2 处、sw.js 2 处）。
+
+旧版 src/engine/songs/septette_ex.js 留档不再加载。

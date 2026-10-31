@@ -31,7 +31,8 @@ try {
     const ord = (a, b) => Math.max(a, b) / Math.max(1e-9, Math.min(a, b));
     chk(ord(sw.rmsFirst128, sm.rmsFirst128) < 2, tag + ' 首窗 RMS 同量级', sw.rmsFirst128 + ' / ' + sm.rmsFirst128);
     chk(ord(sw.rmsLast128, sm.rmsLast128) < 2, tag + ' 末窗 RMS 同量级', sw.rmsLast128 + ' / ' + sm.rmsLast128);
-    chk(ord(sw.seamJump, sm.seamJump) < 2, tag + ' 接缝跳变(wav vs mp3) 同量级', sw.seamJump + ' / ' + sm.seamJump);
+    // 绝对阈值豁免：两侧都 < 1e-3（约 -60 dBFS，耳不可闻）时视为等价，避免 WAV 边界被淡入淡出抹平后比值无意义
+    chk((sw.seamJump < 1e-3 && sm.seamJump < 1e-3) || ord(sw.seamJump, sm.seamJump) < 2, tag + ' 接缝跳变(wav vs mp3) 同量级', sw.seamJump + ' / ' + sm.seamJump);
     // 无缝的真正判据：接缝处「末样本→首样本」的跳变不比正常相邻跳变大，说明没有咔哒
     chk(sm.seamJump <= sm.meanJump * 1.5, tag + ' 接缝跳变 <= 平均相邻跳变x1.5', sm.seamJump + ' / mean ' + sm.meanJump);
     chk(ord(sw.rmsAll, sm.rmsAll) < 1.1, tag + ' 整体 RMS 无异常增益差', sw.rmsAll + ' / ' + sm.rmsAll);
@@ -39,9 +40,9 @@ try {
     // 循环接缝（AudioBufferSourceNode.loop=true 真实渲染，边界前后 ±512 采样）
     const nw = t.loop.wav.near, nm = t.loop.mp3.near;
     chk(ord(nw.rms, nm.rms) < 2, tag + ' 循环边界附近 RMS 同量级', nw.rms + ' / ' + nm.rms);
-    chk(ord(nw.edgeJump, nm.edgeJump) < 2, tag + ' 循环边界跳变同量级', nw.edgeJump + ' / ' + nm.edgeJump);
+    chk((nw.edgeJump < 1e-3 && nm.edgeJump < 1e-3) || ord(nw.edgeJump, nm.edgeJump) < 2, tag + ' 循环边界跳变同量级', nw.edgeJump + ' / ' + nm.edgeJump);
     // 注意：接缝跳变是「源素材」在循环点的固有跳变（WAV 同样存在），MP3 只要不比 WAV 更大即可
-    chk(nm.edgeJump <= nw.edgeJump * 1.5, tag + ' 循环边界跳变不比 WAV 更大', nm.edgeJump + ' <= ' + (nw.edgeJump * 1.5).toFixed(6));
+    chk((nw.edgeJump < 1e-3 && nm.edgeJump < 1e-3) || nm.edgeJump <= nw.edgeJump * 1.5, tag + ' 循环边界跳变不比 WAV 更大', nm.edgeJump + ' <= ' + (nw.edgeJump * 1.5).toFixed(6));
     chk(t.loop.snrVsWav >= 12, tag + ' 循环渲染 vs WAV 循环渲染 SNR >= 12dB', t.loop.snrVsWav);
     chk(t.alignNative.lag === 0 || Math.abs(t.alignNative.lag) <= 1, tag + ' 与 WAV 对齐 lag<=1', t.alignNative.lag);
     chk(t.alignNative.snrDb >= 12, tag + ' SNR >= 12dB（96k 级 MP3 预期 15~25）', t.alignNative.snrDb);

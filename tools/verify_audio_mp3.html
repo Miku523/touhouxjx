@@ -11,14 +11,23 @@
  */
 window.runVerify = async function runVerify() {
   const BASE = '/src/assets/bgm/';
-  const TRACKS = ['sakuya_ex', 'flandre_devil', 'festival_box', 'remilia_septette', 'youma_stage1'];
+  const TRACKS = ['sakuya_ex', 'flandre_devil', 'festival_box', 'remilia_septette', 'youma_stage1', 'wriggle_stage2', 'cirno_stage3', 'aya_stage4'];
   const log = (s) => { const el = document.getElementById('out'); if (el) el.textContent += '\n' + s; };
 
-  const get = async (name) => {
-    const r = await fetch(BASE + name, { cache: 'no-store' });
-    const ab = await r.arrayBuffer();
-    return { status: r.status, ok: r.ok, ct: r.headers.get('content-type'), bytes: ab.byteLength, ab };
+  // 有些曲子的母版 WAV 不入库（超 Cloudflare 单文件上限），直接从 tools/build 下的 kit 读
+  const MASTER = {
+    remilia_septette: '/tools/build/_remi_kit/remilia_septette_stereo.wav',
+    youma_stage1: '/tools/build/_rumia_kit/youma_stage1_stereo.wav',
+    wriggle_stage2: '/tools/build/_wrig_kit/wriggle_stage2_stereo.wav',
+    cirno_stage3: '/tools/build/_cirno_kit/cirno_stage3_stereo.wav',
+    aya_stage4: '/tools/build/_aya_kit/aya_stage4_stereo.wav',
   };
+  const getUrl = async (url) => {
+    const r = await fetch(url, { cache: 'no-store' });
+    const ab = await r.arrayBuffer();
+    return { status: r.status, ok: r.ok, ct: r.headers.get('content-type'), bytes: ab.byteLength, ab, url };
+  };
+  const get = async (name) => getUrl(BASE + name);
   const dec = async (ctx, buf) => {
     const t0 = performance.now();
     const b = await ctx.decodeAudioData(buf.ab.slice(0));
@@ -127,7 +136,7 @@ window.runVerify = async function runVerify() {
 
   for (const name of TRACKS) {
     const rec = { name };
-    const wav = await get(name + '.wav');
+    const wav = await getUrl(MASTER[name] || (BASE + name + '.wav'));
     const mp3 = await get(name + '.mp3');
     rec.wav = { status: wav.status, ct: wav.ct, bytes: wav.bytes };
     rec.mp3 = { status: mp3.status, ct: mp3.ct, bytes: mp3.bytes, ratio: +(mp3.bytes / wav.bytes).toFixed(4) };

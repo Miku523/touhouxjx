@@ -52,11 +52,14 @@ ROOT = Path(__file__).resolve().parents[1]
 BGM = ROOT / "src" / "assets" / "bgm"
 
 # 目标曲目（离线渲染产物，原 WAV 一律保留）
-TRACKS = ("sakuya_ex", "flandre_devil", "festival_box", "remilia_septette", "youma_stage1")
+TRACKS = ("sakuya_ex", "flandre_devil", "festival_box", "remilia_septette", "youma_stage1", "wriggle_stage2", "cirno_stage3", "aya_stage4")
 
 # 母版不在 src/assets/bgm 的曲目（体积超过 Cloudflare Pages 单文件 25 MiB 上限，只发 MP3）
 MASTERS = {"remilia_septette": ROOT / "tools" / "build" / "_remi_kit" / "remilia_septette_stereo.wav",
-           "youma_stage1": ROOT / "tools" / "build" / "_rumia_kit" / "youma_stage1_stereo.wav"}
+           "youma_stage1": ROOT / "tools" / "build" / "_rumia_kit" / "youma_stage1_stereo.wav",
+           "wriggle_stage2": ROOT / "tools" / "build" / "_wrig_kit" / "wriggle_stage2_stereo.wav",
+           "cirno_stage3": ROOT / "tools" / "build" / "_cirno_kit" / "cirno_stage3_stereo.wav",
+           "aya_stage4": ROOT / "tools" / "build" / "_aya_kit" / "aya_stage4_stereo.wav"}
 
 SR = 22050          # 离线渲染采样率（WAV 侧，MP3 不做重采样）
 SPF = 576           # MPEG-1/2 Layer III 每帧采样数
@@ -207,7 +210,7 @@ def build_info_frame(n_frames: int, total_bytes: int, delay: int, padding: int,
     L[15:17] = b"\x00" * 2       # radio replay gain
     L[17:19] = b"\x00" * 2       # audiophile replay gain
     L[19] = 0                    # encoding flags + ATH type（同一个字节！）
-    L[20] = bitrate              # 标称码率（kbps）
+    L[20] = min(bitrate, 255)  # LAME tag byte: 0-255 kbps, 255 = 255+              # 标称码率（kbps）
     # 关键：encoder delay / padding 在 "LAME" 起始 +21，3 字节 12bit+12bit
     L[21:24] = struct.pack(">I", (delay << 12) | padding)[1:]
     L[24] = 0                    # misc

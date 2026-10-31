@@ -23,8 +23,12 @@
  *           survival 卡不承伤、不参与血量反推 → null。
  * - hp      可选：直接钉死该卡基础血量，优先于 limit × dps × CARD_HP_ANCHOR（EXTRA 12 张里的击破 / 双条件卡走这条）。
  * - hpAdjust 可选：该卡专属血量微调倍率（默认 1），乘在 limit × dps × CARD_HP_ANCHOR（或显式 hp）之后、
- *           finalHpMulFor(key) 之前；只用于 1% 以内的单卡微调，不动限时 / dps 标定。
+ *           finalHpMulFor(key) 之前；用于单卡小幅微调（1%~8% 量级：逐卡加厚 / 减薄），不动限时 / dps 标定。
+ * - rateMul 可选：该卡专属「开火频率」倍率（默认 1，>1 = 弹幕频率提高、每发间隔 ÷ rateMul），
+ *           在 Boss._rollRate 里乘到间隔上；只调频率，不动弹数 / 弹速 / 限时 / 血量。
  * - densityMul / speedMul  该卡自身的基础密度 / 弹速倍率（默认 1），会与 tier 相乘。
+ * - speedRamp 可选：该卡专属弹速斜坡 [起速, 终速]（默认 null），是相对 speedMul 的乘数，
+ *           在 Boss._cardSpeedNow() 里按 cardElapsed / cardLimit 线性插值；「弹速由快到慢」= [1.30, 0.85]。
  * - name    与 src/game/boss.js 里 BOSS_DEFS[key].phases[i].name 完全一致，仅供数据校验 / 调试；
  *           运行期卡名仍以 BOSS_DEFS 为准。
  * - note    人类可读备注（非运行期字段）。
@@ -42,6 +46,22 @@
  *    （2026-10-25 下午用户再要求「都下调一些血量，中下程度」：锚点 0.72 → 0.655，妖梦 3 张再降 10%。）
  *  - EXTRA：11 张击破 / 双条件卡显式 hp = round(CARD_EX_SHARE × limit × 实测dps)，CARD_EX_SHARE = 0.77 = 0.655 × 1.18。
 
+ * 2026-11-01 第十五轮（用户口述，EXTRA 面难度 / 血量）：
+ *  - 咲夜初战（第 1/2 卡）整体 +3%（hpAdjust 1.03）→ 终局 9,911 / 10,114，初战 19,442 → 20,025；
+ *  - 咲夜后半场（第 3/4 卡）整体 +3%（hpAdjust 1.03）且每卡限时 45→30s（合计 −30s）→
+ *    终局 10,316 / 10,518，后半场 20,228 → 20,834（+3.00%）；初战后半场合计 40,859（+3.02%）。
+ *  - 蕾米莉亚 #1 +3.5% 且限时 60→52s、#2 +5% 且限时 60→50s，#1/#2 开火频率 ×1.1（新增 rateMul）；
+ *  - 蕾米莉亚新增第 3 张卡「红符「不夜城红」」（45s / tier 5 / 显式 hp 8,663 → 终局 10,119），
+ *    三卡 21,843 → 32,873（+50.5%，其中 +1 张卡本身占大头）。
+ *
+ * 2026-11-01 第十六轮（用户口述，芙兰 10 卡）：
+ *  - 血量：#1 +6.6%、#2 +3%、#5 +5%、#6 +3%、#7 +8%、#8 +1%（hpAdjust），#3/#4/#9/#10 不动；
+ *  - 限时：#3 60→50s（其余不动，芙兰 595 → 585s）；
+ *  - 弹幕：#2/#4 增弹频弹速 + 略增密度，#5 增弹速，#6 弹速↓弹频↑（密度不变），
+ *    #7 弹速由快到慢（新增 speedRamp [1.30, 0.85]）+ 弹频稍增（密度不变），
+ *    #8 弹频↑，#9 弹频↑弹密↑；全部走逐卡 rateMul / speedMul / densityMul，不碰 BOSS_DEFS。
+ *  - 芙兰伤害卡合计 112,816 → 116,041；全表 48 张 / 2699 → 2689s / 血量 449,764 → 452,989。
+ *
  * 暂不写入的可选字段：patterns（覆盖该卡 pattern 数组）。
  */
 
@@ -432,19 +452,36 @@ export const BOSS_CARD_TUNING = {
   // = round(CARD_EX_SHARE × limit × 三挡实测dps)，CARD_EX_SHARE = 0.77 = 主线 0.655 × 1.18。
   // 2026-10-25 下午整体下调：11 张 hp 一并 ×(0.77/0.85) ≈ ×0.906。
   // 下面的 dps = 当前构建三挡火力（Lv3）实测有效 DPS（8 seeds 中位），供复算 / 对照。
+  //
+  // 2026-11-01 第十五轮（用户口述「蕾米（1）+3.5%，-8s。（2）+5%，-10s」「另加1个符卡，
+  // 比（1）（2）稍难」「（1）（2）弹幕频率增加」）：
+  //   #1 limit 60→52、hpAdjust 1.035、rateMul 1.1 → 终局 11,957 → 12,375（+3.50%）；
+  //   #2 limit 60→50、hpAdjust 1.05、rateMul 1.1 → 终局 9,886 → 10,379（+4.99%）；
+  //   #3 新增「红符「不夜城红」」limit 45 / tier 5 / 显式 hp = round(0.77 × 45 × 250) = 8,663
+  //      → 终局 10,119（弹幕比前两卡更密，用户要求「稍难」）。
+  //   三卡合计 21,843 → 32,873；限时合计 120 → 147s。stage.js 的 EXTRA_CHAIN 同步把
+  //   remilia 场的 cardCount 从 2 改成 3。
   remilia: {
     cards: [
       {
         name: '咒诅「弗拉德·特佩斯」',
-        note: 'EXTRA #1（中途）；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 13601（10-seed 实测时的血量）× 42.0 / 中位耗时 58.45s',
-        limit: 60, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
+        note: 'EXTRA #1（中途）；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 13601（10-seed 实测时的血量）× 42.0 / 中位耗时 58.45s；2026-11-01 第十五轮：+3.5%（hpAdjust 1.035）、限时 60→52s、开火频率 ×1.1（rateMul 1.1）→ 终局 12,375',
+        limit: 52, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: 246.3, hp: 10236,
+        hpAdjust: 1.035, rateMul: 1.1,
       },
       {
         name: '天罚「大卫之星」',
-        note: 'EXTRA #2（中途）；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 6105（10-seed 实测时的血量）× 42.0 / 中位耗时 20.95s',
-        limit: 60, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
+        note: 'EXTRA #2（中途）；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 6105（10-seed 实测时的血量）× 42.0 / 中位耗时 20.95s；2026-11-01 第十五轮：+5%（hpAdjust 1.05）、限时 60→50s、开火频率 ×1.1（rateMul 1.1）→ 终局 10,379',
+        limit: 50, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: 216.3, hp: 8463,
+        hpAdjust: 1.05, rateMul: 1.1,
+      },
+      {
+        name: '红符「不夜城红」',
+        note: 'EXTRA #3（中途压轴，2026-11-01 第十五轮新增；用户口述「另加1个符卡，比（1）（2）稍难」）：八方向血枪齐射 + 八臂血枪螺旋 + 环弹 + 血激光 + 追踪扇 + 收拢笼，六招轮转、rates 低于 #1，档 5；限时 45s，dps 250 为邻居卡估算（待实测回填）→ hp = round(0.77 × 45 × 250) = 8,663 → 终局 ×1.1681 = 10,119',
+        limit: 45, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
+        effect: 'none', dps: 250, hp: 8663,
       },
     ],
   },
@@ -454,57 +491,65 @@ export const BOSS_CARD_TUNING = {
     cards: [
       {
         name: '禁忌「蔓越莓陷阱」',
-        note: 'EXTRA #1；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 9741（10-seed 实测时的血量）× 42.0 / 中位耗时 40.73s',
+        note: 'EXTRA #1；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 9741（10-seed 实测时的血量）× 42.0 / 中位耗时 40.73s。2026-11-01 第十六轮：用户口述「（1）+6.6%」→ hpAdjust 1.066，终局 13,120 → 13,986（+6.60%）；本卡不动弹幕。',
         limit: 60, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: 241.9, hp: 10922,
+        hpAdjust: 1.066,
       },
       {
         name: '禁忌「雷瓦汀」',
-        note: 'EXTRA #2；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 17164（10-seed 实测时的血量）× 42.0 / 中位耗时 56.88s',
+        note: 'EXTRA #2；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 17164（10-seed 实测时的血量）× 42.0 / 中位耗时 56.88s。2026-11-01 第十六轮：用户口述「（2）+3%，增弹频弹速，略微稍稍增点弹幕密度」→ hpAdjust 1.03（终局 17,255 → 17,773）、rateMul 1.12 / speedMul 1.10 / densityMul 1.06。',
         limit: 60, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: 315.4, hp: 14365,
+        hpAdjust: 1.03, rateMul: 1.12, speedMul: 1.10, densityMul: 1.06,
       },
       {
         name: '禁忌「四重存在」',
-        note: 'EXTRA #3；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 9384（10-seed 实测时的血量）× 42.0 / 中位耗时 38.22s',
-        limit: 60, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
+        note: 'EXTRA #3；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 9384（10-seed 实测时的血量）× 42.0 / 中位耗时 38.22s。2026-11-01 第十六轮：用户口述「（3）-10s」→ 限时 60→50s，血量与弹幕都不动（终局仍 12,890）。',
+        limit: 50, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: 218.6, hp: 10731,
       },
       {
         name: '秘弹「然后就一个人都不剩了？」',
-        note: 'EXTRA #4；用户 2026-10-24 拍定为「存活卡」，坚持 30s 即过关',
+        note: 'EXTRA #4；用户 2026-10-24 拍定为「存活卡」，坚持 30s 即过关。2026-11-01 第十六轮：用户口述「（4）增弹速弹频，略增弹幕密度」→ rateMul 1.12 / speedMul 1.10 / densityMul 1.06（存活卡无血量）。',
         limit: 30, mode: 'survival', tier: 4, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: null,
+        rateMul: 1.12, speedMul: 1.10, densityMul: 1.06,
       },
       {
         name: '禁弹「星弧破碎」',
-        note: 'EXTRA #5；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 38.3s → hp = 8760（10-seed 实测时的血量）× 38.3 / 中位耗时 34.82s',
+        note: 'EXTRA #5；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 38.3s → hp = 8760（10-seed 实测时的血量）× 38.3 / 中位耗时 34.82s。2026-11-01 第十六轮：用户口述「（5）+5%，增弹速」→ hpAdjust 1.05（终局 6,834 → 7,175）、speedMul 1.10。',
         limit: 45, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: 203.1, hp: 5689,
+        hpAdjust: 1.05, speedMul: 1.10,
       },
       {
         name: '禁弹「折反射」',
-        note: 'EXTRA #6；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 10810（10-seed 实测时的血量）× 42.0 / 中位耗时 36.85s',
+        note: 'EXTRA #6；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 10810（10-seed 实测时的血量）× 42.0 / 中位耗时 36.85s。2026-11-01 第十六轮：用户口述「（6）+3% 弹速减速，弹频增加（密度不变）」→ hpAdjust 1.03（终局 13,918 → 14,336）、speedMul 0.90、rateMul 1.12。',
         limit: 60, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: 259.8, hp: 11587,
+        hpAdjust: 1.03, speedMul: 0.90, rateMul: 1.12,
       },
       {
         name: 'QED「495年的波纹」',
-        note: 'EXTRA #7；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 7686（10-seed 实测时的血量）× 42.0 / 中位耗时 53.37s。2026-10-26 深夜：用户反馈「这张根本过不去」，只降弹幕密度 —— 档 5→4（弹数 ×1.30→×1.15、弹速 ×1.12→×1.06），另外 boss.js 里把环弹 n 36→26、内环 18→14 且环数 3→2、脉冲间隔 0.07→0.085s，同屏环弹 126→80 发（−37%）；限时 90s 与血量不动。',
+        note: 'EXTRA #7；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 42.0s → hp = 7686（10-seed 实测时的血量）× 42.0 / 中位耗时 53.37s。2026-10-26 深夜：用户反馈「这张根本过不去」，只降弹幕密度 —— 档 5→4（弹数 ×1.30→×1.15、弹速 ×1.12→×1.06），另外 boss.js 里把环弹 n 36→26、内环 18→14 且环数 3→2、脉冲间隔 0.07→0.085s，同屏环弹 126→80 发（−37%）；限时 90s 与血量不动。2026-11-01 第十六轮：用户口述「（7）+8%，弹速由快到慢，弹频稍增，密度不变」→ hpAdjust 1.08（终局 12,401 → 13,393）、rateMul 1.05、新增 speedRamp [1.30, 0.85]（卡内按进度线性降速），密度与档位不动。',
         limit: 90, mode: 'damage', tier: 4, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: 156.3, hp: 10324,
+        hpAdjust: 1.08, rateMul: 1.05, speedRamp: [1.30, 0.85],
       },
       {
         name: '禁忌「吸血鬼之宴」',
-        note: 'EXTRA #8；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 34.0s → hp = 2617（10-seed 实测时的血量）× 34.0 / 中位耗时 14.62s',
+        note: 'EXTRA #8；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 34.0s → hp = 2617（10-seed 实测时的血量）× 34.0 / 中位耗时 14.62s。2026-11-01 第十六轮：用户口述「（8）+1% 弹频上升」→ hpAdjust 1.01（终局 9,020 → 9,110）、rateMul 1.12。',
         limit: 40, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: 199.5, hp: 7509,
+        hpAdjust: 1.01, rateMul: 1.12,
       },
       {
         name: '禁忌「破坏之瞳」',
-        note: 'EXTRA #9；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 25.5s → hp = 2485（10-seed 实测时的血量）× 25.5 / 中位耗时 7.88s',
+        note: 'EXTRA #9；2026-10-24 深夜：用户要求满火力（power 128 / Lv5）约 40–45s 打空，本卡取 25.5s → hp = 2485（10-seed 实测时的血量）× 25.5 / 中位耗时 7.88s。2026-11-01 第十六轮：用户口述「（9）弹频和弹密上升」→ rateMul 1.12、densityMul 1.10（血量不动，终局 6,816）。',
         limit: 30, mode: 'damage', tier: 5, fx: 'redMist', accent: '#ff4d6a',
         effect: 'none', dps: 247.9, hp: 5674,
+        rateMul: 1.12, densityMul: 1.10,
       },
       {
         name: '未明「长夜不醒之约」',
@@ -523,35 +568,46 @@ export const BOSS_CARD_TUNING = {
   // 限时：四张都 45s（用户口述「90s 总限时压两卡合计」，单卡 45s 只是节奏参考；
   //   damage 卡超时不结束战斗，只失去限时奖励）。
   // 血量口径：EX 同款显式 hp = round(0.77 × limit × dps)，逐卡再乘终局倍率
-  //   （2026-10-27 第五轮 1.0899 = 1.05 × 1.038，第七轮再 ×1.04 = 1.1335）：
-  //   终局 9622 / 9820 / 10016 / 10212，合计 39670 = BOSS_DEFS.sakuya 的 maxHp。
+  //   （2026-10-27 第五轮 1.0899 = 1.05 × 1.038，第七轮再 ×1.04 = 1.1335）。
+  //   2026-11-01 第十七轮（用户口述「调整一下十六夜有关时间停止的符卡的攻击效果，时间停止那里做的不太好」）：
+  //     只重做第 2 卡「Private Square」的攻击表现（全局真时停 + 解冻斜坡 + 三层刀阵 + 表盘领域 +
+  //     停帧换位 + 解冻补扇），血量 / 限时 / dps 一律不动，终局仍 10,114。
+  //   2026-11-01 第十五轮（用户口述「十六夜初整体+3%」「十六夜后应+3%，-30s」）：
+  //     第 1/2 卡 hpAdjust 1.03 → 终局 9,911 / 10,114，初战 19,442 → 20,025（+3.00%），限时 45s 不动；
+  //     第 3/4 卡 hpAdjust 1.03 且限时 45→30s（两卡合计 −30s）→ 终局 10,316 / 10,518，
+  //     后半场 20,228 → 20,834（+3.00%）；
+  //     四卡合计 39,670 → 40,859（+3.00%）= BOSS_DEFS.sakuya 的 maxHp。
   // fx / accent：七色飞刀配色四卡各取一色（绯红 → 青 → 紫罗兰 → 琥珀）；
   //   effect 一律 'none'（同 remilia：卡面特效不再额外改玩家手感）。
   sakuya: {
     cards: [
       {
         name: '银符「Perfect Maid」',
-        note: 'EX 连环 Rush 第 1 卡（咲夜前半场）；五连扇形银刃 + 七色钟面环。极限 45s，dps 245 → hp = round(0.77 × 45 × 245) = 8489',
+        note: 'EX 连环 Rush 第 1 卡（咲夜前半场）；五连扇形银刃 + 七色钟面环。极限 45s，dps 245 → hp = round(0.77 × 45 × 245) = 8489；2026-11-01 第十五轮初战整体 +3%（hpAdjust 1.03）→ 终局 9,911',
         limit: 45, mode: 'damage', tier: 4, fx: 'fairyDust', accent: '#ff6b8a',
         effect: 'none', dps: 245, hp: 8489,
+        hpAdjust: 1.03,
       },
       {
         name: '时符「Private Square」',
-        note: 'EX 连环 Rush 第 2 卡（咲夜前半场）；时停是真的时停：bullets.freezeAll(1.2) 让场上所有弹幕原地凝滞（b.holdT），同时凝出一圈紫罗兰静止刃，领域结束同一拍补发。dps 250 → hp = round(0.77 × 45 × 250) = 8663',
+        note: 'EX 连环 Rush 第 2 卡（咲夜前半场）；2026-11-01 第十七轮重做时停攻击：bullets.freezeAll 由「给在场弹写 holdT」改成整池全局时钟（freezeT，停帧期连新生成的弹也一起停，解冻后 0.3s 速度斜坡 0.22→1），紫罗兰静止刃直接摆在以 Boss 为心的三层刀阵上（半径 78 / 154 / 230，错拍 0~0.08s 解冻），停帧里 Boss 短距换位（_stopDash）、解冻补一手五连银扇，画面加表盘领域（stage._drawTimeStopField）；开火间隔 rate 2.0→2.6（整屏定格比旧的「只停在场弹」重，所以单次更重、次数更少：旧版约 6 次/张占 16%，新版实测 4–6 次/张占 10–15%）。dps 250 → hp = round(0.77 × 45 × 250) = 8663；2026-11-01 第十五轮初战整体 +3%（hpAdjust 1.03）→ 终局 10,114',
         limit: 45, mode: 'damage', tier: 4, fx: 'freeze', accent: '#7fd8ff',
         effect: 'none', dps: 250, hp: 8663,
+        hpAdjust: 1.03,
       },
       {
         name: '奇术「Time Paradox」',
-        note: 'EX 连环 Rush 第 3 卡（咲夜后半场）；四个残影站位（上/右/下/左）轮流换色齐射 + 反向七色环。dps 255 → hp = round(0.77 × 45 × 255) = 8836',
-        limit: 45, mode: 'damage', tier: 5, fx: 'voidFlame', accent: '#b48cff',
+        note: 'EX 连环 Rush 第 3 卡（咲夜后半场）；四个残影站位（上/右/下/左）轮流换色齐射 + 反向七色环。dps 255 → hp = round(0.77 × 45 × 255) = 8836；2026-11-01 第十五轮后半场整体 +3%（hpAdjust 1.03）、限时 45→30s → 终局 10,316',
+        limit: 30, mode: 'damage', tier: 5, fx: 'voidFlame', accent: '#b48cff',
         effect: 'none', dps: 255, hp: 8836,
+        hpAdjust: 1.03,
       },
       {
         name: '终符「Chronos Rule」',
-        note: 'EX 连环 Rush 第 4 卡（咲夜后半场，压轴给芙兰）；12 组钟面刻度 × 七色同心刀环，整环顺时针转、玩家逆时针穿行。dps 260 → hp = round(0.77 × 45 × 260) = 9009',
-        limit: 45, mode: 'damage', tier: 5, fx: 'night', accent: '#ffb347',
+        note: 'EX 连环 Rush 第 4 卡（咲夜后半场，压轴给芙兰）；12 组钟面刻度 × 七色同心刀环，整环顺时针转、玩家逆时针穿行。dps 260 → hp = round(0.77 × 45 × 260) = 9009；2026-11-01 第十五轮后半场整体 +3%（hpAdjust 1.03）、限时 45→30s → 终局 10,518',
+        limit: 30, mode: 'damage', tier: 5, fx: 'night', accent: '#ffb347',
         effect: 'none', dps: 260, hp: 9009,
+        hpAdjust: 1.03,
       },
     ],
   },

@@ -118,6 +118,8 @@ export const CARD_SKINS = {
     card(B_BAT, { 3: B_SPEAR }),
     /* 天罚「大卫之星」：血月为主，反向螺旋（type 3）是蝙蝠 */
     card(B_CRESCENT, { 3: B_BAT }),
+    /* 红符「不夜城红」：血枪为主，螺旋(type 3)是蝙蝠（2026-11-01 第十五轮新增卡） */
+    card(B_SPEAR, { 3: B_BAT }),
   ],
 
   /* ---------------- EXTRA · 芙兰朵露：血水晶 / 熔岩 / 蝙蝠 ---------------- */

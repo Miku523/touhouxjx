@@ -112,3 +112,17 @@ tools/_opt/
 
 # 压缩发布产物（tools/minify_build.mjs 生成，由 .github/workflows/pages.yml 在 CI 里重建）
 dist/
+
+# 逐音搬入的母版与分轨（GB 级，本地重跑工具用，不入库、不发线上；README 已声明）
+# kit/ = 母版 WAV 与 kit 中间件；stems*/ = 逐轨分轨；*_ref/ = 扒谱参考片段
+tools/build/_*_kit/
+tools/build/_*_ref/
+tools/build/_*_lead/stems*/
+tools/build/_*_lead/__pycache__/
+tools/build/__pycache__/
+tools/build/_mp3test/
+tools/build/_remi_lead/preview_v2.wav
+
+# 本地调试截图 / 性能实测临时产物
+.tmp_shots/
+_perf/

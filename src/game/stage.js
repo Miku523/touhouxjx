@@ -32,9 +32,9 @@ import { updateCardEffect } from './cardEffects.js';
  * EXTRA = 连环 Boss Rush：进关就开打，没有道中。
  *
  * 四场按顺序连着来，场与场之间由 Game 播过场对白，播完调 stage.advanceChain() 放下一场：
- *   0) 十六夜咲夜（第 1/2 张符卡）── 90 秒击破限时，身边有小怪伴战
- *   1) 雷米莉亚（2 张符卡）      ── 咲夜没在限时内打完也照常登场
- *   2) 十六夜咲夜（第 3/4 张符卡）── 又是 90 秒击破限时，小怪继续伴战
+ *   0) 十六夜咲夜（第 1/2 张符卡）── 90 秒击破限时（45s × 2），身边有小怪伴战
+ *   1) 雷米莉亚（3 张符卡）      ── 咲夜没在限时内打完也照常登场（52 + 50 + 45s）
+ *   2) 十六夜咲夜（第 3/4 张符卡）── 60 秒击破限时（30s × 2，第十五轮 −30s），小怪继续伴战
  *   3) 芙兰朵露（全部符卡，终盘）
  *
  * cap：这一场的总战斗时长上限（秒），到点强制让 Boss 退场；没打完的那张卡不算击破，
@@ -44,8 +44,8 @@ import { updateCardEffect } from './cardEffects.js';
  */
 export const EXTRA_CHAIN = Object.freeze([
   { key: 'sakuya', midboss: true, cardFrom: 0, cardCount: 2, cap: 90, minions: true, music: 'pre' },
-  { key: 'remilia', midboss: true, cardFrom: 0, cardCount: 2, cap: null, minions: false, music: 'mid' },
-  { key: 'sakuya', midboss: true, cardFrom: 2, cardCount: 2, cap: 90, minions: true, music: 'pre' },
+  { key: 'remilia', midboss: true, cardFrom: 0, cardCount: 3, cap: null, minions: false, music: 'mid' },
+  { key: 'sakuya', midboss: true, cardFrom: 2, cardCount: 2, cap: 60, minions: true, music: 'pre' },
   { key: 'flandre', midboss: false, cardFrom: 0, cardCount: 10, cap: null, minions: false, music: 'boss' },
 ]);
 
@@ -2646,6 +2646,10 @@ export class Stage {
 
     ctx.restore();
 
+    // 时停领域（屏幕空间）：时符「Private Square」把弹池冻住时，给「时间被抽走」一个看得见的表达。
+    // 必须在 ctx.restore() 之后画：这是全屏 overlay，不能跟着相机平移。
+    this._drawTimeStopField(ctx, cam);
+
     // 「萤火虫之夜」二次压暗：亮区之外的 Boss / 敌弹 / 自机弹一律不可见（用户要求「黑暗处不可见」）。
     // 第一次绘制在 Boss/弹幕之前，只让世界层泡在暗里；这一层盖在它们之上，亮区中心是透明的，
     // 所以玩家周围仍全亮，亮区外连血条敌弹都藏进黑里——只留环境萤火（drawAmbient 在这之后画）。
@@ -3066,6 +3070,100 @@ export class Stage {
       }
       ctx.restore();
     }
+  }
+
+  /**
+   * 时符「Private Square」的时停领域（屏幕空间，画在 ctx.restore() 之后）。
+   *
+   * 弹幕停摆本身是 bullets.freezeT 的状态（整池时钟被抽走 + 0.3s 解冻斜坡），
+   * 这里只补「时间被抽走」的视觉：
+   *   冷紫暗雾（外圈更暗，把战场压成冷色）+ 60 格表盘刻度（每 5 格加长）
+   *   + 秒针（冻结开始 0.34s 内 easeOut 扫 1.6 圈后停死）+ 中心亮芯。
+   * 冻结淡入 0.12s；解冻按 thawT / 0.30 淡出，和速度斜坡同一时长，观感上「时间回来了」。
+   * 渐变按中心点 24px 网格缓存：Boss 停帧里会滑步，但不会每帧新建 CanvasGradient。
+   */
+  _drawTimeStopField(ctx, cam) {
+    const b = this.bullets;
+    const boss = this.boss;
+    if (!b || !boss) return;
+    const frozen = b.freezeT > 0;
+    const thawing = !frozen && b.thawT > 0;
+    if (!frozen && !thawing) return;
+    const a = frozen
+      ? Math.min(1, (b.freezeTotal - b.freezeT) / 0.12)
+      : b.thawT / 0.30;
+    if (a <= 0.01) return;
+
+    const cx = boss.x - (cam ? cam.x : 0);
+    const cy = boss.y - (cam ? cam.y : 0) - 64;
+    const R = Math.min(VIEW_W, VIEW_H) * 0.46;
+    // 秒针进度：冻结开始扫 1.6 圈后停死（easeOut）；解冻后停在终点
+    const el = frozen ? Math.max(0, b.freezeTotal - b.freezeT) : b.freezeTotal;
+    const k = Math.min(1, el / 0.34);
+    const sweep = (1 - Math.pow(1 - k, 3)) * 1.6 * Math.PI * 2;
+
+    ctx.save();
+    ctx.globalAlpha = a;
+
+    // 冷紫暗雾：中心透明、外圈收暗，战场整体压成冷色但不挡判定
+    const gk = Math.round(cx / 24) + ',' + Math.round(cy / 24);
+    let fog = this._tsFog;
+    if (!fog || fog.key !== gk) {
+      const grad = ctx.createRadialGradient(cx, cy, R * 0.08, cx, cy, R);
+      grad.addColorStop(0, 'rgba(168,107,255,0.08)');
+      grad.addColorStop(0.55, 'rgba(120,80,220,0.16)');
+      grad.addColorStop(0.84, 'rgba(38,24,84,0.30)');
+      grad.addColorStop(1, 'rgba(10,6,26,0.02)');
+      fog = this._tsFog = { key: gk, grad };
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = fog.grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 表盘：60 格刻度 + 内外两道紫环
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(214,232,255,0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < 60; i++) {
+      const ang = (i / 60) * Math.PI * 2 - Math.PI / 2;
+      const long = i % 5 === 0;
+      const r0 = R * (long ? 0.86 : 0.925);
+      const r1 = R * 0.965;
+      const cos = Math.cos(ang);
+      const sin = Math.sin(ang);
+      ctx.moveTo(cx + cos * r0, cy + sin * r0);
+      ctx.lineTo(cx + cos * r1, cy + sin * r1);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = a * 0.5;
+    ctx.strokeStyle = 'rgba(168,107,255,0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 0.9, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 0.985, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 秒针：从 12 点扫过来停死——「定格」就落在这根指针上
+    ctx.globalAlpha = a * 0.9;
+    ctx.strokeStyle = 'rgba(236,244,255,0.9)';
+    ctx.lineWidth = 2.5;
+    const ha = -Math.PI / 2 + sweep;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(ha) * R * 0.72, cy + Math.sin(ha) * R * 0.72);
+    ctx.stroke();
+    // 中心亮芯
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(236,244,255,0.92)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   _drawGoal(ctx, cam) {

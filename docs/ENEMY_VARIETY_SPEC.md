@@ -228,7 +228,7 @@ export class MinibossManager {
 - 落点与窗口（`stage.js` 的 `spawnExMiniboss(chainIdx)`，在 `beginBoss` 建完 Boss 之后调用）：
   - 第 0 场咲夜初战（= 打蕾米前）：`x 620, y 268` 的 `sniper`，`slideL` 从屏外滑入；
   - 第 2 场蕾米击破后的咲夜再登场（= 打完蕾米后）：`x 1100, y 252` 的 `bomber`，`slideR`；
-  - 血量统一 `bossHalfCardHp('remilia')` = 1092（= 蕾米平均承伤符卡 10,922 × `MINIBOSS_CARD_SHARE` 1/10），与台上那位同口径。
+  - 血量统一 `bossHalfCardHp('remilia')` = **1096**（= 蕾米平均承伤符卡 10,958 × `MINIBOSS_CARD_SHARE` 1/10；2026-11-01 第十五轮蕾米改为三卡后由 1092 微调），与台上那位同口径。
 - 换场清理：`beginBoss` 开头对 EXTRA 调 `minibosses.removeAll()`（平台关仍是 `clearActive()` 退回待机）——
   每只只在「自己那一场」的窗口里存在，蕾米登场/芙兰登场时上一只直接撤下，不会跨场叠怪。
   `spawnAt` 的 `tag` 去重保证读档续战、复活重打不会叠出第三只。

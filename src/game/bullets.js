@@ -51,6 +51,7 @@ const MAX_BULLETS = 1400;
 const SS = 2;              // 精灵超采样倍率（渲染器 backing 最高 2.5x，2x 足够）
 const VIS = 1.16;          // 绘制放大系数：剪影半径 ≈ 判定半径 × 1.30（判定数值一字不动）
 const GLOW_MAX = 560;      // 活跃弹幕低于此数才叠加额外辉光层（保住峰值帧率）
+const THAW_TIME = 0.30;    // 时停解除后的速度恢复斜坡（秒）：0.22 → 1 线性回升，避免解冻即弹墙
 const CACHE_LIMIT = 760;   // 精灵缓存条目上限（专属弹型多了 19 种，放宽到约 12~16MB；超限逐条淘汰最旧）
 
 /* 冰晶家族的几何比例（相对 size = 判定半径）：
@@ -759,7 +760,16 @@ export class BulletPool {
     this.activeCount = 0;
     this.cursor = 0;
     this.grazeCount = 0;
+    // 全局时停（时符「Private Square」）：>0 时整个弹池停摆——冻结期间新生成的弹也一起定住。
+    // 旧实现只给「冻结那一刻已存在」的弹写 holdT，停帧期间 Boss 照常开火的新弹全速飞，
+    // 画面一半静止一半在动，看着像掉帧而不是时停（用户 2026-11-01 反馈）。
+    this.freezeT = 0;      // 剩余冻结秒数
+    this.freezeTotal = 0;  // 本次冻结的总时长（表盘/淡入用）
+    this.thawT = 0;        // 解冻后的速度斜坡剩余秒数
   }
+
+  /** 当前是否整体时停中（render 层画表盘领域用） */
+  get frozen() { return this.freezeT > 0; }
 
   _take() {
     const pool = this.pool;
@@ -835,18 +845,18 @@ export class BulletPool {
   }
 
   /**
-   * 时停：让当前场上所有弹幕原地凝滞 sec 秒（时符「Private Square」用）。
-   * 凝滞中的弹幕不移动、不转向、寿命不衰减；sec 到点后原速继续。
+   * 时停：让**整个弹池**原地凝滞 sec 秒（时符「Private Square」用）。
+   * 与旧实现的区别：这是「全局时钟被拿走」，冻结期间新生成的弹也在冻结范围内
+   * （Boss 在停帧期本来就不开火，见 boss.js 的 frozenNow 分支），解冻后统一
+   * 经过 THAW_TIME 秒的速度斜坡，不会一解冻就把整屏弹甩到玩家脸上。
+   * 逐弹的 holdT 仍然保留：那是「紫罗兰刃先摆位、再起飞」的单弹语义。
    * @param {number} sec
    */
   freezeAll(sec) {
     if (!(sec > 0)) return;
-    const pool = this.pool;
-    for (let i = 0; i < pool.length; i++) {
-      const b = pool[i];
-      if (!b.active) continue;
-      b.holdT = Math.max(b.holdT || 0, sec);
-    }
+    this.freezeT = Math.max(this.freezeT, sec);
+    this.freezeTotal = this.freezeT;
+    this.thawT = 0;
   }
 
   /**
@@ -898,6 +908,9 @@ export class BulletPool {
   clear() {
     for (let i = 0; i < this.max; i++) this.pool[i].active = false;
     this.activeCount = 0;
+    this.freezeT = 0;
+    this.freezeTotal = 0;
+    this.thawT = 0;
   }
 
   /**
@@ -913,13 +926,34 @@ export class BulletPool {
     const by0 = bounds ? bounds.y - 200 : -1e9;
     const by1 = bounds ? bounds.y + bounds.h + 200 : 1e9;
 
+    // 全局时停（时符「Private Square」）：整个弹池的时钟被抽走——
+    // 冻结期间连新生成的弹也一起定住；解冻后 THAW_TIME 秒内速度从 22% 线性回升，
+    // 不会一解冻就把整屏弹满速甩到玩家脸上。
+    let speedK = 1;
+    if (this.freezeT > 0) {
+      this.freezeT = Math.max(0, this.freezeT - dt);
+      speedK = 0;
+      if (this.freezeT === 0) this.thawT = THAW_TIME;
+    } else if (this.thawT > 0) {
+      this.thawT = Math.max(0, this.thawT - dt);
+      speedK = 0.22 + 0.78 * (1 - this.thawT / THAW_TIME);
+    }
+    // 运动专用的 dt：冻结 = 0、解冻斜坡 = 缩放 dt；寿命与出生缩放仍按真实 dt 走
+    const mdt = speedK === 1 ? dt : dt * speedK;
+
     for (let i = 0; i < pool.length; i++) {
       const b = pool[i];
       if (!b.active) continue;
 
-      // 时停（时符领域 / 紫罗兰静止刃）：停滞期间原地不动、寿命不衰减、不转向
+      // 逐弹停帧（紫罗兰静止刃：先在弹阵里摆好，再起飞）
       if (b.holdT > 0) {
         b.holdT -= dt;
+        b.spawnT += dt;
+        continue;
+      }
+
+      // 全局时停：原地不动、寿命不衰减、不转向，只让出生缩放走到满
+      if (speedK === 0) {
         b.spawnT += dt;
         continue;
       }
@@ -929,21 +963,21 @@ export class BulletPool {
       if (b.life <= 0) { b.active = false; if (this.activeCount > 0) this.activeCount--; continue; }
 
       if (b.homing > 0 && target) {
-        b.homing -= dt;
+        b.homing -= mdt;
         const dx = target.x - b.x;
         const dy = target.y - b.y;
         const dist = Math.hypot(dx, dy) || 1;
         const sp = Math.hypot(b.vx, b.vy) || 1;
         const wantX = (dx / dist) * sp;
         const wantY = (dy / dist) * sp;
-        const k = Math.min(1, dt * 2.6);
+        const k = Math.min(1, mdt * 2.6);
         b.vx += (wantX - b.vx) * k;
         b.vy += (wantY - b.vy) * k;
       }
 
       if (b.turn) {
-        const cos = Math.cos(b.turn * dt);
-        const sin = Math.sin(b.turn * dt);
+        const cos = Math.cos(b.turn * mdt);
+        const sin = Math.sin(b.turn * mdt);
         const nvx = b.vx * cos - b.vy * sin;
         const nvy = b.vx * sin + b.vy * cos;
         b.vx = nvx; b.vy = nvy;
@@ -951,27 +985,27 @@ export class BulletPool {
 
       if (b.accel) {
         const sp = Math.hypot(b.vx, b.vy) || 1;
-        b.vx += (b.vx / sp) * b.accel * dt;
-        b.vy += (b.vy / sp) * b.accel * dt;
+        b.vx += (b.vx / sp) * b.accel * mdt;
+        b.vy += (b.vy / sp) * b.accel * mdt;
       }
 
       // 竖直重力：抛射弹先向上飞、减速、再落回来（accel 是沿速度方向的加速度，替代不了这个）
-      if (b.grav) b.vy += b.grav * dt;
+      if (b.grav) b.vy += b.grav * mdt;
 
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
+      b.x += b.vx * mdt;
+      b.y += b.vy * mdt;
 
       if (b.wobbleAmp) {
-        b.wobblePhase += b.wobbleFreq * dt;
+        b.wobblePhase += b.wobbleFreq * mdt;
         const sp = Math.hypot(b.vx, b.vy) || 1;
         const nx = -b.vy / sp;
         const ny = b.vx / sp;
-        const off = Math.sin(b.wobblePhase) * b.wobbleAmp * dt;
+        const off = Math.sin(b.wobblePhase) * b.wobbleAmp * mdt;
         b.x += nx * off;
         b.y += ny * off;
       }
 
-      b.rot += b.spin * dt;
+      b.rot += b.spin * mdt;
 
       if (b.x < bx0 || b.x > bx1 || b.y < by0 || b.y > by1) {
         b.active = false;
@@ -1037,8 +1071,10 @@ export class BulletPool {
 
   draw(ctx, cam) {
     const pool = this.pool;
-    // 低负载时才叠这一层：加法辉光最贵也最出效果，峰值 1000+ 时自动关掉
-    const withGlow = this.activeCount <= GLOW_MAX;
+    // 低负载时才叠这一层：加法辉光最贵也最出效果，峰值 1000+ 时自动关掉。
+    // 时停期间也不叠（拖尾/辉光都在表达速度，静止画面越干净越像「时间被抽走」）。
+    const frozen = this.freezeT > 0;
+    const withGlow = this.activeCount <= GLOW_MAX && !frozen;
 
     ctx.save();
 
@@ -1097,7 +1133,8 @@ export class BulletPool {
 
     /* ---------- 第二层：本体（白热核心 / 主题色 / 深色描边） ---------- */
     ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
+    // 时停期间本体压暗：停帧的冷紫领域交给 stage 的表盘 overlay，这里只给「被定住的暗压感」
+    ctx.globalAlpha = frozen ? 0.62 : 1;
     for (let i = 0; i < pool.length; i++) {
       const b = pool[i];
       if (!b.active) continue;

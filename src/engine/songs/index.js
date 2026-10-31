@@ -80,23 +80,29 @@ const DEFS = [
   // 1 面 Boss：妖魔夜行 —— 逐音搬入 + 重配器（见 tools/build/_rumia_compose.py）
   { id: 'youma_stage1', url: './youma_stage1.js', keys: ['stage1'],
     pick: (m) => ({ stage1: m.YOUMA_STAGE1?.stage1
-      ? { ...m.YOUMA_STAGE1.stage1, audio: 'src/assets/bgm/youma_stage1.mp3?v=1.6.57' }
+      ? { ...m.YOUMA_STAGE1.stage1, audio: 'src/assets/bgm/youma_stage1.mp3?v=1.6.64' }
       : undefined }) },
-  // 2 面 Boss：蠢々秋月 —— 融合版 × 游戏内原曲混合，贝斯贴原曲音高（见 tools/merge_stage2.py）
-  { id: 'merge_stage2', url: './merge_stage2.js', keys: ['stage2'],
-    pick: (m) => ({ stage2: m.MERGE_STAGE2?.stage2 }) },
+  // 2 面 Boss：蠢々秋月 —— 原曲 51 小节逐音搬入重配器（见 tools/build/_wrig_compose.py）
+  { id: 'wriggle_stage2', url: './wriggle_stage2.js', keys: ['stage2'],
+    pick: (m) => ({ stage2: m.WRIGGLE_STAGE2?.stage2
+      ? { ...m.WRIGGLE_STAGE2.stage2, audio: 'src/assets/bgm/wriggle_stage2.mp3?v=1.6.64' }
+      : undefined }) },
   // 3 面道中：ルーネイトエルフ —— 幽閉サテライト 风重编（见 tools/yuuhei_pre3.py）
   { id: 'yuuhei_pre3', url: './yuuhei_pre3.js', keys: ['pre3'],
     pick: (m) => ({ pre3: m.YUUHEI_PRE3?.pre3 }) },
-  // 3 面 Boss：おてんば恋娘 —— Ateam 重低频编 + 花映塚 + 完美教室（见 tools/ateam_stage3.py）
-  { id: 'ateam_stage3', url: './ateam_stage3.js', keys: ['stage3'],
-    pick: (m) => ({ stage3: m.ATEAM_STAGE3?.stage3 }) },
+  // 3 面 Boss：おてんば恋娘 + 冒険 + 完美教室 —— 三曲逐音搬入重配器，176BPM / 88 小节 / 120s（见 tools/build/_cirno_compose.py）
+  { id: 'cirno_stage3', url: './cirno_stage3.js', keys: ['stage3'],
+    pick: (m) => ({ stage3: m.CIRNO_STAGE3?.stage3
+      ? { ...m.CIRNO_STAGE3.stage3, audio: 'src/assets/bgm/cirno_stage3.mp3?v=1.6.64' }
+      : undefined }) },
   // 4 面道中：フォールオブフォール ～ 秋めく滝 —— 瀑布动机 × 和风 × 重低频（见 tools/pre4_fall.py）
   { id: 'fall_pre4', url: './fall_pre4.js', keys: ['pre4'],
     pick: (m) => ({ pre4: m.FALL_PRE4?.pre4 }) },
-  // 4 面 Boss：風神少女 —— 原曲双旋律原封不动 × 新编伴奏按原曲逐小节和声重写（见 tools/build/_fusion_b.py）
-  { id: 'aya_stage4_b', url: './aya_stage4_b.js', keys: ['stage4'],
-    pick: (m) => ({ stage4: m.AYA_STAGE4?.stage4 }) },
+  // 4 面 Boss：風神少女 —— 原曲 bar14-109 逐音搬入重配器，4 小节新引子 + 升半音尾声（见 tools/build/_aya_compose.py）
+  { id: 'aya_stage4', url: './aya_stage4.js', keys: ['stage4'],
+    pick: (m) => ({ stage4: m.AYA_STAGE4?.stage4
+      ? { ...m.AYA_STAGE4.stage4, audio: 'src/assets/bgm/aya_stage4.mp3?v=1.6.64' }
+      : undefined }) },
   // 5 面道中：広有射怪鳥事 ～ Till When? —— 摇滚乐队编制，原曲主旋律占大头（见 tools/pre5_tillwhen.py）
   { id: 'tillwhen_pre5', url: './tillwhen_pre5.js', keys: ['pre5'],
     pick: (m) => ({ pre5: m.TILLWHEN_PRE5?.pre5 }) },
@@ -123,7 +129,7 @@ const DEFS = [
   // audio 让引擎直接播离线渲染成品 src/assets/bgm/remilia_septette.mp3，
   // fetch 失败时自动回退 remilia_septette.js 里的合成数据。
   { id: 'remilia_septette', url: './remilia_septette.js', keys: ['ex_mid'],
-    pick: (m) => ({ ex_mid: m.REMILIA_EX?.ex_mid ? { ...m.REMILIA_EX.ex_mid, audio: 'src/assets/bgm/remilia_septette.mp3?v=1.6.57' } : undefined }) },
+    pick: (m) => ({ ex_mid: m.REMILIA_EX?.ex_mid ? { ...m.REMILIA_EX.ex_mid, audio: 'src/assets/bgm/remilia_septette.mp3?v=1.6.64' } : undefined }) },
 ];
 
 /** key → 所属动态模块 */

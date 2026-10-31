@@ -1,0 +1,8 @@
+feat(stage1): 一面首领《妖魔夜行（宵暗夜路编）》逐音搬入重配器 + 44.1kHz 立体声 MP3（版本串 1.6.57）
+
+- 素材：TH06 扒谱 MIDI 34 小节 / 55.77s / 146→144 BPM / 降 E 小调，14 通道按角色重新配器（长笛=主旋律、编钟=铁琴、DrawbarOrgan=羽管键琴、弦乐/电吉他/贝斯 + sine sub），丢弃重复 ch4/ch11/ch12 层
+- 结构：新写 11s 引子（八音盒主题头 + 心跳 + 钟摆）→ 原曲 11.0–64.8s → 10s 黑暗桥段 → 主题变奏 74.8–102.2s → 尾声 102.2–113.0s 回八音盒；数据 15 轨 3484 音 2111 鼓 / 112.998s
+- 混音：lead 0.325 压在鼓上 0.1dB（变奏段 +1.9dB），段增益引子 +4.0 / 桥 +3.2 / 尾声 +4.5，逐段 RMS intro -22.8 / 原曲 -19.0 / 桥 -27.2 / 变奏 -17.7 / 尾声 -24.5（单声道等效）
+- 母版 44.1kHz 立体声 19,932,892 B（不入库，留 tools/build/_rumia_kit/）；线上只发 MP3 2,713,390 B / 192.1 kbps CBR（delay 576 + padding 2068，解码 4,983,212 采样与母版逐点对齐）
+- optimize_audio_mp3.py 支持母版路径显式命名（修复 stereo 母版被写成 *_stereo.mp3）；verify_audio_mp3 五首 81 pass / 0 fail
+- 接入：index.js 挂 audio、musicTracks NO.03 time 113.0 + 新 note、i18n 三语、README / NETWORK_CN / AUDIT、版本 1.6.57
