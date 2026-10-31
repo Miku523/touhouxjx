@@ -110,6 +110,29 @@ function kitLoading(on, text) {
  * 进关入口统一走这里：先确保 game kit 已到，再继续原来的同步流程。
  * @returns {Promise<boolean>} kit 是否就绪（失败时提示并返回 false）
  */
+// 完整样式表（src/style.css，约 140KB）首屏不再阻塞：首屏只加载 src/title.css（标题页那部分规则）。
+// 这里在揭幕之后异步补齐，游戏内以 style.css 为准；进关前 ensureGameKit() 会等它到货。
+let _gameCssPromise = null;
+function loadGameCss() {
+  if (_gameCssPromise) return _gameCssPromise;
+  _gameCssPromise = new Promise((resolve) => {
+    if (document.getElementById('hks-game-css')) { resolve(); return; }
+    const l = document.createElement('link');
+    l.id = 'hks-game-css';
+    l.rel = 'stylesheet';
+    l.fetchPriority = 'low';
+    l.href = new URL('./style.css', import.meta.url).href;
+    l.onload = () => resolve();
+    l.onerror = () => {
+      // 样式表挂了不影响开跑：游戏内会退回浏览器默认样式，比卡在载入界面好
+      if (typeof console !== 'undefined') console.warn('[css] style.css 载入失败，游戏内样式可能不全');
+      resolve();
+    };
+    document.head.appendChild(l);
+  });
+  return _gameCssPromise;
+}
+
 async function ensureGameKit() {
   if (_gameKitPromise === null) {
     // 首次触发并且在慢链路上：这一等可能要十几秒，先盖一张载入中
@@ -117,6 +140,7 @@ async function ensureGameKit() {
   }
   try {
     await loadGameKit();
+    await loadGameCss();
     return true;
   } catch (err) {
     kitLoading(true, '关卡资源载入失败，请检查网络后重试');
@@ -1186,7 +1210,10 @@ class Game {
   _prefetchGameKit() {
     if (this._kitPrefetchStarted) return;
     this._kitPrefetchStarted = true;
-    const go = () => { loadGameKit().catch(() => { /* 失败留给进关时的 ensureGameKit 兜底 */ }); };
+    const go = () => {
+      loadGameKit().catch(() => { /* 失败留给进关时的 ensureGameKit 兜底 */ });
+      loadGameCss();
+    };
     if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 1200 });
     else setTimeout(go, 300);
   }

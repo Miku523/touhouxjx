@@ -1,0 +1,56 @@
+name: Deploy to GitHub Pages
+
+# 线上跑的是压缩后的产物：esbuild 压 JS/CSS（路径不变，?v= 与 import.meta.url 全部原样可用），
+# 构建到 dist/ 后整目录发布。源码仍是 main 分支根目录，可读性不受影响。
+#
+# 启用方式（只需一次）：仓库 Settings → Pages → Build and deployment → Source 选「GitHub Actions」。
+# 不启用也不会坏：Pages 继续按 main 分支根目录发布，只是不享受压缩收益。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install esbuild
+        run: npm install --no-save --no-audit --no-fund esbuild@0.24.0
+
+      - name: Build minified dist
+        run: node tools/minify_build.mjs --stats
+
+      - name: Ensure Pages markers
+        run: |
+          test -f dist/index.html
+          touch dist/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

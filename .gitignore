@@ -109,3 +109,6 @@ tools/build/midi/
 docs/RE_STORY/artifacts/
 # 素材优化（WebP/MP3 转换）的中间产物：转换日志、逐张 PSNR 表、降采样图、试听片段，脚本本身入库
 tools/_opt/
+
+# 压缩发布产物（tools/minify_build.mjs 生成，由 .github/workflows/pages.yml 在 CI 里重建）
+dist/
