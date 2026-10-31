@@ -25,6 +25,8 @@ const CRITICAL_ART_RE = /(?:title_bg|_title)\.[a-z0-9]+(?:\?|$)/i;
 const queue = [];
 let armed = false;
 let drained = false;
+/** 门禁期间暂停整条空闲预取队列（见 holdIdleQueue） */
+let held = false;
 /** 'unknown' | 'fast' | 'constrained' —— 见 linkTier() */
 let tier = 'unknown';
 
@@ -67,6 +69,9 @@ export function linkTier() {
 
 function runAll() {
   if (drained) return;
+  // 门禁期间（启动幕要等 game kit + 曲库）先不放行：保持未 drained，释放后重新排队。
+  // 见 main.js 的 _waitBootReady 与 holdIdleQueue。
+  if (held) return;
   drained = true;
   // 受限链路：整条空闲预取队列直接作废（按需加载继续负责能用到的素材）
   if (linkTier() === 'constrained') {
@@ -85,6 +90,25 @@ function runAll() {
   step();
 }
 
+function scheduleRunAll() {
+  if (typeof window === 'undefined') return;
+  if ('requestIdleCallback' in window) window.requestIdleCallback(runAll, { timeout: 2000 });
+  else setTimeout(runAll, 250);
+}
+
+/**
+ * 门禁期间暂停空闲预取队列。
+ *
+ * 启动幕现在要等进关 game kit（整棵依赖图）和第 1 面曲库模块，这段时间里
+ * 立绘 / 关卡背景 / 弹幕精灵的空闲预取会跟关键资源抢同一条链路（弱网下就是
+ * 几百毫秒到几秒的揭幕延迟）。门禁开场先 hold，放行后如果队列还没跑过再照常排。
+ * @param {boolean} on true = 暂停，false = 放行
+ */
+export function holdIdleQueue(on) {
+  held = !!on;
+  if (!held && armed && !drained) scheduleRunAll();
+}
+
 function whenCriticalArtReady(cb) {
   const imgs = (typeof window !== 'undefined' && Array.isArray(window.__titleArt)) ? window.__titleArt : [];
   const pending = imgs.filter((im) => im && !im.complete);
@@ -100,10 +124,7 @@ function whenCriticalArtReady(cb) {
 function arm() {
   if (armed || typeof window === 'undefined' || typeof document === 'undefined') return;
   armed = true;
-  const go = () => whenCriticalArtReady(() => {
-    if ('requestIdleCallback' in window) window.requestIdleCallback(runAll, { timeout: 2000 });
-    else setTimeout(runAll, 250);
-  });
+  const go = () => whenCriticalArtReady(() => scheduleRunAll());
   if (document.readyState === 'complete') go();
   else window.addEventListener('load', go, { once: true });
   // 兜底：首屏素材迟迟不完成时也必须开始预加载

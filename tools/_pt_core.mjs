@@ -105,9 +105,11 @@ export async function launch(opts = {}) {
   const responses = new Map();
   const consoleAll = [];
 
+  const extraHandlers = [];
   ws.onmessage = (m) => {
     let d;
     try { d = JSON.parse(m.data); } catch { return; }
+    for (const h of extraHandlers) { try { h(d); } catch {} }
     if (d.id && pending.has(d.id)) {
       const { res, rej } = pending.get(d.id);
       pending.delete(d.id);
@@ -264,6 +266,7 @@ export async function launch(opts = {}) {
         ...extra,
       };
     },
+    onEvent(fn) { extraHandlers.push(fn); },
     async close() {
       try { ws.close(); } catch {}
       try { proc.kill(); } catch {}

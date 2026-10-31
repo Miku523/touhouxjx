@@ -3004,6 +3004,19 @@ body {
   animation-delay: .34s;
 }
 
+/* 门禁状态行：启动幕在等关键资源时播报当前阶段（JS 动态插入，见 main.js _refreshBootStatus） */
+.boot-status {
+  margin-top: calc(var(--s) * 10px);
+  min-height: calc(var(--s) * 15px);
+  font-size: calc(var(--s) * 11px);
+  letter-spacing: calc(var(--s) * 1.4px);
+  padding-left: calc(var(--s) * 1.4px);
+  color: rgba(255, 226, 190, .58);
+  opacity: 0;
+  transition: opacity .4s ease;
+}
+.boot-status.on { opacity: 1; }
+
 .boot-rule {
   width: calc(var(--s) * 132px);
   height: 1px;
@@ -3616,6 +3629,7 @@ body {
   #boot .bp-dots i { animation: none; }
   #boot .bm-scan { display: none; }
   #boot .bp-dots i { opacity: 1; }
+  #boot .boot-status { transition: none; }
   .spell-cutin.show .sc-rays,
   .spell-cutin.show .sc-speed,
   .spell-cutin.show .sc-rings i,

@@ -7,7 +7,8 @@ import { Renderer, VIEW_W, VIEW_H } from './engine/renderer.js';
 import { Input, ACTION_DEFS, keyLabel } from './engine/input.js';
 import { platform, initPlatform } from './ui/platform.js';
 import { Loop } from './engine/loop.js';
-import { setPriority, preloadWhenIdle } from './engine/lazy_preload.js';
+import { setPriority, preloadWhenIdle, holdIdleQueue, linkTier } from './engine/lazy_preload.js';
+import { warmSongs, preloadSongs, isSongLoaded } from './engine/songs/index.js';
 import { AudioEngine } from './engine/audio.js';
 import { LEVELS } from './assets/levels.js';
 import { Hud } from './game/hud.js';
@@ -32,6 +33,10 @@ let STORY = null, openingFor = null, stageStoryFor = null,
   extraIntroFor = null, extraPostFor = null, midbossPreFor = null, midbossPostFor = null;
 
 let _gameKitPromise = null;
+/** 启动幕门禁的硬超时：15KB/s 弱网下首屏 + 整棵 game kit 本身就要 ~90s，这里只防连接挂死 */
+const BOOT_GATE_TIMEOUT_MS = 90000;
+/** 进关依赖图模块数的估计值（tools/gen_modulepreload.py 统计约 49 项）；只用于进度条观感刻度 */
+const KIT_MODULE_EST = 49;
 /** 载入进关才用得到的模块；并发调用共享同一个 promise，失败后允许重试 */
 function loadGameKit() {
   if (_gameKitPromise) return _gameKitPromise;
@@ -335,7 +340,17 @@ class Game {
     this._titleIntroT0 = 0;
     this._titleIntroOn = false;
     this._titleIntroTimer = 0;
-    this._waitTitleArt();
+    // 揭幕门禁：标题三图 + 进关 game kit + 第 1 面曲库都就绪才放行（见 _waitBootReady）。
+    // 三路状态同时挂在 window.__hksBootGate 上，QA 与线上排障都读它。
+    this._bootGate = {
+      art: false, kit: false, music: false, failed: [],
+      startedAt: 0, finishedAt: 0, done: false,
+    };
+    if (typeof window !== 'undefined') window.__hksBootGate = this._bootGate;
+    // 门禁期间暂停空闲预取（立绘 / 关卡背景 / 弹幕精灵），别和 game kit、曲库抢带宽；
+    // 放行由 _waitBootReady 负责（三路都完成、失败或硬超时都会放行，不会一直卡住预取）
+    holdIdleQueue(true);
+    this._waitBootReady();
 
     // 一次性尖峰预算：
     // ① AudioContext 创建要 50~120ms，直接放在启动幕还在盖屏的时候同步付掉，
@@ -939,20 +954,73 @@ class Game {
   /* ---------------- 首屏启动幕 ---------------- */
 
   /**
-   * 等标题三张图（背景 + 两张立绘）下载并解码完成后再揭幕。
-   * - 图片失败或超时（8s）也放行，宁可退回程序化夜空，也不能一直黑屏。
-   * - 后续从选人页回到标题时两套立绘都已 decode，无需再等。
-   * - 每张图就绪推进开屏进度条 1/3：条子跟着真下载/解码走，不是定时假动画。
+   * 揭幕门禁：三路并行，全绿（或失败 / 硬超时）才放行。
+   *
+   *   ① 标题三图（背景 + 两张立绘）下载并 decode —— 进度 0.10 → 0.42
+   *   ② 进关 game kit（stage 树 + 弹幕 + 剧情，动态 import 的整棵依赖图）—— 0.42 → 0.86
+   *   ③ 第 1 面曲库（道中曲 pre1 + Boss 曲 stage1 模块）—— 三路都完成后抬到 0.92
+   *
+   * 「标题好了但游戏 / 音乐没好」的体验就此消掉：揭幕那一刻点「开始游戏」，
+   * game kit 已在内存里、第一面 BGM 模块也已在曲库，进关不再有黑屏载入遮罩与静音。
+   * 任何一路失败都只记进 failed[] 并 console.warn，依旧放行：宁可退回程序化素材，
+   * 也不能一直黑屏；进关时 ensureGameKit() / _ensureStageMusic() 还有二次兜底。
+   * 90s 硬超时只防「连接挂住不报错」把启动幕卡死（量级见 BOOT_GATE_TIMEOUT_MS）。
    */
-  _waitTitleArt() {
+  _waitBootReady() {
+    const gate = this._bootGate;
+    gate.startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this._boot?.setTarget(0.10);
+    // 排障 / A-B 测速开关：?bootgate=off 只等标题图（等价改造前的旧行为）；
+    // 默认开启门禁，线上玩家不会带这个参数。
+    const gateOff = typeof location !== 'undefined' && /[?&]bootgate=off(?:[&#]|$)/.test(location.search);
+    this._bootGateOff = gateOff;
+    this._refreshBootStatus();
+    const tasks = gateOff
+      ? [this._bootGateTitleArt()]
+      : [this._bootGateTitleArt(), this._bootGateGameKit(), this._bootGateStage1Music()];
+    const hardCap = new Promise((resolve) => setTimeout(() => {
+      if (gate.done) return;
+      gate.failed.push('timeout');
+      if (typeof console !== 'undefined') {
+        console.warn('[boot] 门禁 90s 硬超时，先揭幕；未就绪的模块交给进关前的兜底再等');
+      }
+      resolve();
+    }, BOOT_GATE_TIMEOUT_MS));
+    Promise.race([Promise.all(tasks), hardCap])
+      .then(() => {
+        gate.done = true;
+        gate.finishedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        // 三路都到齐时进度条一口气走到 92%，再由 finish() 追满
+        this._boot?.setTarget(0.92);
+        // 门禁结束：空闲预取（立绘 / 背景 / 弹幕精灵）这时才能开始抢带宽
+        holdIdleQueue(false);
+        // 第 1 面之外的曲库模块：不进门禁，揭幕后排进空闲队列慢慢灌（见 _warmRemainingSongs）
+        this._warmRemainingSongs();
+        this._refreshBootStatus();
+        if (!gateOff && gate.failed.length && typeof console !== 'undefined') {
+          console.warn('[boot] 门禁未全绿就揭幕：', gate.failed.join(','));
+        }
+        this._boot?.setTarget(0.94);
+        // 最短停留时间到点后追满 100%，兑现后 main 再等两帧揭幕
+        return this._boot ? this._boot.finish() : Promise.resolve();
+      })
+      .then(() => this._revealTitle());
+  }
+
+  /**
+   * 门禁 ①：标题三图 decode。每张推进 1/3，失败或 8s 超时也放行（退回程序化夜空）。
+   */
+  _bootGateTitleArt() {
     const imgs = [this._titleBgImg, ...Object.values(this._titleCharImgs)].filter(Boolean);
     const total = imgs.length || 1;
     let ready = 0;
-    this._boot?.setTarget(0.18);
     const decodeAll = Promise.all(imgs.map((img) => new Promise((resolve) => {
+      let settled = false;
       const done = () => {
+        if (settled) return;
+        settled = true;
         ready += 1;
-        this._boot?.setTarget(0.18 + 0.66 * (ready / total));
+        this._boot?.setTarget(0.10 + 0.32 * (ready / total));
         resolve();
       };
       if (img.complete && img.naturalWidth) { done(); return; }
@@ -964,23 +1032,137 @@ class Game {
       }
     })));
     const timeout = new Promise((resolve) => setTimeout(resolve, 8000));
-    Promise.race([decodeAll, timeout])
-      .then(() => {
-        this._boot?.setTarget(0.94);
-        // 最短停留时间到点后追满 100%，兑现后 main 再等两帧揭幕
-        return this._boot ? this._boot.finish() : Promise.resolve();
-      })
-      .then(() => this._revealTitle());
+    return Promise.race([decodeAll, timeout]).then(() => {
+      this._bootGate.art = true;
+      this._refreshBootStatus();
+    });
+  }
+
+  /**
+   * 门禁 ②：进关 game kit 全量模块。
+   * 进度条用 ResourceTiming 里「门禁开始之后才发起的 script 请求」数量粗略映射到 0.42→0.82
+   * （KIT_MODULE_EST 只是观感刻度，真正放行看 loadGameKit() 的 promise）。
+   * 失败只记 failed，不阻断揭幕。
+   */
+  _bootGateGameKit() {
+    const gate = this._bootGate;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    let timer = 0;
+    if (typeof performance !== 'undefined' && typeof setInterval === 'function') {
+      timer = setInterval(() => {
+        try {
+          const list = performance.getEntriesByType ? performance.getEntriesByType('resource') : [];
+          let n = 0;
+          for (const e of list) {
+            if (e.initiatorType !== 'script' || e.startTime < t0) continue;
+            if (/\/engine\/songs\//.test(e.name || '')) continue;   // 曲库模块不算进关进度
+            n += 1;
+          }
+          this._boot?.setTarget(0.42 + 0.40 * Math.min(1, n / KIT_MODULE_EST));
+        } catch (e) { /* 进度只是观感，量不到就算了 */ }
+      }, 200);
+    }
+    const stop = () => { if (timer) { clearInterval(timer); timer = 0; } };
+    return loadGameKit().then(() => {
+      stop();
+      gate.kit = true;
+      this._boot?.setTarget(0.86);
+      this._refreshBootStatus();
+    }, (err) => {
+      stop();
+      gate.failed.push('kit');
+      this._refreshBootStatus();
+      if (typeof console !== 'undefined') console.warn('[boot] 进关模块预载失败，先揭幕；进关时会再等一次', err);
+    });
+  }
+
+  /**
+   * 门禁 ③：第 1 面曲库模块（道中曲 + Boss 曲）。
+   * 只门禁第 1 面（gzip 约 21KB）；全曲库 18 首 ~291KB 会把弱网首屏拖成 +19s，
+   * 后续面由进关前的 _ensureStageMusic() 与 _warmStageMusic() 的「提前一面预热」覆盖。
+   * preloadSongs 不会 reject，所以这里用 isSongLoaded 复核是否真的到货。
+   */
+  _bootGateStage1Music() {
+    const gate = this._bootGate;
+    const def = this._mainStages()[0];
+    const names = this._stageSongs(def);
+    if (!names.length) { gate.music = true; return Promise.resolve(); }
+    return preloadSongs(names).then(() => {
+      const missing = names.filter((n) => !isSongLoaded(n));
+      if (missing.length) {
+        gate.failed.push('music');
+        if (typeof console !== 'undefined') console.warn('[boot] 第 1 面曲目模块未就绪：', missing);
+      } else {
+        gate.music = true;
+      }
+      this._refreshBootStatus();
+    });
+  }
+
+  /**
+   * 启动幕状态行：把门禁现在卡在哪一段说出来（标题图 / 进关模块 / 曲库）。
+   *
+   * 只往 #boot 里插一个 <p class="boot-status">，不改 index.html；样式见 style.css。
+   * 纯观感文案：失败路径也照样播报，玩家看到的是「还在准备」而不是假进度。
+   * ?bootgate=off 时 kit/music 恒为 false，会一直停在「准备游戏资源…」，所以直接不显示。
+   */
+  _bootStatus(text) {
+    const bootEl = document.getElementById('boot');
+    if (!bootEl) return;
+    let el = this._bootStatusEl;
+    if (!el || !el.isConnected) {
+      const anchor = bootEl.querySelector('.boot-sub');
+      if (!anchor || !anchor.parentNode) return;
+      el = document.createElement('p');
+      el.className = 'boot-status';
+      anchor.parentNode.insertBefore(el, anchor.nextSibling);
+      this._bootStatusEl = el;
+    }
+    const next = text || '';
+    if (el.textContent === next) return;
+    el.textContent = next;
+    el.classList.toggle('on', !!next);
+  }
+
+  /** 按门禁三路的完成度刷新状态行文案（每路结算时调用一次）。 */
+  _refreshBootStatus() {
+    if (this._bootGateOff) { this._bootStatus(''); return; }
+    const g = this._bootGate;
+    if (!g) return;
+    if (g.done) { this._bootStatus('准备完成'); return; }
+    if (!g.art) { this._bootStatus('正在绘制标题…'); return; }
+    if (!g.kit && !g.music) { this._bootStatus('正在准备游戏资源与音乐…'); return; }
+    if (!g.kit) { this._bootStatus('正在准备游戏资源…'); return; }
+    if (!g.music) { this._bootStatus('正在准备音乐…'); return; }
+    this._bootStatus('即将开始…');
+  }
+
+  /**
+   * 揭幕之后把余下各面的曲库模块排进空闲预热队列（第 1 面已在门禁里到货）。
+   *
+   * 为什么不做成硬门禁：全曲库 18 首 ~291KB gzip，弱网（15KB/s）会把揭幕再拖长 ~19s。
+   * 这里交给 warmSongs 的串行空闲队列，在玩家看标题 / 选难度 / 看剧情的空档慢慢灌；
+   * 真到用的时候还没好，进关前的 _ensureStageMusic() 仍会当场等（≤4s）。
+   * 受限链路整段跳过，沿用既有「按需加载负责能用到的素材」策略。
+   */
+  _warmRemainingSongs() {
+    if (this._songsWarmed) return;
+    this._songsWarmed = true;
+    try {
+      if (linkTier() === 'constrained') return;
+      const names = [];
+      for (const def of LEVELS) names.push(def.musicPre, def.musicMid, def.music);
+      warmSongs(names.filter(Boolean));
+    } catch (e) { /* 预热失败不影响进关：进关前 _ensureStageMusic 还会再等一次 */ }
   }
 
   _revealTitle() {
     if (this._bootDone) return;
     this._bootDone = true;
-    // 启动幕一揭，首屏该下的模块和标题图都已经到齐，链路正好空出来：
-    // 立刻在后台把进关才用得到的 game kit（stage 树 ~886KB + 剧情 ~122KB）拉下来。
-    // 玩家在标题页犹豫、挑难度、看选人页的这几秒正好把它吃掉，真进关时通常已就绪；
-    // 就算这里失败也没关系 —— 进关前 ensureGameKit() 还会再等一次。
-    this._prefetchGameKit();
+    // 门禁已把进关模块拉下来时这里什么都不用做；只有门禁失败（404 / 断网 / 超时）
+    // 才在揭幕后补一次后台重试 —— 玩家在标题页犹豫、挑难度、看选人页这几秒正好把它吃掉。
+    // 就算这次也失败也没关系：进关前 ensureGameKit() 还会再等一次。
+    if (!this._bootGate?.kit) this._prefetchGameKit();
     const reveal = () => {
       // 等两帧：确保 renderer 已经用补全后的标题插画画过至少一帧，再淡出启动幕
       requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -1577,6 +1759,63 @@ class Game {
     } catch (e) { /* 预热失败不影响游玩 */ }
   }
 
+  /**
+   * 音乐预热：把本关 + 下一面要用到的曲目模块提前拉下来。
+   *
+   * 曲库是懒加载的（首访只带 title 曲），按需加载 = 「等 playMusic 那一拍才发请求」，
+   * 弱网下这一拍就是进关 / Boss 登场先静音好几秒。进关这一刻正好有开场对白、
+   * 背景与立绘下载占着几秒，够曲库模块（gzip 后 5~30KB）串行下完。
+   * 只报「本关 + 下一面」的曲目，不做全曲库预取：首访字节不变，弱网也不挤带宽。
+   * @param {object|null} def 关卡定义
+   * @param {number} index 关卡序号（EXTRA 传 0）
+   * @param {boolean} isExtra
+   */
+  _warmStageMusic(def, index, isExtra) {
+    const names = [];
+    if (def) names.push(def.musicPre, def.musicMid, def.music);
+    if (!isExtra) {
+      const next = this._mainStages()[index + 1];
+      if (next) names.push(next.musicPre, next.musicMid, next.music);
+    }
+    // 出错不影响进关：预热本来就是「能提前就提前」，失败下一拍还有按需加载兜着
+    try { warmSongs(names); } catch (e) { /* ignore */ }
+  }
+
+  /**
+   * 一关会用到的曲目名（道中 / 中 Boss / Boss）。
+   * @param {object|null} def 关卡定义
+   * @returns {string[]}
+   */
+  _stageSongs(def) {
+    if (!def) return [];
+    return [def.musicPre, def.musicMid, def.music].filter(Boolean);
+  }
+
+  /**
+   * 进关前确保本关曲目模块已经到货。
+   *
+   * 启动幕门禁只保证第 1 面；第 2 面往后靠这里「进关前 await 本关曲目」。
+   * 平时 _warmStageMusic 已经提前一面预热过，这里通常 0ms 直接过；
+   * 4s 上限：宁可有几秒静音，也不能把进关卡住（audio 里还有流式 / 合成器兜底）。
+   * @param {object|null} def 关卡定义
+   * @returns {Promise<boolean>} 是否全部到货
+   */
+  async _ensureStageMusic(def) {
+    const names = this._stageSongs(def).filter((n) => !isSongLoaded(n));
+    if (!names.length) return true;
+    try {
+      await Promise.race([
+        preloadSongs(names),
+        new Promise((resolve) => setTimeout(resolve, 4000)),
+      ]);
+    } catch (e) { /* preloadSongs 本身不会 reject，这里只是防御 */ }
+    const missing = names.filter((n) => !isSongLoaded(n));
+    if (missing.length && typeof console !== 'undefined') {
+      console.warn('[music] 进关前曲目模块仍未就绪：', missing);
+    }
+    return missing.length === 0;
+  }
+
   async startGame() {
     this._hidePanel();
     this.inExtra = false;
@@ -1589,6 +1828,9 @@ class Game {
     this.hud.setMaxLives(this.lives, this.char);
     this.audio.unlock?.();
     this.audio.setMusic?.(this.musicOn !== false);
+    // 第 1 面的道中曲 / Boss 曲现在就排进预热：开场对白这几秒足够模块到货，
+    // 进关时 playMusic 直接命中曲库，不用现等（弱网下这就是几秒静音的区别）
+    this._warmStageMusic(this._mainStages()[0], 0, false);
 
     // 进关才用得到的模块（stage 树 ~886KB + 剧情 ~122KB）这里是第一次用到：
     // 弱网首访要现下十几秒，await 之前先盖一张「载入中」，别让难度页按了 Enter 之后一动不动
@@ -1637,6 +1879,10 @@ class Game {
     this.carryExtend = 0;
     this.hudEl?.classList.remove('hidden');
     this.hud.setMaxLives(this.lives, this.char);
+    this.audio.unlock?.();
+    this.audio.setMusic?.(this.musicOn !== false);
+    // EXTRA 的三首（ex_pre / ex_mid / extra）同样是曲库懒加载：开场对白期间先排进预热
+    this._warmStageMusic(EXTRA_STAGE(), 0, true);
     // 进关才用得到的模块（stage 树 / 剧情）在这里第一次用到，弱网首访要现下
     if (!(await ensureGameKit())) {
       kitLoading(false);
@@ -1654,6 +1900,8 @@ class Game {
     const def = EXTRA_STAGE();
     if (!def) { this.showTitle(); return; }
     if (!(await ensureGameKit())) { kitLoading(false); this.showTitle(); return; }
+    // EXTRA 三道曲目（ex_pre / ex_mid / extra）在这里补齐；通常开场对白期间已预热完
+    await this._ensureStageMusic(def);
     // 连环战从第几场开始：新挑战 = 0（咲夜一阶段），失败接关 = 当前场次
     this._extraChainIdx = opts.chainFrom == null
       ? 0
@@ -1667,6 +1915,8 @@ class Game {
     const def = list[index];
     if (!def) { this._onAllCleared(); return; }
     if (!(await ensureGameKit())) { kitLoading(false); this.showTitle(); return; }
+    // 本关曲目模块（启动幕门禁只保第 1 面，后续面在这里补齐；通常已预热，0ms）
+    await this._ensureStageMusic(def);
     this._createStage(def, index, false, opts);
   }
 
@@ -1790,7 +2040,9 @@ class Game {
   _playChainMusic(name) {
     if (!name) return;
     const pos = this._chainMusicPos || (this._chainMusicPos = new Map());
-    const cur = this.audio?.currentSong;
+    // 记账要用「耳朵里在响的那首」：不静音换曲的等待期里 currentSong 已经翻成刚请求的
+    // 新曲，但放着的还是旧曲，用 currentSong 会把账记到错的那首上。
+    const cur = this.audio?.soundingSong ?? this.audio?.currentSong;
     const prog = this.audio?.musicProgress;
     // 换下去的曲目先记账；同一首（第一场刚开打就是它）不用记，也别把它掐断重播
     if (cur && cur !== name && prog) pos.set(cur, prog.elapsed);
@@ -1807,6 +2059,9 @@ class Game {
     this._hidePanel();
     // 离开标题页：释放立绘阴影烘焙层（一张约 1000×850 的离屏 canvas）
     this._titleBake = null;
+    // 曲目模块最先排进预热队列：本关的（读档 / 重开 / 续关都绕过了 startGame 的预热）
+    // 与下一面的。串行 + 空闲帧发起，不会跟下面的背景 / 立绘抢同一条连接。
+    this._warmStageMusic(def, index, isExtra);
     // 厚涂背景现在就请求：本关的（万一还没预取）与下一面的（一关好几分钟，
     // 等玩家走到下一面时图早就下完了，5/6 面开场不会再先闪出程序化天空兜底）。
     prefetchStageBg(def.theme);
