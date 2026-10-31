@@ -102,3 +102,41 @@ LQ 会话已自行提交 8223273（stage.js LQ 背景），我的 audio 改动�
 TTFB 601–659ms，errors 0。对比 1.6.51 的 3.0–21.7s、1.6.53 的 3.5–8.8s。
 
 两个 worktree（../hks-audio、../hks-base）已删，8139/8140/8141 服务已停，只剩主树 8138。
+
+## 06:45 1.6.65 门禁恢复「真等」（本会话）
+
+用户反馈「失效了」：1.6.53 加的 2.5s 软上限 + 1.6.54 把曲库索引挪到首次手势后，
+导致 `_bootGateStage1Music()` 里 `preloadSongs` 恒为 null → music 一路空转通过、kit 也只等 2.5s，
+启动幕又变成「标题先出、进游戏再等」。
+
+改动（3d75452，已 push）：
+- 撤回 `BOOT_GATE_SOFT_MS`（2.5s 软上限）；`BOOT_GATE_TIMEOUT_MS` 90000 → 180000（只防连接挂死）。
+- 新增 `loadSongsIndex()`：首屏只动态 import `engine/songs/index.js`（纯数据、不建 AudioContext），
+  门禁第 1 面曲目走它；`audio.js` 真身仍留到第一次手势后（1.6.54 的收益保留）。
+- 曲库索引/曲目 404 时记 `failed:['music']` 并照常揭幕，进关前 `_ensureStageMusic()` 兜底。
+- 版本串 1.6.64 → 1.6.65（index.html 14 / sw.js 2 / platform.js 2）；docs/BOOT_SPLASH_DESIGN.md 升 v3。
+- 新增 `tools/_gate_strict_check.mjs`（19 条）。验证：19/19、_lead_smoke 14/14、_gate_v2_check 11/11、
+  _boot_qa 13/13。首屏多取 `songs/index.js`+`title_full.js`（raw 64KB），换来 music 真的等。
+
+注意：首屏字节会比 1.6.64 略增；谁再做首屏优化，别再把这路改成空转——门禁的「等」是用户明确要的。
+
+## 06:50 1.6.66 门禁 v4：标题之后进关卡零等待（本会话）
+
+用户反馈「还是不行，在进入标题后还是那样」——1.6.65 的严格门禁只在快网上生效（本机揭幕已等齐），
+但揭幕后仍要拉低清背景/高清档/Boss/立绘/动作帧与后续面曲目，选人→对白→进关期间仍在后台下载；
+弱网下 `_ensureStageBg` 还会盖「正在准备关卡画面…」。
+
+改动（v4）：
+- 门禁扩成五路：标题三图 + game kit + 音频引擎模块 + **全曲库 18 key/19 模块** + **关卡美术 17 项**
+  （7 主题低清背景、双自机动作帧、7 Boss 立绘、12 张对话立绘）。增量 gzip ≈ 曲库 782KB + 低清 699KB + 立绘 370KB。
+- 进度带改为 0.10→0.26→0.50→0.72→0.90→0.92→0.94；新增 `MUSIC_MODULE_EST`(20)、`BOOT_ART_ITEM_MS`(20s)、
+  `ALL_SONG_KEYS` / `ALL_STAGE_THEMES` / `ALL_BOSS_KEYS` / `ALL_PORTRAIT_KEYS`；`_bootGateMusic(mode)`、
+  `_bootGateStageArt()`、`_bootGateAudio()`；`_refreshBootStatus()` 增加「正在载入音乐…」「正在准备关卡画面…」。
+- 修 `_unlockAudio()`：模块被门禁预载后 `if (!AudioEngine)` 不再成立 → 音频骨架不替换 → 进关静音。
+  改成 `if (!(this.audio instanceof AudioEngine))` 重建。
+- 新增 `?bootgate=lite`（v3 口径：只等第 1 面曲目、不等美术），`?bootgate=off` 保留。
+- 验证：_lead_smoke 18/18（揭幕 1.83s、19 曲库模块/14 低清/10 Boss/16 帧全在揭幕前）、_gate_strict_check 19/19、
+  _boot_qa 13/13、_gate_v2_check 11/11；400KB/s 揭幕 10.9s；Shift+3 跳关 warp→play 257ms、无 kitLoad 遮罩。
+- 版本串 1.6.65 → 1.6.66；docs/BOOT_SPLASH_DESIGN.md 升 v4（§2 六条取舍 / §4 降级表 / §5 契约第 6 条 / §6 调参）。
+- 注意：首屏字节继续上涨是**用户明确要的取舍**（宁可在加载页多等，也别在标题/进关再等）；
+  弱网保命用 `?bootgate=lite`。以后再做首屏优化，别偷偷把任何一路改成空转。

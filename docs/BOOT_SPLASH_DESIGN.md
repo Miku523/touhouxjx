@@ -1,14 +1,14 @@
-# 启动幕（开屏 loading）设计 v3
+# 启动幕（开屏 loading）设计 v4
 
-> 状态：已实现（v3 严格门禁：曲库索引与第 1 面曲目真进曲库才放行，无软上限）
-> 范围：`index.html` 的 `#boot` 段 · `src/style.css` 的 `#boot` 段（含 `.boot-status`） · `src/game/bootScreen.js` · `src/main.js` 门禁接入（`_waitBootReady` 三路并联 + `loadSongsIndex()` + `_bootStatus` 状态行 + 进关音乐兜底 + 揭幕后 `_warmRemainingSongs`） · `src/engine/lazy_preload.js` 的 `holdIdleQueue()`
+> 状态：已实现（v4 全量门禁：标题图 + game kit + 音频引擎 + 全曲库 + 关卡美术都到位才放行，标题之后进关卡零等待）
+> 范围：`index.html` 的 `#boot` 段 · `src/style.css` 的 `#boot` 段（含 `.boot-status`） · `src/game/bootScreen.js` · `src/main.js` 门禁接入（`_waitBootReady` 五路并联 + `loadSongsIndex()` + `_bootGateAudio` / `_bootGateMusic` / `_bootGateStageArt` + `_bootStatus` 状态行 + 进关兜底） · `src/engine/lazy_preload.js` 的 `holdIdleQueue()`
 > 约束：纯 CSS + 原生 ES Module，零依赖零构建；所有尺寸乘 `var(--s)`，和 1280×720 逻辑画面永远同比例
 
 ## 0. 一句话
 
 打开游戏先看到一片深紫夜空：金色「東方新紀行」逐字亮起，中间一条红→金的细进度条在真实加载，
-底下「少女祈祷中」的三个点跟着亮。**标题图、进关模块、第 1 面曲目都到位后**启动幕才淡掉，
-标题页在同一位置接上——不会出现「标题已经好了，点进去还要干等关卡和音乐」。
+底下「少女祈祷中」的三个点跟着亮。**标题图、进关模块、音频引擎、全曲库、关卡美术都到位后**启动幕才淡掉，
+标题页在同一位置接上——点「开始游戏」之后的选难度、选人、看剧情、进关卡，全程不再出现「正在载入关卡…」的黑屏遮罩。
 
 ## 1. 版式
 
@@ -55,45 +55,52 @@
 
 ## 2. 真实进度模型
 
-进度不是假动画：每一格都对应主线程真做完的事。v2 起启动幕同时等三件事——标题三图、进关模块
-（game kit）、第 1 面曲目——三路全绿才揭幕，挡掉「标题好了，但进关和音乐还没好」的中间态。
+进度不是假动画：每一格都对应主线程真做完的事。v2 起启动幕同时等三件事（标题三图、进关模块、第 1 面曲目），
+v4 扩成五路——标题三图、进关模块（game kit）、音频引擎、全曲库、关卡美术——五路全绿才揭幕，
+挡掉「标题好了，但进关和音乐还没好」「前几面还行、后面几面进关还要再等」两种中间态。
 
 | 读数 | 对应事实 | 位置 |
 | --- | --- | --- |
 | 0.08 | 本模块构造完成（HTML/CSS 已出首帧，模块图加载完） | `src/game/bootScreen.js` 构造函数 |
-| 0.10 | 门禁开始，三路并联：标题三图 / 进关模块 / 第 1 面曲目 | `main.js` `_waitBootReady()` |
-| 0.10→0.42 | 标题三图各占 1/3，按 `decode()` 完成推进（每张 ≈ +0.107） | `main.js` `_bootGateTitleArt()` |
-| 0.42→0.82 | 进关模块按已到货的 script 资源条数线性映射（`KIT_MODULE_EST = 49`，到货瞬间再抬到 0.86） | `main.js` `_bootGateGameKit()` |
-| 0.86 | 进关模块全部到货（`loadGameKit()` 兑现：`stage.js` / `bullets.js` / `story.js` 及其依赖） | 同上 |
-| 0.92 | 三路全绿：`window.__hksBootGate = { art, kit, music, done }`，`failed` 为空 | `main.js` `_waitBootReady()` |
+| 0.10 | 门禁开始，五路并联：标题三图 / 进关模块 / 音频引擎 / 全曲库 / 关卡美术 | `main.js` `_waitBootReady()` |
+| 0.10→0.26 | 标题三图各占 1/3，按 `decode()` 完成推进 | `main.js` `_bootGateTitleArt()` |
+| 0.26→0.50 | 进关模块按已到货的 script 资源条数线性映射（`KIT_MODULE_EST = 49`，到货瞬间再抬到 0.50） | `main.js` `_bootGateGameKit()` |
+| 0.50→0.72 | 全曲库按 `/engine/songs/` 已到货模块数映射（`MUSIC_MODULE_EST = 20`），到货抬到 0.72 | `main.js` `_bootGateMusic('all')` |
+| 0.72→0.90 | 关卡美术逐项完成（7 主题低清背景 / 双自机动作帧 / 7 张 Boss 立绘 / 对话立绘，共 17 项） | `main.js` `_bootGateStageArt()` |
+| 0.90 | 关卡美术全部到货（单项 20s 上限，超时按就绪处理） | 同上 |
+| 0.92 | 五路全绿：`window.__hksBootGate = { art, kit, audio, music, stageArt, done }`，`failed` 为空 | `main.js` `_waitBootReady()` |
 | 0.94 | 门禁收尾，等标题首帧（保留原 0.94 里程碑语义） | 同上 |
 | 1.00 | 最短停留 1400ms 到点后追满 | `bootScreen.js` `finish()` |
 
-门禁的三条取舍（为什么不是「全等」也不是「只等标题」）：
+门禁的取舍（为什么不是「全等」也不是「只等标题」）：
 
-1. **只等第 1 面音乐，不等全部 18 首**：18 首懒加载曲目 gzip 共约 291KB，弱网（15KB/s）要多等约 19s。
-   第 2 面起由「进关前 `_ensureStageMusic()` 补齐本关曲目 + 提前一面 `warmSongs()` 预热」兜底，
-   玩家走到那一关时曲目早已在缓存/解码队列里。
+1. **等全曲库 + 关卡美术（v4）**：要求「标题之后进关卡零等待」，就得把 18 个曲目模块（gzip ≈ 782KB）、
+   7 个主题的低清背景（14 张 ≈ 699KB）、双自机动作帧、7 张 Boss 立绘、对话立绘都提前拉下来。
+   代价是首屏下载量上涨：弱网（15KB/s）会明显拖长开屏；为此保留 `?bootgate=lite` 退成 v3 口径
+   （只等第 1 面曲目、不等美术），以及 `?bootgate=off` 只等标题图。**默认 v4**：宁可在加载页多等，
+   也不要在标题之后每进一关等一次。
 2. **失败不阻断**：任何一路失败只记进 `__hksBootGate.failed`（`kit` / `music` / `timeout`）+ `console.warn`，
    照常揭幕；`_revealTitle()` 发现 `kit` 未绿会补一次后台 `_prefetchGameKit()`，进关时 `ensureGameKit()`
    与 `_ensureStageMusic()`（最多等 4s）还会各等一次。开屏负责「尽量都到齐」，不当单点故障。
 3. **门禁期间暂停空闲预取**：`lazy_preload.js` 的 `holdIdleQueue(true)` 让背景/立绘的空闲预取先排队，
-   不和 game kit、曲目抢带宽；揭幕时 `holdIdleQueue(false)` 释放。所以 0.42→0.82 那段是真下载。
-4. **其余曲目不进门禁、揭幕后空闲预热**：门禁放行时 `_warmRemainingSongs()` 把 6 面（含 EXTRA）的
-   `musicPre` / `musicMid` / `music` 灌进 `warmSongs()` 的串行空闲队列，玩家看标题、挑难度、读过场剧情的
-   空档慢慢到货；`linkTier() === 'constrained'` 时整段跳过（沿用「按需加载负责能用到的素材」的旧策略）。
-   真到用还没好，进关前 `_ensureStageMusic()`（≤4s）仍会当场等。
+   不和 game kit、曲目、美术抢带宽；揭幕时 `holdIdleQueue(false)` 释放。所以 0.26→0.50、0.50→0.72、
+   0.72→0.90 这三段都是真下载，不是空转。
+4. **v4 之后 `_warmRemainingSongs()` 只作兜底**：全曲库已在门禁里到齐，正常路径上它无事可做；
+   保留它是为了 `?bootgate=lite` / `?bootgate=off` 与门禁硬超时的情形——那时揭幕后仍要把
+   未到货的曲目灌进 `warmSongs()` 的串行空闲队列；`linkTier() === 'constrained'` 时整段跳过。
 5. **曲库索引首屏单独取，且不放软上限**（1.6.65 修）：1.6.53 曾给门禁加过 2.5s 软上限，1.6.54 又把
-   `engine/songs/index.js` 挪到首次手势之后，于是 `_bootGateStage1Music()` 里 `preloadSongs` 还是 `null`、
-   这一路恒为空转通过，kit 也被 2.5s 截断 —— 门禁名存实亡，玩家又变成「标题先出、进游戏再等」。
-   v3 用 `loadSongsIndex()` 在首屏只取曲库索引（`songs/index.js` + `title_full.js`，纯数据、不建
-   `AudioContext`，不违反浏览器手势策略），第 1 面曲目模块真进了曲库才置 `gate.music = true`；
-   `audio.js` 真身仍留到第一次手势后。软上限撤回，只剩 `BOOT_GATE_TIMEOUT_MS`（180s）一条硬超时，
+   `engine/songs/index.js` 挪到首次手势之后，于是曲库这一路里 `preloadSongs` 还是 `null`、
+   恒为空转通过，kit 也被 2.5s 截断 —— 门禁名存实亡，玩家又变成「标题先出、进游戏再等」。
+   修法：用 `loadSongsIndex()` 在首屏只取曲库索引（`songs/index.js` + `title_full.js`，纯数据、不建
+   `AudioContext`，不违反浏览器手势策略）；软上限撤回，只剩 `BOOT_GATE_TIMEOUT_MS`（180s）一条硬超时，
    且只在「连接挂住不报错」时跳闸。
+6. **音频引擎模块也进门禁（v4）**：`engine/audio.js` 从 1.6.54 起是首次手势后才 import，但那只是
+   为了避免白建 `AudioContext`；模块本身不建 ctx，提前取下来只占内存。v4 用 `_bootGateAudio()` 先把它
+   拿下来，进关播 BGM 时不再等模块下载 + 解析；`AudioContext` 仍等第一次手势（浏览器策略）。
 
 状态行 `.boot-status` 只播报门禁真实阶段，不编台词：`正在绘制标题…` → `正在准备游戏资源与音乐…`
-（两路谁先到就切成 `正在准备游戏资源…` / `正在准备音乐…`）→ `即将开始…` → `准备完成`。
-文案由 `main.js` `_refreshBootStatus()` 按 `__hksBootGate` 的三个标志算，每路结算时刷一次；
+（两路谁先到就切成 `正在准备游戏资源…` / `正在载入音乐…`）→ `正在准备关卡画面…` → `即将开始…` → `准备完成`。
+文案由 `main.js` `_refreshBootStatus()` 按 `__hksBootGate` 的五个标志算，每路结算时刷一次；
 `?bootgate=off` 时整行留空，进度条回退 v1 行为。
 
 四条平滑规则，保证「不假」也不「难看」：
@@ -119,13 +126,19 @@ v3（严格门禁）：    揭幕 1714（lead smoke）/ 1970（v2 状态行套�
                     honou_pre1 309 · youma_stage1 310 均在揭幕前到货；kit 入口 139 · 139 · 139
                     400KB/s 节流：门禁跨度 4412ms（不再被 2.5s 软上限截断），曲目 lastSong 5201 < finishedAt 6350
                     404 youma_stage1.js：failed = ['music']、music=false，其余放行，标题页照常可交互
+v4（全量门禁）：    本机：揭幕 1830ms / gate {art,kit,audio,music,stageArt} 全绿 / failed=[]
+                    揭幕前已到货：19 个曲库模块、14 张低清背景、10 张 Boss 立绘、16 张自机动作帧
+                    400KB/s 节流：揭幕 10915ms（gate 跨度 8357ms），failed=[]，进关零额外下载
+                    后续面：Shift+3 跳到第 3 面，warp→play 257ms，无 kitLoad 遮罩，warp 后仅 style.css 到货
+                    404 youma_stage1.js：failed=['music'] 仍放行（v3 断言在新构建上全过）
 ```
 
-本地同机取数，三路几乎同时到，所以门禁只把揭幕推迟约 5ms；线上预热后预计多 0.3~0.6s，
-冷启动/弱网时 0.42→0.86 段会跟着真下载一格格爬（这是有意的，不是卡住）。
-严格门禁的净代价主要在「曲库索引 + 第 1 面两首曲目」：raw 约 222KB（`songs/index.js` 16.8K +
-`title_full.js` 47K + `honou_pre1.js` 59K + `youma_stage1.js` 98.5K）；这部分本来也要在第一次手势后下载，
-只是从「进关时/手势后」提前到了启动幕里。
+本地同机取数，v4 把「全曲库 + 关卡美术」也纳入，本机揭幕从 1.8s 涨到 1.83s（local 太快，
+几乎全被 `MIN_PAGE_MS` 地板吸收）；真正的代价在慢链路上：400KB/s 从 v3 的 ~2.4s 涨到 ~10.9s，
+换来的是标题之后每一面进关都不再等。弱网（15KB/s）会明显更长，此时用 `?bootgate=lite` / `?bootgate=off` 退回。
+v4 的首屏增量（gzip 口径）：全曲库 ≈ 782KB、低清背景 ≈ 699KB、Boss 立绘 ≈ 250KB、自机动作帧 ≈ 60KB、
+对话立绘 ≈ 120KB；这些原本也要在第一次手势后/进关时下载，只是从「进关时」提前到了启动幕里。
+v3 的净代价（曲库索引 + 第 1 面两首曲目，raw 约 222KB）现在是 v4 的子集。
 
 ## 3. 揭幕衔接
 
@@ -143,13 +156,17 @@ v3（严格门禁）：    揭幕 1714（lead smoke）/ 1970（v2 状态行套�
 | `prefers-reduced-motion: reduce` | 夜空球、星点、落樱、扫描光带、内框、三个点全部 `animation: none`；条子本身仍按真实进度走（信息量，不是装饰） |
 | 某张标题图 404 / `decode()` 抛错 | 该图按已就绪计数（`catch` 后照常 `ready += 1`），不会把条子卡在 2/3 |
 | 标题图 8s 兜底 | 标题图那一路的 `Promise.race` 超时后按已就绪计数继续（v1 行为不变） |
-| 门禁 180s 硬超时 | 三路没全绿也不再等，记 `failed: ['timeout']` 后揭幕；进关前 `ensureGameKit()` / `_ensureStageMusic()` 还会各等一次。只在「连接挂住不报错」时跳闸，正常弱网（15KB/s 全程也要 ~90s）不会触发 |
-| 1.6.53 的 2.5s 软上限 | 已撤回（1.6.65）：不再「到点先放行」。揭幕必须等 `loadSongsIndex()` 兑现后第 1 面曲目真进曲库 |
-| 曲库索引本身 404 / 取不到 | `loadSongsIndex()` reject → `_bootGateStage1Music()` 记 `failed: ['music']` 后放行；进关前 `_ensureStageMusic()` 仍会等（≤4s），最坏退回合成器兜底 |
-| 门禁某一路失败（模块 404 / 曲目模块没就绪） | 只写进 `__hksBootGate.failed` 并 `console.warn`，不阻断揭幕；`kit` 未绿时 `_revealTitle()` 补一次后台预取 |
+| 门禁 180s 硬超时 | 五路没全绿也不再等，记 `failed: ['timeout']` 后揭幕；进关前 `ensureGameKit()` / `_ensureStageMusic()` / `_ensureStageBg()` 还会各等一次。只在「连接挂住不报错」时跳闸 |
+| 1.6.53 的 2.5s 软上限 | 已撤回（1.6.65）：不再「到点先放行」。揭幕必须等 `loadSongsIndex()` 兑现后曲目模块真进曲库 |
+| 曲库索引本身 404 / 取不到 | `loadSongsIndex()` reject → `_bootGateMusic()` 记 `failed: ['music']` 后放行；进关前 `_ensureStageMusic()` 仍会等（≤4s），最坏退回合成器兜底 |
+| 某个曲目模块 404 | `preloadSongs()` 永不 reject，但 `isSongLoaded` 复核会发现缺件 → `failed: ['music']`，其余照常揭幕 |
+| 关卡美术某项超时 / 404 | 单项 20s 上限（`BOOT_ART_ITEM_MS`），超时按就绪计数继续；低清背景失败时进关 `_ensureStageBg()` 还会再等（≤9s），Boss 立绘失败退回程序化剪影 |
+| 音频引擎模块 404 | `_bootGateAudio()` 记 `failed: ['audio']` 后放行；首次手势时 `_unlockAudio()` 再试一次，仍失败则本次静音运行 |
+| 门禁某一路失败（模块 404 / 曲目模块没就绪 / 美术超时） | 只写进 `__hksBootGate.failed` 并 `console.warn`，不阻断揭幕；`kit` 未绿时 `_revealTitle()` 补一次后台预取 |
 | `?bootgate=off` | 排障 / A-B 对照开关：只等标题图，回到 v1「揭幕后后台预取 game kit」的行为；状态行同时留空 |
+| `?bootgate=lite` | 弱网保命开关：退回 v3 口径（标题图 + game kit + 音频 + 只第 1 面曲目，不等关卡美术） |
 | 状态行所在的 `#boot` 还没解析出来 | `_bootStatus()` 每路结算时重新找 `#boot .boot-sub` 作锚点，找不到就静默跳过，不影响门禁 |
-| 限流链路（`linkTier() === 'constrained'`） | 揭幕后不做全曲库空闲预热（`_warmRemainingSongs()` 直接 return），进关前仍按需 `_ensureStageMusic()` |
+| 限流链路（`linkTier() === 'constrained'`） | v4 默认门禁本身不受影响；`?bootgate=lite`/`off` 下揭幕后不做全曲库空闲预热（`_warmRemainingSongs()` 直接 return） |
 | 后台标签页打开 | rAF 暂停 → 条子停在原处；切回前台继续追，不会在看不见的时候白白动画完 |
 | `#boot` 元素缺失 | `BootScreen` 所有方法安全空转，`main.js` 的 `?.` 调用不影响启动 |
 | 界面语言切换 | 「少女祈祷中」走语言包（`data-i18n`），缺译回退中文；「東方新紀行」是品牌汉字，不做外语版 |
@@ -159,6 +176,7 @@ v3（严格门禁）：    揭幕 1714（lead smoke）/ 1970（v2 状态行套�
 
 ```bash
 node tools/_boot_qa.mjs          # 启动幕本体回归（需 8138 上有静态服务器，tools/serve_nocache.py）
+node tools/_lead_smoke.mjs       # v4 门禁冒烟：五路全绿 / 全曲库+低清背景+Boss+动作帧到货 / 进关零遮罩（18 条）
 node tools/_boot_gate_qa.mjs     # v2 门禁专项：正常网 / 节流 / kit 404 / 曲目 404 / 进关冒烟 / ?bootgate=off
 node tools/_gate_v2_check.mjs    # v2 附加项：状态行文案与位置 + 揭幕后全曲库空闲预热（11 条）
 node tools/_gate_strict_check.mjs  # v3 严格门禁专项：曲库索引首屏到货 / 曲目 404 / 400KB/s 无软上限（19 条）
@@ -172,6 +190,10 @@ node tools/_gate_strict_check.mjs  # v3 严格门禁专项：曲库索引首屏�
 4. `?bootgate=off` 下行为与 v1 一致（不报错、揭幕后仍有后台 game kit 预取）；
 5. v3：曲库索引（`songs/index.js` / `title_full.js`）在第 1 面曲目之前到货；节流下门禁跨度 > 2.6s
    （证明没有软上限截断）；`youma_stage1.js` 404 时 `failed` 含 `music`、`music === false` 但不阻断揭幕。
+6. v4：揭幕瞬间 `art / kit / audio / music / stageArt` 全为 `true`；ResourceTiming 里曲库模块 ≥18、
+   低清背景 14 张、Boss 立绘 ≥7、自机动作帧 ≥8 都已在揭幕前到货；`Shift+N` 跳到后续面时 `#kitLoad`
+   全程不出现（`display: none`），warp→play < 1.5s，且跳关后没有新增曲库/背景下载
+   （`?bootgate=lite` 允许低清背景 0 张，但其余四路仍须全绿）。
 
 性能口径：同一份冻结副本跑 `/index.html`（门禁开）vs `/index.html?bootgate=off`（门禁关），
 差值即门禁净代价；另用 `git archive HEAD` 的旧版作参考行（注明含另一会话未提交改动）。
@@ -229,6 +251,21 @@ v3 严格门禁专项（`tools/_gate_strict_check.mjs`，2026-11-01 本地 8138�
 `tools/_gate_v2_check.mjs` 11/11、`tools/_boot_qa.mjs` 13/13（A 总时长 2214ms、B 开屏按键被吃掉、
 C 节流中间态 26 / 揭幕 3641ms）。即 1.6.65 在撤回软上限、把曲库索引纳入门禁之后，v1/v2 的既有断言全部保持通过。
 
+v4 全量门禁（2026-11-01 本地 8138）：`tools/_lead_smoke.mjs` **18/18 PASS**，`tools/_gate_strict_check.mjs`
+**19/19 PASS**（v3 断言在新构建上全过），`tools/_boot_qa.mjs` **13/13 ALL PASS**，`tools/_gate_v2_check.mjs`
+**11/11 PASS**。关键实测：
+
+| 场景 | 结果 |
+| --- | --- |
+| 本机快网（`_lead_smoke`） | 揭幕 1830ms；`__hksBootGate={art,kit,audio,music,stageArt,done:true,failed:[]}`；揭幕前到货 19 个曲库模块、14 张低清背景、10 张 Boss 立绘、16 张自机动作帧；进关 `soundingSong="pre1"`、无 kitLoad 遮罩；零 console error |
+| 本机快网资源汇总（`_pt/_gate_v4_check`） | 揭幕 1842ms、gate `finishedAt=914.6ms`；snapshot n=163、totalBytes 8,628,294（本地未压缩口径）：曲库 19 / 1.74MB、低清背景 14 / 715KB、高清背景 14 / 2.92MB（低清到货即升档，也赶在揭幕前）、Boss 10 / 700KB、动作帧 16 / 248KB、对话立绘 12 / 585KB、kit 脚本 56 |
+| 400KB/s 节流 | 揭幕 10915ms（gate 跨度 8357ms、finishedAt 10334）、`failed=[]`；低清背景 14、Boss 7 |
+| 后续面跳关（`_pt/_stage2_trace --stage 3 --kbps 400`） | gate `finishedAt=10514`；`Shift+3` warp→play **257ms**、`#kitLoad` 全程 `display:none`、跳关后仅 `style.css` 到货（无曲库/背景下载） |
+| 进关等待（`_pt/_entry_trace`，快网/400KB/s） | 揭幕 1814 / 11001ms；点开始游戏后 `#kitLoad` 遮罩窗口为空（`overlay=[]`），confirm 之后只到货主样式表 `style.css` 146KB |
+| `?bootgate=lite` | 揭幕 1978ms；`{art,kit,audio,music:true,stageArt:false,failed:[]}`；低清背景 0 张（确认退回 v3 口径） |
+| `?bootgate=off` / 404 曲目 | 行为与 v3 一致（off 只等标题图、失败只记 `failed` 不阻断） |
+
+
 性能口径实测（同一冻结副本 `/index.html` vs `?bootgate=off`，本地 headless Edge，中位数）：
 
 | 条件 | 揭幕（门禁开 / 关） | 门禁净代价 | 揭幕前已下载 |
@@ -261,18 +298,23 @@ timeline 档位判定；headless 偶发 `visibilityState="hidden"` 会让 rAF �
 | 淡出时长 | `src/style.css` `#boot` 的 `transition: opacity .55s`，以及 `hide()` 里的 `setTimeout(..., 900)` |
 | 门禁硬超时 | `src/main.js` `BOOT_GATE_TIMEOUT_MS`（180000） |
 | 门禁前取曲库索引 | `src/main.js` `loadSongsIndex()`（只 import `engine/songs/index.js` + 静态的 `title_full.js`，不建 `AudioContext`） |
-| 进关模块估数（0.42→0.86 的映射分母） | `src/main.js` `KIT_MODULE_EST`（49；依赖图变化时同步改，只影响观感不影响门禁） |
-| 启动幕要等哪些音乐 | `src/main.js` `_bootGateStage1Music()`（现在只等第 1 面的 `musicPre` / `music`） |
-| 揭幕后预热哪些音乐 | `src/main.js` `_warmRemainingSongs()`（LEVELS 全部曲目；受限链路跳过） |
-| 状态行文案 / 位置 | `src/main.js` `_refreshBootStatus()` 里四条分支；样式 `src/style.css` `#boot .boot-status`，锚点 `.boot-sub` |
+| 进关模块估数（0.26→0.50 的映射分母） | `src/main.js` `KIT_MODULE_EST`（49；依赖图变化时同步改，只影响观感不影响门禁） |
+| 曲库模块估数（0.50→0.72 的映射分母） | `src/main.js` `MUSIC_MODULE_EST`（20；全曲库 19 个模块 + 索引，只影响观感） |
+| 启动幕要等哪些音乐 | `src/main.js` `_bootGateMusic(mode)`：默认 `'all'` 用 `ALL_SONG_KEYS`（18 个 key，19 个模块）；`?bootgate=lite` 用 `'first'`（只第 1 面 `musicPre` / `music`） |
+| 启动幕要等哪些美术 | `src/main.js` `_bootGateStageArt()`：7 个主题的低清背景、双自机动作帧、7 个 Boss 立绘、12 张对话立绘（`ALL_PORTRAIT_KEYS`）；单项上限 `BOOT_ART_ITEM_MS`（20000） |
+| 启动幕要不要等音频引擎模块 | `src/main.js` `_bootGateAudio()`（只取 `engine/audio.js` 模块，不建 `AudioContext`） |
+| 揭幕后预热哪些音乐 | `src/main.js` `_warmRemainingSongs()`（LEVELS 全部曲目；v4 门禁下只作 lite/off/超时的兜底；受限链路跳过） |
+| 状态行文案 / 位置 | `src/main.js` `_refreshBootStatus()` 里五条分支；样式 `src/style.css` `#boot .boot-status`，锚点 `.boot-sub` |
 | 门禁期间是否暂停空闲预取 | `src/engine/lazy_preload.js` 的 `holdIdleQueue()` 调用点（`main.js` 构造函数 / `_waitBootReady`） |
+| 弱网保命开关 | URL `?bootgate=lite`（v3 口径：不等关卡美术）与 `?bootgate=off`（只等标题图） |
 | 夜空的夜色 / 月晕位置 | `#boot` 的 `background` 三层 radial、`.boot-glow` 的 `top: 30%` |
 | 落樱数量 / 疏密 | `.boot-petals i` 的 `nth-child` 起点与周期（现在 7 片） |
 
 ## 7. 有意不做
 
-- **不做假进度条**：0.10→0.42 严格跟着三张标题图的 `decode()` 走，0.42→0.86 跟着 game kit 真到货的
-  模块数走（ResourceTiming），都是真事；缓存命中时跳得快，那是对的。
+- **不做假进度条**：0.10→0.26 严格跟着三张标题图的 `decode()` 走，0.26→0.50 跟着 game kit 真到货的
+  模块数走，0.50→0.72 跟着曲库模块到货数走，0.72→0.90 跟着 17 项关卡美术的到货计数走（都是
+  ResourceTiming / 加载器回调，不是计时器）；缓存命中时跳得快，那是对的。
 - **不塞小贴士 / 版权行 / 「按任意键」**：这一屏只承担 1~2 秒的品牌过场，字越多越像卡住。
   唯一的例外是 `.boot-status` 那行门禁状态：它播报的是真实阶段（在等什么），不是随机提示文案。
 - **不画立绘 / 不复用标题插画**：开屏的任务是「让玩家知道在加载」，插画留给标题页；全屏深色也能让
