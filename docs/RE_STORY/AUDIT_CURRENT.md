@@ -248,7 +248,7 @@ still / glow / mote / shots: [ { bg, cast: [{ key, x, h }], lines: [{ who, text 
 |---|---|---|---|---|---|---|---|
 | 01 | `title` | 東方新紀行 ～ Chronicle of Gensokyo | TITLE | 博丽神社 · 黄昏缘侧 | 历代主题曲改编 · 编曲：本作 | 144 | `src/game/musicTracks.js:29` |
 | 02 | `pre1` | ほおずきみたいに紅い魂 | STAGE 1 · 道中 | 博丽神社 · 夜樱小径 | 原曲 / ZUN | 84.5 | `:46` |
-| 03 | `stage1` | 妖魔夜行 | STAGE 1 | 博丽神社 · 夜樱小径 | 原曲 / ZUN | 39.3 | `:62` |
+| 03 | `stage1` | 妖魔夜行（宵暗夜路编） | STAGE 1 | 博丽神社 · 夜樱小径 | 原曲 / ZUN（逐音搬入重配器） | 113.0 | `:62` |
 | 04 | `pre2` | 幻視の夜 ～ Ghostly Eyes | STAGE 2 · 道中 | 魔法森林 · 萤火夜雾 | 原曲 / ZUN | 61.1 | `:78` |
 | 05 | `stage2` | 蠢々秋月 ～ Mooned Insect | STAGE 2 | 魔法森林 · 萤火夜雾 | 原曲 / ZUN | 112.6 | `:94` |
 | 06 | `pre3` | ルーネイトエルフ | STAGE 3 · 道中 | 雾之湖 · 冰蓝晨曦 | 原曲 / ZUN | 66.7 | `:110` |

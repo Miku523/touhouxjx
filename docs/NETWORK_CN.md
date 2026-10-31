@@ -140,7 +140,7 @@ DNS 侧：主域名只有两条 A（`185.199.108.153` / `185.199.109.153`，TTL 
 - 引用改造：`src/art/genboss.js`、`src/art/genchars.js`、`src/art/genfairy.js`、`src/game/dialogue.js`（`AI_PORTRAITS`）、`src/game/ending.js`、`src/game/spellCutin.js`、`src/game/stage.js`、`src/main.js`；`index.html` 三条首屏 preload 加 `type="image/webp"` 并指向 `.webp`。
 - 逐张体积 / PSNR 表：`tools/_opt/webp_table.md`，机器可读：`tools/_opt/webp_report.json`；运行时验收：`node tools/_opt_art_check.mjs`（62 张 decode 与尺寸一致、全部 `200 + image/webp`、0 4xx）。
 
-### 3.2 预渲染 BGM 转 MP3（4 首）
+### 3.2 预渲染 BGM 转 MP3（5 首）
 
 | 曲目 | 用途 | WAV | MP3 |
 | --- | --- | --- | --- |
@@ -148,7 +148,8 @@ DNS 侧：主域名只有两条 A（`185.199.108.153` / `185.199.109.153`，TTL 
 | `festival_box` | EXTRA 结局（八音盒） | 9,664,118 B | **2,545,365 B** |
 | `flandre_devil` | EXTRA 终盘（恶魔之妹） | 6,615,044 B | **1,698,472 B** |
 | `remilia_septette` | EXTRA 中段（七重奏） | —（母版 26,223,316 B 不入库） | **3,182,409 B** |
-| 合计 | | 21,571,206 B | **8,796,139 B（−59.2%）** |
+| `youma_stage1` | STAGE 1 Boss（妖魔夜行·宵暗夜路编） | —（母版 19,932,892 B 不入库） | **2,713,390 B** |
+| 合计 | | 21,571,206 B | **11,509,529 B（−46.6%）** |
 
 - 脚本：`python tools/optimize_audio_mp3.py`。前三首源是 22.05 kHz 单声道母版，用 MPEG-2 Layer III / 单声道 / VBR ≈ 91 kbps；`remilia_septette` 的母版是 44.1 kHz 立体声，改走 MPEG-1 Layer III / 192 kbps CBR（帧长 1152、side info 32 B），LAME tag 的 padding 要跟着补 `spf − delay` 的差（MPEG-1 多 576），才能解出和母版一模一样的采样数。
 - 关键在于**别让循环接缝变形**：lame 默认不写 Xing/Info 头，播放器只能猜时长；这里自己构造 Xing/Info + LAME tag，按 `n = spf × 帧数 − delay − padding` 反解精确 padding（MPEG-2 spf=576、MPEG-1 spf=1152）、TOC 用真实帧偏移。验收（`node tools/verify_audio_mp3.mjs`，4 首 65 pass / 0 fail）：

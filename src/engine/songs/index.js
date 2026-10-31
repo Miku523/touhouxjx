@@ -77,9 +77,11 @@ const DEFS = [
   // 2 面道中：幻視の夜 ～ Ghostly Eyes（EUROBEAT 157 BPM，见 tools/midi_to_eurobeat.py）
   { id: 'eurobeat_pre2', url: './eurobeat_pre2.js', keys: ['pre2'],
     pick: (m) => ({ pre2: m.PRE2_EURO?.pre2 }) },
-  // 1 面 Boss：妖魔夜行 —— 照 ZUN 扒谱 1:1 直译（见 tools/stage1_youma.py）
+  // 1 面 Boss：妖魔夜行 —— 逐音搬入 + 重配器（见 tools/build/_rumia_compose.py）
   { id: 'youma_stage1', url: './youma_stage1.js', keys: ['stage1'],
-    pick: (m) => ({ stage1: m.YOUMA_STAGE1?.stage1 }) },
+    pick: (m) => ({ stage1: m.YOUMA_STAGE1?.stage1
+      ? { ...m.YOUMA_STAGE1.stage1, audio: 'src/assets/bgm/youma_stage1.mp3?v=1.6.57' }
+      : undefined }) },
   // 2 面 Boss：蠢々秋月 —— 融合版 × 游戏内原曲混合，贝斯贴原曲音高（见 tools/merge_stage2.py）
   { id: 'merge_stage2', url: './merge_stage2.js', keys: ['stage2'],
     pick: (m) => ({ stage2: m.MERGE_STAGE2?.stage2 }) },
@@ -121,7 +123,7 @@ const DEFS = [
   // audio 让引擎直接播离线渲染成品 src/assets/bgm/remilia_septette.mp3，
   // fetch 失败时自动回退 remilia_septette.js 里的合成数据。
   { id: 'remilia_septette', url: './remilia_septette.js', keys: ['ex_mid'],
-    pick: (m) => ({ ex_mid: m.REMILIA_EX?.ex_mid ? { ...m.REMILIA_EX.ex_mid, audio: 'src/assets/bgm/remilia_septette.mp3?v=1.6.56' } : undefined }) },
+    pick: (m) => ({ ex_mid: m.REMILIA_EX?.ex_mid ? { ...m.REMILIA_EX.ex_mid, audio: 'src/assets/bgm/remilia_septette.mp3?v=1.6.57' } : undefined }) },
 ];
 
 /** key → 所属动态模块 */

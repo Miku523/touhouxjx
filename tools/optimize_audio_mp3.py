@@ -52,10 +52,11 @@ ROOT = Path(__file__).resolve().parents[1]
 BGM = ROOT / "src" / "assets" / "bgm"
 
 # 目标曲目（离线渲染产物，原 WAV 一律保留）
-TRACKS = ("sakuya_ex", "flandre_devil", "festival_box", "remilia_septette")
+TRACKS = ("sakuya_ex", "flandre_devil", "festival_box", "remilia_septette", "youma_stage1")
 
 # 母版不在 src/assets/bgm 的曲目（体积超过 Cloudflare Pages 单文件 25 MiB 上限，只发 MP3）
-MASTERS = {"remilia_septette": ROOT / "tools" / "build" / "_remi_kit" / "remilia_septette_stereo.wav"}
+MASTERS = {"remilia_septette": ROOT / "tools" / "build" / "_remi_kit" / "remilia_septette_stereo.wav",
+           "youma_stage1": ROOT / "tools" / "build" / "_rumia_kit" / "youma_stage1_stereo.wav"}
 
 SR = 22050          # 离线渲染采样率（WAV 侧，MP3 不做重采样）
 SPF = 576           # MPEG-1/2 Layer III 每帧采样数
@@ -254,7 +255,7 @@ def parse_info_frame(buf: bytes):
 
 # ------------------------------------------------------------------ 主流程
 def build_track(wav: Path, bitrate: int, dry_run: bool, mode: str = "cbr", out_dir: str = "",
-                vbr_q=None):
+                vbr_q=None, out_name: str = ""):
     t0 = time.time()
     sr, nch, n_samples, pcm = read_wav(wav)
     src_bytes = wav.stat().st_size
@@ -291,11 +292,12 @@ def build_track(wav: Path, bitrate: int, dry_run: bool, mode: str = "cbr", out_d
     total = len(body) + frame_len(bitrate, sr, 0, mpeg1)
     info = build_info_frame(n_frames + 1, total, ENC_DELAY, pad_tag, bitrate, mode, frames, sr, nch)
     mp3 = info + body
-    out = (Path(out_dir) / f"{wav.stem}.mp3") if out_dir else wav.with_suffix(".mp3")
+    _stem = out_name or wav.stem
+    out = (Path(out_dir) / f"{_stem}.mp3") if out_dir else wav.with_suffix(".mp3")
     elapsed = time.time() - t0
 
     rep = {
-        "track": wav.stem,
+        "track": _stem,
         "wav": str(wav.relative_to(ROOT)).replace("\\", "/"),
         "mp3": (str(out.relative_to(ROOT)) if out.is_relative_to(ROOT) else str(out)).replace("\\", "/"),
         "mode": mode,
@@ -360,7 +362,7 @@ def main(argv=None):
             print(f"= {name}: 已最新，跳过（--force 重编）")
             continue
         out_dir = args.out_dir or ("" if wav.parent == BGM else str(BGM))
-        rep = build_track(wav, args.bitrate, args.dry_run, args.mode, out_dir, args.vbr_q)
+        rep = build_track(wav, args.bitrate, args.dry_run, args.mode, out_dir, args.vbr_q, out_name=name)
         reports.append(rep)
         if not args.json:
             print(f"  {rep['track']:<14} {rep['mode']:<4} {rep['before_bytes']:>9,}B -> {rep['after_bytes']:>8,}B  "
