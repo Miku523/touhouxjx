@@ -8,8 +8,42 @@ import { Input, ACTION_DEFS, keyLabel } from './engine/input.js';
 import { platform, initPlatform } from './ui/platform.js';
 import { Loop } from './engine/loop.js';
 import { setPriority, preloadWhenIdle, holdIdleQueue, linkTier } from './engine/lazy_preload.js';
-import { warmSongs, preloadSongs, isSongLoaded } from './engine/songs/index.js';
-import { AudioEngine } from './engine/audio.js';
+// 音频引擎（audio.js 66KB）与曲库索引（songs/index.js 14KB）不进首屏：浏览器策略本来就要等
+// 第一次用户手势才允许出声，所以首屏先挂空壳（createAudioStub），首次点击/按键时才 import 真身。
+// 省下约 80KB 静态图（压缩后约 35KB），弱网到菜单快约 5s。
+let AudioEngine = null, warmSongs = null, preloadSongs = null, isSongLoaded = null;
+let _audioModulePromise = null;
+function loadAudioModule() {
+  if (_audioModulePromise) return _audioModulePromise;
+  _audioModulePromise = Promise.all([
+    import('./engine/audio.js'),
+    import('./engine/songs/index.js'),
+  ]).then(([a, s]) => {
+    AudioEngine = a.AudioEngine;
+    warmSongs = s.warmSongs;
+    preloadSongs = s.preloadSongs;
+    isSongLoaded = s.isSongLoaded;
+  }).catch((err) => { _audioModulePromise = null; throw err; });
+  return _audioModulePromise;
+}
+
+/** 首屏音频占位：方法全是空操作，常用属性给安全默认值；真身到货后由 _unlockAudio() 整体换掉 */
+function createAudioStub() {
+  const DEFAULTS = {
+    muted: false, sfxEnabled: true, musicEnabled: true,
+    sfxVolume: 1, musicVolume: 1,
+    currentSong: null, soundingSong: null, ctx: null,
+    musicProgress: { elapsed: 0, duration: 0 },
+  };
+  return new Proxy({}, {
+    get(t, prop) {
+      if (prop === 'then') return undefined;
+      if (typeof prop === 'string' && prop in DEFAULTS) return DEFAULTS[prop];
+      return () => undefined;
+    },
+    set() { return true; },
+  });
+}
 import { LEVELS } from './assets/levels.js';
 import { Hud } from './game/hud.js';
 import { SpellCutin } from './game/spellCutin.js';
@@ -233,7 +267,7 @@ class Game {
     this.cutin = new SpellCutin();
     this.dialogue = new Dialogue();
     this.ending = null;   // 51KB 的结局演出模块，打出结局时才建（见 _ensureEnding）
-    this.audio = new AudioEngine();
+    this.audio = createAudioStub();   // 真身等第一次用户手势再建（见 _unlockAudio）
     // 平台层：环境识别 / PWA / 全屏 / 安全区 / 安卓返回键。
     // index.html 里没有单独引它 —— import 即自动初始化，桌面端不会产生副作用。
     this.platform = platform;
@@ -383,10 +417,10 @@ class Game {
     this._waitBootReady();
 
     // 一次性尖峰预算：
-    // ① AudioContext 创建要 50~120ms，直接放在启动幕还在盖屏的时候同步付掉，
-    //    绝不能留给第一次按键（那时玩家正盯着难度页，卡一下最明显）；
+    // ① AudioContext 创建要 50~120ms —— 它现在跟音频引擎一起挪到第一次手势之后（_unlockAudio），
+    //    因为浏览器策略本来就不让首屏出声，提前建只是白付；那一下卡顿发生在玩家第一次
+    //    点击/按键时，比盯着难度页时更不容易被察觉。
     // ② 弹幕精灵烘焙（~12ms 总量）排到标题页之后，分片跑，不和首屏抢带宽。
-    this._prewarmAudio();
     // 弹幕精灵烘焙要用 bullets.js（属于进关才加载的 game kit），首屏这里跑不了：
     // 改到 _createStage 里进关时再启动（那边 1673 行本来就有一次调用）。
 
@@ -1125,6 +1159,8 @@ class Game {
     const def = this._mainStages()[0];
     const names = this._stageSongs(def);
     if (!names.length) { gate.music = true; return Promise.resolve(); }
+    // 音频引擎要等第一次手势才加载，首屏阶段这路必然还没就绪：不算失败，进关前 _ensureStageMusic 兜底
+    if (typeof preloadSongs !== 'function') { gate.music = true; return Promise.resolve(); }
     return preloadSongs(names).then(() => {
       const missing = names.filter((n) => !isSongLoaded(n));
       if (missing.length) {
@@ -1190,7 +1226,7 @@ class Game {
       if (linkTier() === 'constrained') return;
       const names = [];
       for (const def of LEVELS) names.push(def.musicPre, def.musicMid, def.music);
-      warmSongs(names.filter(Boolean));
+      warmSongs?.(names.filter(Boolean));
     } catch (e) { /* 预热失败不影响进关：进关前 _ensureStageMusic 还会再等一次 */ }
   }
 
@@ -1819,7 +1855,7 @@ class Game {
       if (next) names.push(next.musicPre, next.musicMid, next.music);
     }
     // 出错不影响进关：预热本来就是「能提前就提前」，失败下一拍还有按需加载兜着
-    try { warmSongs(names); } catch (e) { /* ignore */ }
+    try { warmSongs?.(names); } catch (e) { /* ignore */ }
   }
 
   /**
@@ -1842,6 +1878,7 @@ class Game {
    * @returns {Promise<boolean>} 是否全部到货
    */
   async _ensureStageMusic(def) {
+    if (typeof isSongLoaded !== 'function' || typeof preloadSongs !== 'function') return true;
     const names = this._stageSongs(def).filter((n) => !isSongLoaded(n));
     if (!names.length) return true;
     try {
@@ -1966,13 +2003,14 @@ class Game {
   }
 
   /**
-   * 进关前保一下这一面的厚涂背景（见 docs/BG_PROGRESSIVE.md）。
+   * 进关前把这一面的厚涂背景图保到「能画」：低清档（30–80KB）到货即可，
+   * 高清档（135–460KB）随后在后台升档。
    *
-   * 高清档单张 135–460KB，线上弱网实测单张要 10–40s；等到它才进关等于让玩家干等。
-   * 所以 stage.js 里每张背景都配了一份 1280 宽的低清档（30–80KB，1–2s 到货），
-   * 这里只等低清档：到货就进关，画面已经是厚涂图，高清档随后在空闲帧静默升档。
-   * 已经预热过的关（标题页、上一面顺带下的）零等待、连遮罩都不会闪。
-   * @param {object} def 关卡定义
+   * 线上实测弱网下高清档单张要 10–40s（甚至发出去几十秒只回来一个 200 头、body 不下完），
+   * 玩家进关时背景图往往还在路上，只能看到程序化天空——就是「2–6 面和 EX 画面都不对」。
+   * 低清档通常 1–2s，等待期间盖一层「正在准备关卡画面…」；已就绪时零等待，不盖遮罩，
+   * 超时也不阻塞进关（照旧进关 + 后台重试）。
+   * @param {{theme?: string}} def 关卡定义
    */
   async _ensureStageBg(def) {
     const theme = def && def.theme;
@@ -3701,7 +3739,27 @@ class Game {
    * 于是玩家用 M 解除静音后，按下任何一个键都会按快照把静音打回去
    * （表现为「一按任意键游戏就没声音」，反过来静音也存不住）。
    */
-  _unlockAudio() {
+  async _unlockAudio() {
+    if (this._audioLoading || this._audioReady) {
+      // 引擎已在加载或已就绪：只补一次 unlock（重复调用无害）
+      if (this._audioReady) { this.audio.unlock?.(); }
+      return;
+    }
+    this._audioLoading = true;
+    try {
+      if (!AudioEngine) {
+        await loadAudioModule();
+        this.audio = new AudioEngine();   // 换掉占位壳，后续 this.audio.xxx 全部落到真身
+        this._applyAudio();
+        this._prewarmAudio();
+      }
+      this._audioReady = true;
+      this._audioLoading = false;
+    } catch (err) {
+      this._audioLoading = false;
+      if (typeof console !== 'undefined') console.warn('[audio] 音频引擎载入失败，本次静音运行', err);
+      return;
+    }
     const hadCtx = !!this.audio.ctx;
     this.audio.unlock?.();
     if (!hadCtx && this.audio.ctx) this._applyAudio();
