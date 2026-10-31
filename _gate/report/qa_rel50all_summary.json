@@ -1,0 +1,797 @@
+{
+  "label": "rel50all",
+  "runAt": "2026-10-31 22:22:11",
+  "base": "http://127.0.0.1:9666",
+  "failBase": "http://127.0.0.1:8143",
+  "failRoot": "C:/Users/GuSheng/Downloads/HKS-rel50b-wt",
+  "cdpPort": 9540,
+  "scenarios": [
+    {
+      "scenario": "A",
+      "meta": {
+        "scenario": "A",
+        "url": "http://127.0.0.1:9666/index.html?qa=A&t=1793456471828",
+        "revealMs": 1787,
+        "gate": {
+          "art": true,
+          "kit": true,
+          "music": true,
+          "failed": [],
+          "done": true
+        }
+      },
+      "checks": [
+        {
+          "id": "A-reveal",
+          "ok": true,
+          "detail": "揭幕用时 1787ms（预算 20000ms） trace.t=1672ms how=__boot.done"
+        },
+        {
+          "id": "A-gate-probe",
+          "ok": true,
+          "detail": "{\"art\":true,\"kit\":true,\"music\":true,\"failed\":[],\"startedAt\":81.29999999888241,\"finishedAt\":331.69999999925494,\"done\":true}"
+        },
+        {
+          "id": "A-gate-art",
+          "ok": true,
+          "detail": "art=true"
+        },
+        {
+          "id": "A-gate-kit",
+          "ok": true,
+          "detail": "kit=true"
+        },
+        {
+          "id": "A-gate-music",
+          "ok": true,
+          "detail": "music=true"
+        },
+        {
+          "id": "A-gate-failed-empty",
+          "ok": true,
+          "detail": "failed=[]"
+        },
+        {
+          "id": "A-gate-done",
+          "ok": true,
+          "detail": "done=true"
+        },
+        {
+          "id": "A-gate-finished-before-reveal",
+          "ok": true,
+          "detail": "startedAt=81 finishedAt=332 revealT=1672"
+        },
+        {
+          "id": "A-res-stage",
+          "ok": true,
+          "detail": "transferSize=126944 duration=4.2 start=83.0 end=87.2 revealT=1672.1"
+        },
+        {
+          "id": "A-res-bullets",
+          "ok": true,
+          "detail": "transferSize=40505 duration=4.2 start=83.2 end=87.4 revealT=1672.1"
+        },
+        {
+          "id": "A-res-story",
+          "ok": true,
+          "detail": "transferSize=126983 duration=6.0 start=83.2 end=89.2 revealT=1672.1"
+        },
+        {
+          "id": "A-res-honou_pre1",
+          "ok": true,
+          "detail": "transferSize=59102 duration=9.8 start=83.8 end=93.6 revealT=1672.1"
+        },
+        {
+          "id": "A-res-youma_stage1",
+          "ok": true,
+          "detail": "transferSize=35619 duration=12.4 start=83.8 end=96.2 revealT=1672.1"
+        },
+        {
+          "id": "A-pct-monotonic",
+          "ok": true,
+          "detail": "样本=15 回退次数=0 首=10 末=100"
+        },
+        {
+          "id": "A-pct-100-at-reveal",
+          "ok": true,
+          "detail": "__boot.pct@reveal=100（期望 100）"
+        },
+        {
+          "id": "A-status-exists",
+          "ok": true,
+          "detail": "text=\"准备完成\" rect=51x15@top336"
+        },
+        {
+          "id": "A-status-text",
+          "ok": true,
+          "detail": "text=\"准备完成\""
+        },
+        {
+          "id": "A-status-below-sub",
+          "ok": true,
+          "detail": "status.top=336 status.bottom=351 sub.top=311 sub.bottom=326"
+        },
+        {
+          "id": "A-status-dom-after-sub",
+          "ok": true,
+          "detail": "previousElementSibling=\"boot-sub\""
+        },
+        {
+          "id": "A-boot-hidden",
+          "ok": true,
+          "detail": "display=none visibility=hidden opacity=0 classes=js done"
+        },
+        {
+          "id": "A-state-menu",
+          "ok": true,
+          "detail": "state=menu page=title"
+        },
+        {
+          "id": "A-title-interactive",
+          "ok": true,
+          "detail": "Enter→难度页 成功（186ms, 1 次 Enter）"
+        },
+        {
+          "id": "A-song-warmup-10s",
+          "ok": true,
+          "detail": "揭幕 10s 后 /engine/songs/*.js 去重 17 条（期望 ≥10）；档位=unknown（0KB/0.00s） connection={\"effectiveType\":\"4g\",\"saveData\":false} 样本=index.js,title_full.js,honou_pre1.js,youma_stage1.js,eurobeat_pre2.js,merge_stage2.js,yuuhei_pre3.js,ateam_stage3.js"
+        },
+        {
+          "id": "A-no-exception",
+          "ok": true,
+          "detail": "无未捕获异常"
+        },
+        {
+          "id": "A-no-console-error",
+          "ok": true,
+          "detail": "无 console.error"
+        }
+      ],
+      "evidenceFile": "_gate/report/qa_rel50all_A.json"
+    },
+    {
+      "scenario": "B",
+      "meta": {
+        "scenario": "B",
+        "url": "http://127.0.0.1:9666/index.html?qa=B&t=1793456483915",
+        "revealMs": 5987,
+        "gate": {
+          "art": true,
+          "kit": true,
+          "music": true,
+          "failed": [],
+          "done": true
+        }
+      },
+      "checks": [
+        {
+          "id": "B-reveal",
+          "ok": true,
+          "detail": "揭幕用时 5987ms（预算 95000ms） trace.t=5767ms how=__boot.done"
+        },
+        {
+          "id": "B-gate-probe",
+          "ok": true,
+          "detail": "{\"art\":true,\"kit\":true,\"music\":true,\"failed\":[],\"startedAt\":2155.199999999255,\"finishedAt\":5199,\"done\":true}"
+        },
+        {
+          "id": "B-gate-art",
+          "ok": true,
+          "detail": "art=true"
+        },
+        {
+          "id": "B-gate-kit",
+          "ok": true,
+          "detail": "kit=true"
+        },
+        {
+          "id": "B-gate-music",
+          "ok": true,
+          "detail": "music=true"
+        },
+        {
+          "id": "B-gate-failed-empty",
+          "ok": true,
+          "detail": "failed=[]"
+        },
+        {
+          "id": "B-gate-done",
+          "ok": true,
+          "detail": "done=true"
+        },
+        {
+          "id": "B-gate-finished-before-reveal",
+          "ok": true,
+          "detail": "startedAt=2155 finishedAt=5199 revealT=5767"
+        },
+        {
+          "id": "B-res-stage",
+          "ok": true,
+          "detail": "transferSize=126944 duration=958.7 start=2156.9 end=3115.6 revealT=5767.0"
+        },
+        {
+          "id": "B-res-bullets",
+          "ok": true,
+          "detail": "transferSize=40505 duration=551.2 start=2157.1 end=2708.3 revealT=5767.0"
+        },
+        {
+          "id": "B-res-story",
+          "ok": true,
+          "detail": "transferSize=126983 duration=969.3 start=2157.1 end=3126.4 revealT=5767.0"
+        },
+        {
+          "id": "B-res-honou_pre1",
+          "ok": true,
+          "detail": "transferSize=59102 duration=690.4 start=2157.4 end=2847.8 revealT=5767.0"
+        },
+        {
+          "id": "B-res-youma_stage1",
+          "ok": true,
+          "detail": "transferSize=35619 duration=955.1 start=2157.4 end=3112.5 revealT=5767.0"
+        },
+        {
+          "id": "B-pct-monotonic",
+          "ok": true,
+          "detail": "样本=42 回退次数=0 首=8 末=100"
+        },
+        {
+          "id": "B-pct-100-at-reveal",
+          "ok": true,
+          "detail": "__boot.pct@reveal=100（期望 100）"
+        },
+        {
+          "id": "B-status-exists",
+          "ok": true,
+          "detail": "text=\"准备完成\" rect=51x15@top336"
+        },
+        {
+          "id": "B-status-text",
+          "ok": true,
+          "detail": "text=\"准备完成\""
+        },
+        {
+          "id": "B-status-below-sub",
+          "ok": true,
+          "detail": "status.top=336 status.bottom=351 sub.top=311 sub.bottom=326"
+        },
+        {
+          "id": "B-status-dom-after-sub",
+          "ok": true,
+          "detail": "previousElementSibling=\"boot-sub\""
+        },
+        {
+          "id": "B-boot-hidden",
+          "ok": true,
+          "detail": "display=none visibility=hidden opacity=0 classes=js done"
+        },
+        {
+          "id": "B-state-menu",
+          "ok": true,
+          "detail": "state=menu page=title"
+        },
+        {
+          "id": "B-stepwise",
+          "ok": true,
+          "detail": "distinct pct=35 timeline 目标档=19（期望 >=5 / >=3；__boot.target 实现上恒为 8，不参与判定）"
+        },
+        {
+          "id": "B-reveal-slower",
+          "ok": true,
+          "detail": "节流下揭幕 5987ms（期望 >1000ms，门禁确实占满加载时间）"
+        },
+        {
+          "id": "B-title-interactive",
+          "ok": true,
+          "detail": "Enter→难度页 成功（186ms, 1 次 Enter）"
+        },
+        {
+          "id": "B-song-warmup-10s",
+          "ok": true,
+          "detail": "受限链路按实现跳过全曲库预热：揭幕 10s 后 song 模块去重 4 条（期望 <10）；档位=constrained（138KB/0.70s） connection={\"effectiveType\":\"4g\",\"saveData\":false} 样本=index.js,title_full.js,honou_pre1.js,youma_stage1.js"
+        },
+        {
+          "id": "B-no-exception",
+          "ok": true,
+          "detail": "无未捕获异常"
+        },
+        {
+          "id": "B-no-console-error",
+          "ok": true,
+          "detail": "无 console.error"
+        }
+      ],
+      "evidenceFile": "_gate/report/qa_rel50all_B.json"
+    },
+    {
+      "scenario": "E",
+      "meta": {
+        "scenario": "E",
+        "url": "http://127.0.0.1:9666/index.html?qa=E&t=1793456500092",
+        "revealMs": 1896,
+        "gate": {
+          "art": true,
+          "kit": true,
+          "music": true,
+          "failed": [],
+          "done": true
+        }
+      },
+      "checks": [
+        {
+          "id": "E-reveal",
+          "ok": true,
+          "detail": "揭幕用时 1896ms（预算 20000ms） trace.t=1685ms how=__boot.done"
+        },
+        {
+          "id": "E-gate-probe",
+          "ok": true,
+          "detail": "{\"art\":true,\"kit\":true,\"music\":true,\"failed\":[],\"startedAt\":81.80000000074506,\"finishedAt\":267.40000000037253,\"done\":true}"
+        },
+        {
+          "id": "E-pct-monotonic",
+          "ok": true,
+          "detail": "样本=17 回退次数=0 首=10 末=100"
+        },
+        {
+          "id": "E-pct-100-at-reveal",
+          "ok": true,
+          "detail": "__boot.pct@reveal=100（期望 100）"
+        },
+        {
+          "id": "E-status-exists",
+          "ok": true,
+          "detail": "text=\"准备完成\" rect=51x15@top336"
+        },
+        {
+          "id": "E-status-text",
+          "ok": true,
+          "detail": "text=\"准备完成\""
+        },
+        {
+          "id": "E-status-below-sub",
+          "ok": true,
+          "detail": "status.top=336 status.bottom=351 sub.top=311 sub.bottom=326"
+        },
+        {
+          "id": "E-status-dom-after-sub",
+          "ok": true,
+          "detail": "previousElementSibling=\"boot-sub\""
+        },
+        {
+          "id": "E-boot-hidden",
+          "ok": true,
+          "detail": "display=none visibility=hidden opacity=0 classes=js done"
+        },
+        {
+          "id": "E-state-menu",
+          "ok": true,
+          "detail": "state=menu page=title"
+        },
+        {
+          "id": "E-title-interactive",
+          "ok": true,
+          "detail": "Enter→难度页 成功（182ms, 1 次 Enter）"
+        },
+        {
+          "id": "E-entry-stage-built",
+          "ok": true,
+          "detail": "舞台已建（对话 0ms 出现，舞台 7545ms，presses=31）"
+        },
+        {
+          "id": "E-entry-no-kitload",
+          "ok": true,
+          "detail": "进关全程 #kitLoad 可见采样次数=0（期望 0，门禁已预载）"
+        },
+        {
+          "id": "E-entry-bgm-pre1",
+          "ok": true,
+          "detail": "audio.soundingSong=\"pre1\"（期望含 pre1）"
+        },
+        {
+          "id": "E-entry-state-play",
+          "ok": true,
+          "detail": "state=dialogue stageBuilt=true"
+        },
+        {
+          "id": "E-song-warmup-10s",
+          "ok": true,
+          "detail": "揭幕 10s 后 /engine/songs/*.js 去重 17 条（期望 ≥10）；档位=unknown（0KB/0.00s） connection={\"effectiveType\":\"4g\",\"saveData\":false} 样本=index.js,title_full.js,honou_pre1.js,youma_stage1.js,eurobeat_pre2.js,merge_stage2.js,yuuhei_pre3.js,ateam_stage3.js"
+        },
+        {
+          "id": "E-no-exception",
+          "ok": true,
+          "detail": "无未捕获异常"
+        },
+        {
+          "id": "E-no-console-error",
+          "ok": true,
+          "detail": "无 console.error"
+        }
+      ],
+      "evidenceFile": "_gate/report/qa_rel50all_E.json"
+    },
+    {
+      "scenario": "F",
+      "meta": {
+        "scenario": "F",
+        "url": "http://127.0.0.1:9666/index.html?qa=F&t=1793456512190&bootgate=off",
+        "revealMs": 1830,
+        "gate": {
+          "art": true,
+          "kit": false,
+          "music": false,
+          "failed": [],
+          "done": true
+        }
+      },
+      "checks": [
+        {
+          "id": "F-reveal",
+          "ok": true,
+          "detail": "揭幕用时 1830ms（预算 25000ms）"
+        },
+        {
+          "id": "F-gate-probe",
+          "ok": true,
+          "detail": "{\"art\":true,\"kit\":false,\"music\":false,\"failed\":[],\"startedAt\":79.5,\"finishedAt\":114,\"done\":true}"
+        },
+        {
+          "id": "F-gate-art",
+          "ok": true,
+          "detail": "art=true"
+        },
+        {
+          "id": "F-gate-kit-off",
+          "ok": true,
+          "detail": "kit=false（bootgate=off 只跑标题图，期望 false）"
+        },
+        {
+          "id": "F-gate-music-off",
+          "ok": true,
+          "detail": "music=false（期望 false）"
+        },
+        {
+          "id": "F-gate-failed-empty",
+          "ok": true,
+          "detail": "failed=[]"
+        },
+        {
+          "id": "F-gate-done",
+          "ok": true,
+          "detail": "done=true"
+        },
+        {
+          "id": "F-pct-monotonic",
+          "ok": true,
+          "detail": "样本=16 回退次数=0 首=10 末=100"
+        },
+        {
+          "id": "F-pct-100-at-reveal",
+          "ok": true,
+          "detail": "__boot.pct@reveal=100（期望 100）"
+        },
+        {
+          "id": "F-status-hidden",
+          "ok": true,
+          "detail": "text=\"\" on=false opacity=0 display=block visibility=visible"
+        },
+        {
+          "id": "F-state-menu",
+          "ok": true,
+          "detail": "state=menu page=title"
+        },
+        {
+          "id": "F-prefetch-after-reveal",
+          "ok": true,
+          "detail": "stage.js 已在揭幕后被请求（n=src/game/stage.js s=0 d=5）"
+        },
+        {
+          "id": "F-kit-off-no-timeout",
+          "ok": true,
+          "detail": "failed=[]"
+        },
+        {
+          "id": "F-title-interactive",
+          "ok": true,
+          "detail": "Enter→难度页 成功（194ms）"
+        },
+        {
+          "id": "F-no-exception",
+          "ok": true,
+          "detail": "无未捕获异常"
+        },
+        {
+          "id": "F-no-console-error",
+          "ok": true,
+          "detail": "无 console.error"
+        }
+      ],
+      "evidenceFile": "_gate/report/qa_rel50all_F.json"
+    },
+    {
+      "scenario": "C",
+      "meta": {
+        "scenario": "C",
+        "url": "http://127.0.0.1:8143/index.html?qa=C&t=1793456515904",
+        "revealMs": 1880,
+        "gate": {
+          "art": true,
+          "kit": false,
+          "music": true,
+          "failed": [
+            "kit"
+          ],
+          "done": true
+        }
+      },
+      "checks": [
+        {
+          "id": "C-reveal",
+          "ok": true,
+          "detail": "揭幕用时 1880ms（预算 95000ms） trace.t=1710ms how=__boot.done"
+        },
+        {
+          "id": "C-gate-probe",
+          "ok": true,
+          "detail": "{\"art\":true,\"kit\":false,\"music\":true,\"failed\":[\"kit\"],\"startedAt\":50.59999999962747,\"finishedAt\":262.5,\"done\":true}"
+        },
+        {
+          "id": "C-gate-art",
+          "ok": true,
+          "detail": "art=true"
+        },
+        {
+          "id": "C-gate-kit-false",
+          "ok": true,
+          "detail": "kit=false（期望 false）"
+        },
+        {
+          "id": "C-gate-music-true",
+          "ok": true,
+          "detail": "music=true（kit 失败不应拖累 music）"
+        },
+        {
+          "id": "C-gate-failed-kit",
+          "ok": true,
+          "detail": "failed=[\"kit\"]"
+        },
+        {
+          "id": "C-gate-no-timeout",
+          "ok": true,
+          "detail": "failed=[\"kit\"]"
+        },
+        {
+          "id": "C-gate-done",
+          "ok": true,
+          "detail": "done=true"
+        },
+        {
+          "id": "C-failserver-404-stage",
+          "ok": true,
+          "detail": "已观测到 stage.js 404"
+        },
+        {
+          "id": "C-console-warn",
+          "ok": true,
+          "detail": "[boot] 进关模块预载失败，先揭幕；进关时会再等一次 TypeError: Failed to fetch dynamically imported module: http://127.0.0.1:8143/src/game/stage.js | [boot] 门禁未全绿就揭幕： kit"
+        },
+        {
+          "id": "C-res-bullets",
+          "ok": true,
+          "detail": "transferSize=40505 duration=2.6 start=52.6 end=55.2 revealT=1709.6"
+        },
+        {
+          "id": "C-res-story",
+          "ok": true,
+          "detail": "transferSize=126983 duration=3.5 start=52.7 end=56.2 revealT=1709.6"
+        },
+        {
+          "id": "C-res-honou_pre1",
+          "ok": true,
+          "detail": "transferSize=59102 duration=4.1 start=53.0 end=57.1 revealT=1709.6"
+        },
+        {
+          "id": "C-res-youma_stage1",
+          "ok": true,
+          "detail": "transferSize=35619 duration=5.1 start=53.0 end=58.1 revealT=1709.6"
+        },
+        {
+          "id": "C-pct-monotonic",
+          "ok": true,
+          "detail": "样本=17 回退次数=0 首=8 末=100"
+        },
+        {
+          "id": "C-pct-100-at-reveal",
+          "ok": true,
+          "detail": "__boot.pct@reveal=100（期望 100）"
+        },
+        {
+          "id": "C-boot-hidden",
+          "ok": true,
+          "detail": "display=none visibility=hidden opacity=0 classes=js done"
+        },
+        {
+          "id": "C-state-menu",
+          "ok": true,
+          "detail": "state=menu page=title"
+        },
+        {
+          "id": "C-title-interactive",
+          "ok": true,
+          "detail": "Enter→难度页 成功（192ms, 1 次 Enter）"
+        },
+        {
+          "id": "C-entry-fallback",
+          "ok": true,
+          "detail": "page=difficulty state=menu stageBuilt=false kitLoadVisible=false kitLoad=关卡资源载入失败，请检查网络后重试"
+        },
+        {
+          "id": "C-entry-kitload-hidden",
+          "ok": true,
+          "detail": "kitLoadVisible=false"
+        },
+        {
+          "id": "C-no-exception",
+          "ok": true,
+          "detail": "无未捕获异常"
+        },
+        {
+          "id": "C-no-unexpected-console-error",
+          "ok": true,
+          "detail": "console.error 仅来自失败路径（1 条，已容忍）"
+        },
+        {
+          "id": "C-warn-not-only-log-error",
+          "ok": true,
+          "detail": "[boot] 进关模块预载失败，先揭幕；进关时会再等一次 TypeError: Failed to fetch dynamically imported module: http://127.0.0.1:8143/src/game/stage.js | [boot] 门禁未全绿就揭幕： kit"
+        }
+      ],
+      "evidenceFile": "_gate/report/qa_rel50all_C.json"
+    },
+    {
+      "scenario": "D",
+      "meta": {
+        "scenario": "D",
+        "url": "http://127.0.0.1:8143/index.html?qa=D&t=1793456520107",
+        "revealMs": 1831,
+        "gate": {
+          "art": true,
+          "kit": true,
+          "music": false,
+          "failed": [
+            "music"
+          ],
+          "done": true
+        }
+      },
+      "checks": [
+        {
+          "id": "D-reveal",
+          "ok": true,
+          "detail": "揭幕用时 1831ms（预算 95000ms） trace.t=1702ms how=__boot.done"
+        },
+        {
+          "id": "D-gate-probe",
+          "ok": true,
+          "detail": "{\"art\":true,\"kit\":true,\"music\":false,\"failed\":[\"music\"],\"startedAt\":40.59999999962747,\"finishedAt\":278.30000000074506,\"done\":true}"
+        },
+        {
+          "id": "D-gate-art",
+          "ok": true,
+          "detail": "art=true"
+        },
+        {
+          "id": "D-gate-kit-true",
+          "ok": true,
+          "detail": "kit=true"
+        },
+        {
+          "id": "D-gate-music-false",
+          "ok": true,
+          "detail": "music=false（期望 false）"
+        },
+        {
+          "id": "D-gate-failed-music",
+          "ok": true,
+          "detail": "failed=[\"music\"]"
+        },
+        {
+          "id": "D-gate-no-timeout",
+          "ok": true,
+          "detail": "failed=[\"music\"]"
+        },
+        {
+          "id": "D-gate-done",
+          "ok": true,
+          "detail": "done=true"
+        },
+        {
+          "id": "D-failserver-404-youma",
+          "ok": true,
+          "detail": "已观测到 youma_stage1.js 404"
+        },
+        {
+          "id": "D-console-warn",
+          "ok": true,
+          "detail": "[boot] 第 1 面曲目模块未就绪： Array(1) | [boot] 门禁未全绿就揭幕： music"
+        },
+        {
+          "id": "D-res-stage",
+          "ok": true,
+          "detail": "transferSize=126944 duration=2.2 start=40.8 end=43.0 revealT=1702.4"
+        },
+        {
+          "id": "D-res-bullets",
+          "ok": true,
+          "detail": "transferSize=40505 duration=3.2 start=40.9 end=44.1 revealT=1702.4"
+        },
+        {
+          "id": "D-res-story",
+          "ok": true,
+          "detail": "transferSize=126983 duration=4.2 start=41.0 end=45.2 revealT=1702.4"
+        },
+        {
+          "id": "D-res-honou_pre1",
+          "ok": true,
+          "detail": "transferSize=59102 duration=5.0 start=41.1 end=46.1 revealT=1702.4"
+        },
+        {
+          "id": "D-pct-monotonic",
+          "ok": true,
+          "detail": "样本=17 回退次数=0 首=8 末=100"
+        },
+        {
+          "id": "D-pct-100-at-reveal",
+          "ok": true,
+          "detail": "__boot.pct@reveal=100（期望 100）"
+        },
+        {
+          "id": "D-boot-hidden",
+          "ok": true,
+          "detail": "display=none visibility=hidden opacity=0 classes=js done"
+        },
+        {
+          "id": "D-state-menu",
+          "ok": true,
+          "detail": "state=menu page=title"
+        },
+        {
+          "id": "D-title-interactive",
+          "ok": true,
+          "detail": "Enter→难度页 成功（187ms, 1 次 Enter）"
+        },
+        {
+          "id": "D-entry-stage-built",
+          "ok": true,
+          "detail": "舞台已建（startGame 起 7635ms，对话后段耗时 7635ms，presses=31）"
+        },
+        {
+          "id": "D-entry-music-wait-bounded",
+          "ok": true,
+          "detail": "从选人确认到舞台建立总耗时 7635ms（含 18 行开场对白，音乐兜底上限 4s）"
+        },
+        {
+          "id": "D-entry-no-crash",
+          "ok": true,
+          "detail": "state=dialogue stageBuilt=true"
+        },
+        {
+          "id": "D-no-exception",
+          "ok": true,
+          "detail": "无未捕获异常"
+        },
+        {
+          "id": "D-no-unexpected-console-error",
+          "ok": true,
+          "detail": "console.error 仅来自失败路径（0 条，已容忍）"
+        },
+        {
+          "id": "D-warn-not-only-log-error",
+          "ok": true,
+          "detail": "[boot] 第 1 面曲目模块未就绪： Array(1) | [boot] 门禁未全绿就揭幕： music"
+        }
+      ],
+      "evidenceFile": "_gate/report/qa_rel50all_D.json"
+    }
+  ]
+}

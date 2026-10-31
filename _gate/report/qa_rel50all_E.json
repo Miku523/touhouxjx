@@ -1,0 +1,3286 @@
+{
+  "label": "rel50all",
+  "scenario": "E",
+  "url": "http://127.0.0.1:9666/index.html?qa=E&t=1793456500092",
+  "throttle": null,
+  "startedAt": "2026-10-31 22:21:52",
+  "reveal": {
+    "wallMs": 1896,
+    "pollMax": 20000,
+    "trace": {
+      "t": 1684.9000000003725,
+      "at": 1793456501896,
+      "how": "__boot.done"
+    },
+    "bootAtReveal": {
+      "pct": 100,
+      "target": 8,
+      "done": true,
+      "timeline": [
+        {
+          "n": "boot",
+          "t": 82
+        },
+        {
+          "n": "t10",
+          "t": 82
+        },
+        {
+          "n": "t21",
+          "t": 82
+        },
+        {
+          "n": "t31",
+          "t": 82
+        },
+        {
+          "n": "t42",
+          "t": 82
+        },
+        {
+          "n": "t86",
+          "t": 267
+        },
+        {
+          "n": "t92",
+          "t": 267
+        },
+        {
+          "n": "t94",
+          "t": 268
+        },
+        {
+          "n": "fill",
+          "t": 1410
+        },
+        {
+          "n": "full",
+          "t": 1652
+        },
+        {
+          "n": "hide",
+          "t": 1685
+        }
+      ]
+    }
+  },
+  "gate": {
+    "art": true,
+    "kit": true,
+    "music": true,
+    "failed": [],
+    "startedAt": 81.80000000074506,
+    "finishedAt": 267.40000000037253,
+    "done": true
+  },
+  "gateHistory": [
+    {
+      "t": 193,
+      "gate": {
+        "art": true,
+        "kit": false,
+        "music": false,
+        "failed": [],
+        "startedAt": 81.80000000074506,
+        "finishedAt": 0,
+        "done": false
+      }
+    },
+    {
+      "t": 338,
+      "gate": {
+        "art": true,
+        "kit": true,
+        "music": true,
+        "failed": [],
+        "startedAt": 81.80000000074506,
+        "finishedAt": 267.40000000037253,
+        "done": true
+      }
+    },
+    {
+      "t": 1685,
+      "gate": {
+        "art": true,
+        "kit": true,
+        "music": true,
+        "failed": [],
+        "startedAt": 81.80000000074506,
+        "finishedAt": 267.40000000037253,
+        "done": true
+      }
+    }
+  ],
+  "hooks": {
+    "bootHookError": null,
+    "classWatchError": null,
+    "pollError": null
+  },
+  "resourcesAtReveal": [
+    {
+      "name": "http://127.0.0.1:9666/src/style.css?v=1.6.50",
+      "startTime": 9.199999999254942,
+      "duration": 10.600000001490116,
+      "transferSize": 151036,
+      "initiatorType": "link"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/title_bg.avif",
+      "startTime": 9.400000000372529,
+      "duration": 14.900000000372529,
+      "transferSize": 76122,
+      "initiatorType": "link"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/marisa_title.avif",
+      "startTime": 9.5,
+      "duration": 13.800000000745058,
+      "transferSize": 34934,
+      "initiatorType": "link"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/reimu_title.avif",
+      "startTime": 9.5,
+      "duration": 14.300000000745058,
+      "transferSize": 29752,
+      "initiatorType": "link"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/main.js?v=1.6.50",
+      "startTime": 9.5,
+      "duration": 21.800000000745058,
+      "transferSize": 203044,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/renderer.js",
+      "startTime": 9.599999999627471,
+      "duration": 13.099999999627471,
+      "transferSize": 31207,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/input.js",
+      "startTime": 9.599999999627471,
+      "duration": 15.099999999627471,
+      "transferSize": 23669,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/loop.js",
+      "startTime": 9.599999999627471,
+      "duration": 24.59999999962747,
+      "transferSize": 4948,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/lazy_preload.js",
+      "startTime": 9.599999999627471,
+      "duration": 25.800000000745058,
+      "transferSize": 7075,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/ui/platform.js",
+      "startTime": 9.599999999627471,
+      "duration": 25.09999999962747,
+      "transferSize": 39841,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/assets/levels.js",
+      "startTime": 9.699999999254942,
+      "duration": 26.200000001117587,
+      "transferSize": 8548,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/audio.js",
+      "startTime": 9.699999999254942,
+      "duration": 26.800000000745058,
+      "transferSize": 69411,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/hud.js",
+      "startTime": 9.699999999254942,
+      "duration": 30.800000000745058,
+      "transferSize": 18778,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/spellCutin.js",
+      "startTime": 9.699999999254942,
+      "duration": 34.40000000037253,
+      "transferSize": 7460,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bootScreen.js",
+      "startTime": 9.800000000745058,
+      "duration": 34.69999999925494,
+      "transferSize": 7123,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/dialogue.js",
+      "startTime": 9.800000000745058,
+      "duration": 35.399999998509884,
+      "transferSize": 12590,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/difficulty.js",
+      "startTime": 9.900000000372529,
+      "duration": 35.69999999925494,
+      "transferSize": 10655,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/genchars.js",
+      "startTime": 9.900000000372529,
+      "duration": 35,
+      "transferSize": 12966,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/genboss.js",
+      "startTime": 9.900000000372529,
+      "duration": 36.09999999962747,
+      "transferSize": 10167,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/img.js",
+      "startTime": 9.900000000372529,
+      "duration": 41.79999999888241,
+      "transferSize": 3762,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/i18n/index.js",
+      "startTime": 9.900000000372529,
+      "duration": 42,
+      "transferSize": 9670,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/power.js",
+      "startTime": 10,
+      "duration": 42.40000000037253,
+      "transferSize": 3407,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/index.js",
+      "startTime": 10,
+      "duration": 42.19999999925494,
+      "transferSize": 15991,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/balance.js",
+      "startTime": 10,
+      "duration": 42.69999999925494,
+      "transferSize": 2538,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/avif_manifest.js",
+      "startTime": 10.099999999627471,
+      "duration": 42.5,
+      "transferSize": 1628,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/title_full.js",
+      "startTime": 10.099999999627471,
+      "duration": 48.20000000111759,
+      "transferSize": 47058,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/title-intro.css?v=1.6.50",
+      "startTime": 12.599999999627471,
+      "duration": 48.09999999962747,
+      "transferSize": 5171,
+      "initiatorType": "link"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/ui/mobile.css?v=1.6.50",
+      "startTime": 12.599999999627471,
+      "duration": 48.59999999962747,
+      "transferSize": 24633,
+      "initiatorType": "link"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/ui/platform.css?v=1.6.50",
+      "startTime": 12.699999999254942,
+      "duration": 48.20000000111759,
+      "transferSize": 10389,
+      "initiatorType": "link"
+    },
+    {
+      "name": "http://127.0.0.1:9666/manifest.webmanifest",
+      "startTime": 53.90000000037253,
+      "duration": 7.099999999627471,
+      "transferSize": 1159,
+      "initiatorType": "link"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/reimu.avif",
+      "startTime": 71.59999999962747,
+      "duration": 3.700000001117587,
+      "transferSize": 41159,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/marisa.avif",
+      "startTime": 71.69999999925494,
+      "duration": 3.800000000745058,
+      "transferSize": 50954,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/stage.js",
+      "startTime": 83.30000000074506,
+      "duration": 8.399999998509884,
+      "transferSize": 126944,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bullets.js",
+      "startTime": 83.40000000037253,
+      "duration": 8.5,
+      "transferSize": 40505,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/story.js",
+      "startTime": 83.5,
+      "duration": 8.5,
+      "transferSize": 126983,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/honou_pre1.js",
+      "startTime": 83.90000000037253,
+      "duration": 7.299999998882413,
+      "transferSize": 59102,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/youma_stage1.js",
+      "startTime": 84,
+      "duration": 7.400000000372529,
+      "transferSize": 35619,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/index.js",
+      "startTime": 193.40000000037253,
+      "duration": 6.299999998882413,
+      "transferSize": 2181,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/camera.js",
+      "startTime": 193.5,
+      "duration": 9.099999999627471,
+      "transferSize": 4361,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/player.js",
+      "startTime": 193.5,
+      "duration": 7.900000000372529,
+      "transferSize": 19159,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/level.js",
+      "startTime": 193.5,
+      "duration": 8.400000000372529,
+      "transferSize": 8220,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/fx.js",
+      "startTime": 193.5,
+      "duration": 9.800000000745058,
+      "transferSize": 17983,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/playerShots.js",
+      "startTime": 193.59999999962747,
+      "duration": 9.400000000372529,
+      "transferSize": 23729,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/miniboss.js",
+      "startTime": 193.69999999925494,
+      "duration": 21.5,
+      "transferSize": 39882,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/stg.js",
+      "startTime": 193.69999999925494,
+      "duration": 21.100000001490116,
+      "transferSize": 55077,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/enemies.js",
+      "startTime": 193.69999999925494,
+      "duration": 20,
+      "transferSize": 53485,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/boss.js",
+      "startTime": 193.69999999925494,
+      "duration": 26.40000000037253,
+      "transferSize": 154875,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/scenes.js",
+      "startTime": 193.69999999925494,
+      "duration": 30.90000000037253,
+      "transferSize": 212395,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/cardfx.js",
+      "startTime": 193.80000000074506,
+      "duration": 21.799999998882413,
+      "transferSize": 15725,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/cardEffects.js",
+      "startTime": 193.80000000074506,
+      "duration": 32.09999999962747,
+      "transferSize": 8463,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/pwa-192.png",
+      "startTime": 205.40000000037253,
+      "duration": 22.09999999962747,
+      "transferSize": 58879,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/types.js",
+      "startTime": 205.69999999925494,
+      "duration": 22.300000000745058,
+      "transferSize": 4270,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/_lib.js",
+      "startTime": 205.69999999925494,
+      "duration": 21.200000001117587,
+      "transferSize": 12735,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/dark.js",
+      "startTime": 205.80000000074506,
+      "duration": 22.5,
+      "transferSize": 16999,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/ice.js",
+      "startTime": 205.80000000074506,
+      "duration": 30.09999999962747,
+      "transferSize": 11101,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/bug.js",
+      "startTime": 205.80000000074506,
+      "duration": 30.5,
+      "transferSize": 17643,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/leaf.js",
+      "startTime": 205.80000000074506,
+      "duration": 31.5,
+      "transferSize": 10229,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/sakura.js",
+      "startTime": 205.90000000037253,
+      "duration": 31.09999999962747,
+      "transferSize": 12112,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/stone.js",
+      "startTime": 205.90000000037253,
+      "duration": 31.799999998882413,
+      "transferSize": 10118,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/jewel.js",
+      "startTime": 205.90000000037253,
+      "duration": 30.799999998882413,
+      "transferSize": 18469,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/flame.js",
+      "startTime": 205.90000000037253,
+      "duration": 39.59999999962747,
+      "transferSize": 12890,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/bird.js",
+      "startTime": 205.90000000037253,
+      "duration": 41.69999999925494,
+      "transferSize": 14848,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/spear.js",
+      "startTime": 206,
+      "duration": 40.5,
+      "transferSize": 11789,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/bat.js",
+      "startTime": 206,
+      "duration": 41.09999999962747,
+      "transferSize": 14204,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/blade.js",
+      "startTime": 206,
+      "duration": 40.09999999962747,
+      "transferSize": 10792,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/crystal.js",
+      "startTime": 206.09999999962747,
+      "duration": 41.90000000037253,
+      "transferSize": 10306,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/knife.js",
+      "startTime": 206.09999999962747,
+      "duration": 48.40000000037253,
+      "transferSize": 6966,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/lava.js",
+      "startTime": 206.09999999962747,
+      "duration": 47.90000000037253,
+      "transferSize": 11490,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/favicon.png",
+      "startTime": 206.40000000037253,
+      "duration": 48.59999999962747,
+      "transferSize": 25679,
+      "initiatorType": "other"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/hitbox.js",
+      "startTime": 206.5,
+      "duration": 50,
+      "transferSize": 3126,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/assets/levelgen.js",
+      "startTime": 206.59999999962747,
+      "duration": 48.80000000074506,
+      "transferSize": 52184,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/genfairy.js",
+      "startTime": 218.19999999925494,
+      "duration": 37.80000000074506,
+      "transferSize": 4626,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bossTuning.js",
+      "startTime": 218.30000000074506,
+      "duration": 46.399999998509884,
+      "transferSize": 33793,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/roster.js",
+      "startTime": 226.30000000074506,
+      "duration": 38.79999999888241,
+      "transferSize": 2304,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bossPatternDesigns.js",
+      "startTime": 226.40000000037253,
+      "duration": 38,
+      "transferSize": 20080,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bulletArt/cardSkins.js",
+      "startTime": 226.40000000037253,
+      "duration": 38.59999999962747,
+      "transferSize": 8065,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/game/bossBullets.js",
+      "startTime": 226.40000000037253,
+      "duration": 38.5,
+      "transferSize": 54283,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/rumia.avif",
+      "startTime": 279.19999999925494,
+      "duration": 7.700000001117587,
+      "transferSize": 31964,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/wriggle.avif",
+      "startTime": 279.30000000074506,
+      "duration": 10.599999999627471,
+      "transferSize": 41074,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/cirno.avif",
+      "startTime": 279.30000000074506,
+      "duration": 14.5,
+      "transferSize": 97608,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/aya.avif",
+      "startTime": 279.40000000037253,
+      "duration": 11.299999998882413,
+      "transferSize": 46150,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/kaguya.avif",
+      "startTime": 279.40000000037253,
+      "duration": 11.699999999254942,
+      "transferSize": 44047,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/yuyuko.avif",
+      "startTime": 279.40000000037253,
+      "duration": 12.199999999254942,
+      "transferSize": 56764,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/flandre.avif",
+      "startTime": 279.40000000037253,
+      "duration": 13,
+      "transferSize": 64657,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/remilia.avif",
+      "startTime": 279.5,
+      "duration": 20.90000000037253,
+      "transferSize": 49213,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/youmu.avif",
+      "startTime": 279.5,
+      "duration": 21.699999999254942,
+      "transferSize": 21351,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/sakuya.avif",
+      "startTime": 279.59999999962747,
+      "duration": 22.200000001117587,
+      "transferSize": 43326,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/eurobeat_pre2.js",
+      "startTime": 279.80000000074506,
+      "duration": 32.19999999925494,
+      "transferSize": 34905,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/reimu_run_0.avif",
+      "startTime": 294.80000000074506,
+      "duration": 17,
+      "transferSize": 14775,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/reimu_run_1.avif",
+      "startTime": 294.80000000074506,
+      "duration": 17.399999998509884,
+      "transferSize": 14270,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/reimu_run_2.avif",
+      "startTime": 294.90000000037253,
+      "duration": 22.799999998882413,
+      "transferSize": 14729,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/reimu_idle.avif",
+      "startTime": 295,
+      "duration": 22.90000000037253,
+      "transferSize": 9971,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/reimu_run_3.avif",
+      "startTime": 295,
+      "duration": 23.5,
+      "transferSize": 14298,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/reimu_jump.avif",
+      "startTime": 295,
+      "duration": 29.40000000037253,
+      "transferSize": 17640,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/reimu_fall.avif",
+      "startTime": 295,
+      "duration": 29.699999999254942,
+      "transferSize": 16500,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/reimu_fly.avif",
+      "startTime": 295,
+      "duration": 29.800000000745058,
+      "transferSize": 14821,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/marisa_run_0.avif",
+      "startTime": 295,
+      "duration": 35.80000000074506,
+      "transferSize": 16955,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/marisa_run_1.avif",
+      "startTime": 295.09999999962747,
+      "duration": 35.20000000111759,
+      "transferSize": 17160,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/marisa_run_2.avif",
+      "startTime": 295.09999999962747,
+      "duration": 35.5,
+      "transferSize": 17018,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/marisa_run_3.avif",
+      "startTime": 295.09999999962747,
+      "duration": 42.90000000037253,
+      "transferSize": 16651,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/marisa_idle.avif",
+      "startTime": 295.19999999925494,
+      "duration": 43.100000001490116,
+      "transferSize": 13375,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/marisa_jump.avif",
+      "startTime": 295.19999999925494,
+      "duration": 43.5,
+      "transferSize": 20856,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/marisa_fly.avif",
+      "startTime": 295.19999999925494,
+      "duration": 54.80000000074506,
+      "transferSize": 17668,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/run/marisa_fall.avif",
+      "startTime": 295.19999999925494,
+      "duration": 55.40000000037253,
+      "transferSize": 16225,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/boss/rumia.avif",
+      "startTime": 310.19999999925494,
+      "duration": 40.100000001490116,
+      "transferSize": 36850,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/boss/wriggle.avif",
+      "startTime": 310.19999999925494,
+      "duration": 49,
+      "transferSize": 45560,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/boss/cirno.avif",
+      "startTime": 310.30000000074506,
+      "duration": 50.19999999925494,
+      "transferSize": 131810,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/boss/aya.avif",
+      "startTime": 310.30000000074506,
+      "duration": 49.19999999925494,
+      "transferSize": 39726,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/boss/yuyuko.avif",
+      "startTime": 310.30000000074506,
+      "duration": 59.09999999962747,
+      "transferSize": 77155,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/boss/kaguya.avif",
+      "startTime": 310.30000000074506,
+      "duration": 58.59999999962747,
+      "transferSize": 61003,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/boss/flandre.avif",
+      "startTime": 310.40000000037253,
+      "duration": 60.79999999888241,
+      "transferSize": 144842,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/boss/youmu.avif",
+      "startTime": 310.40000000037253,
+      "duration": 63.40000000037253,
+      "transferSize": 37979,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/boss/remilia.avif",
+      "startTime": 310.40000000037253,
+      "duration": 63.90000000037253,
+      "transferSize": 92149,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/boss/sakuya.avif",
+      "startTime": 310.40000000037253,
+      "duration": 63.69999999925494,
+      "transferSize": 36430,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/sakuya_title.avif",
+      "startTime": 594.5,
+      "duration": 5.5,
+      "transferSize": 0,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/merge_stage2.js",
+      "startTime": 595.3000000007451,
+      "duration": 5.199999999254942,
+      "transferSize": 0,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/bg/shrine.avif",
+      "startTime": 609.5999999996275,
+      "duration": 9.800000000745058,
+      "transferSize": 0,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/bg/mountain.avif",
+      "startTime": 609.5999999996275,
+      "duration": 11,
+      "transferSize": 0,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/bg/mansion.avif",
+      "startTime": 609.6999999992549,
+      "duration": 9.700000001117587,
+      "transferSize": 0,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/bg/forest.avif",
+      "startTime": 609.6999999992549,
+      "duration": 9.800000000745058,
+      "transferSize": 0,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/bg/moon.avif",
+      "startTime": 609.6999999992549,
+      "duration": 10,
+      "transferSize": 0,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/yuuhei_pre3.js",
+      "startTime": 628.0999999996275,
+      "duration": 6.700000001117587,
+      "transferSize": 0,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/fairy/blue.webp",
+      "startTime": 628.4000000003725,
+      "duration": 8.199999999254942,
+      "transferSize": 0,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/fairy/green.avif",
+      "startTime": 628.5,
+      "duration": 8.800000000745058,
+      "transferSize": 0,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/fairy/yellow.avif",
+      "startTime": 628.5,
+      "duration": 9.900000000372529,
+      "transferSize": 0,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/fairy/red.avif",
+      "startTime": 628.5,
+      "duration": 9.599999999627471,
+      "transferSize": 0,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/fairy/purple.webp",
+      "startTime": 628.5,
+      "duration": 9.699999999254942,
+      "transferSize": 0,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/art/gen/fairy.avif",
+      "startTime": 628.5,
+      "duration": 12.699999999254942,
+      "transferSize": 0,
+      "initiatorType": "img"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/ateam_stage3.js",
+      "startTime": 644.3000000007451,
+      "duration": 4.299999998882413,
+      "transferSize": 0,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/fall_pre4.js",
+      "startTime": 658.9000000003725,
+      "duration": 3.599999999627471,
+      "transferSize": 0,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/aya_stage4_b.js",
+      "startTime": 679.5,
+      "duration": 4.599999999627471,
+      "transferSize": 0,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/tillwhen_pre5.js",
+      "startTime": 693.3000000007451,
+      "duration": 3.799999998882413,
+      "transferSize": 0,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/yuuga_stage5.js",
+      "startTime": 709.0999999996275,
+      "duration": 4.099999999627471,
+      "transferSize": 0,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/voyage_pre6.js",
+      "startTime": 727,
+      "duration": 3.900000000372529,
+      "transferSize": 0,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/kaguya_stage6.js",
+      "startTime": 743.4000000003725,
+      "duration": 4.099999999627471,
+      "transferSize": 0,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/sakuya_ex.js",
+      "startTime": 761.6999999992549,
+      "duration": 4.200000001117587,
+      "transferSize": 0,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/septette_ex.js",
+      "startTime": 777.5999999996275,
+      "duration": 4.099999999627471,
+      "transferSize": 0,
+      "initiatorType": "script"
+    },
+    {
+      "name": "http://127.0.0.1:9666/src/engine/songs/flandre_devil.js",
+      "startTime": 794.0999999996275,
+      "duration": 4.300000000745058,
+      "transferSize": 0,
+      "initiatorType": "script"
+    }
+  ],
+  "statusAtReveal": {
+    "exists": true,
+    "text": "准备完成",
+    "on": true,
+    "rect": {
+      "top": 336,
+      "bottom": 351,
+      "left": 615,
+      "width": 51,
+      "height": 15
+    },
+    "subRect": {
+      "top": 311,
+      "bottom": 326,
+      "width": 228,
+      "height": 15
+    },
+    "domAfterSub": true,
+    "prevClass": "boot-sub",
+    "style": {
+      "display": "block",
+      "visibility": "visible",
+      "opacity": 1
+    }
+  },
+  "statusHistory": [
+    {
+      "t": 193,
+      "text": "正在准备游戏资源与音乐…",
+      "on": true
+    },
+    {
+      "t": 344,
+      "text": "准备完成",
+      "on": true
+    }
+  ],
+  "warmup": {
+    "count": 17,
+    "names": [
+      {
+        "n": "index.js",
+        "startTime": 10,
+        "transferSize": 15991,
+        "duration": 42
+      },
+      {
+        "n": "title_full.js",
+        "startTime": 10,
+        "transferSize": 47058,
+        "duration": 48
+      },
+      {
+        "n": "honou_pre1.js",
+        "startTime": 84,
+        "transferSize": 59102,
+        "duration": 7
+      },
+      {
+        "n": "youma_stage1.js",
+        "startTime": 84,
+        "transferSize": 35619,
+        "duration": 7
+      },
+      {
+        "n": "eurobeat_pre2.js",
+        "startTime": 280,
+        "transferSize": 34905,
+        "duration": 32
+      },
+      {
+        "n": "merge_stage2.js",
+        "startTime": 595,
+        "transferSize": 0,
+        "duration": 5
+      },
+      {
+        "n": "yuuhei_pre3.js",
+        "startTime": 628,
+        "transferSize": 0,
+        "duration": 7
+      },
+      {
+        "n": "ateam_stage3.js",
+        "startTime": 644,
+        "transferSize": 0,
+        "duration": 4
+      },
+      {
+        "n": "fall_pre4.js",
+        "startTime": 659,
+        "transferSize": 0,
+        "duration": 4
+      },
+      {
+        "n": "aya_stage4_b.js",
+        "startTime": 680,
+        "transferSize": 0,
+        "duration": 5
+      },
+      {
+        "n": "tillwhen_pre5.js",
+        "startTime": 693,
+        "transferSize": 0,
+        "duration": 4
+      },
+      {
+        "n": "yuuga_stage5.js",
+        "startTime": 709,
+        "transferSize": 0,
+        "duration": 4
+      },
+      {
+        "n": "voyage_pre6.js",
+        "startTime": 727,
+        "transferSize": 0,
+        "duration": 4
+      },
+      {
+        "n": "kaguya_stage6.js",
+        "startTime": 743,
+        "transferSize": 0,
+        "duration": 4
+      },
+      {
+        "n": "sakuya_ex.js",
+        "startTime": 762,
+        "transferSize": 0,
+        "duration": 4
+      },
+      {
+        "n": "septette_ex.js",
+        "startTime": 778,
+        "transferSize": 0,
+        "duration": 4
+      },
+      {
+        "n": "flandre_devil.js",
+        "startTime": 794,
+        "transferSize": 0,
+        "duration": 4
+      }
+    ],
+    "totalResources": 145,
+    "connection": {
+      "effectiveType": "4g",
+      "saveData": false
+    }
+  },
+  "after": {
+    "boot": {
+      "pct": 100,
+      "target": 8,
+      "done": true,
+      "timeline": [
+        {
+          "n": "boot",
+          "t": 82
+        },
+        {
+          "n": "t10",
+          "t": 82
+        },
+        {
+          "n": "t21",
+          "t": 82
+        },
+        {
+          "n": "t31",
+          "t": 82
+        },
+        {
+          "n": "t42",
+          "t": 82
+        },
+        {
+          "n": "t86",
+          "t": 267
+        },
+        {
+          "n": "t92",
+          "t": 267
+        },
+        {
+          "n": "t94",
+          "t": 268
+        },
+        {
+          "n": "fill",
+          "t": 1410
+        },
+        {
+          "n": "full",
+          "t": 1652
+        },
+        {
+          "n": "hide",
+          "t": 1685
+        }
+      ]
+    },
+    "gate": {
+      "art": true,
+      "kit": true,
+      "music": true,
+      "failed": [],
+      "startedAt": 81.80000000074506,
+      "finishedAt": 267.40000000037253,
+      "done": true
+    },
+    "bootEl": {
+      "present": true,
+      "display": "none",
+      "visibility": "hidden",
+      "opacity": "0",
+      "classes": "js done",
+      "ariaHidden": "true"
+    },
+    "kitLoad": {
+      "present": false,
+      "visible": false
+    },
+    "game": {
+      "state": "menu",
+      "page": "title",
+      "char": "reimu",
+      "levelIndex": 0,
+      "stageBuilt": false,
+      "soundingSong": "title"
+    }
+  },
+  "entry": {
+    "toChar": {
+      "ok": true,
+      "ms": 187,
+      "presses": 1
+    },
+    "stageWait": {
+      "ok": true,
+      "presses": 31,
+      "dialogueAt": 0,
+      "stageAt": 7545,
+      "kitLoadSeen": 0,
+      "last": {
+        "state": "dialogue",
+        "page": "",
+        "stageBuilt": true,
+        "dlgActive": true,
+        "dlgIndex": 0,
+        "dlgLen": 10,
+        "dlgTyping": true,
+        "soundingSong": "pre1",
+        "vis": "visible",
+        "frames": 599,
+        "loopRunning": true,
+        "longTasks": [
+          {
+            "s": 68,
+            "d": 54
+          },
+          {
+            "s": 11101,
+            "d": 53
+          }
+        ],
+        "kitLoadVisible": false,
+        "kitLoadText": null
+      }
+    },
+    "song": "pre1",
+    "final": {
+      "state": "dialogue",
+      "page": "",
+      "stageBuilt": true,
+      "dlgActive": true,
+      "dlgIndex": 0,
+      "dlgLen": 10,
+      "dlgTyping": true,
+      "soundingSong": "pre1",
+      "vis": "visible",
+      "frames": 600,
+      "loopRunning": true,
+      "longTasks": [
+        {
+          "s": 68,
+          "d": 54
+        },
+        {
+          "s": 11101,
+          "d": 53
+        }
+      ],
+      "kitLoadVisible": false,
+      "kitLoadText": null
+    }
+  },
+  "consoleAtReveal": {
+    "errors": [],
+    "warns": [],
+    "httpBad": [],
+    "netFails": [],
+    "resources": [
+      {
+        "n": "127.0.0.1:9666/src/style.css?v=1.6.50",
+        "s": 151036,
+        "d": 11,
+        "i": "link"
+      },
+      {
+        "n": "art/gen/title_bg.avif",
+        "s": 76122,
+        "d": 15,
+        "i": "link"
+      },
+      {
+        "n": "art/gen/marisa_title.avif",
+        "s": 34934,
+        "d": 14,
+        "i": "link"
+      },
+      {
+        "n": "art/gen/reimu_title.avif",
+        "s": 29752,
+        "d": 14,
+        "i": "link"
+      },
+      {
+        "n": "127.0.0.1:9666/src/main.js?v=1.6.50",
+        "s": 203044,
+        "d": 22,
+        "i": "other"
+      },
+      {
+        "n": "src/engine/renderer.js",
+        "s": 31207,
+        "d": 13,
+        "i": "other"
+      },
+      {
+        "n": "src/engine/input.js",
+        "s": 23669,
+        "d": 15,
+        "i": "other"
+      },
+      {
+        "n": "src/engine/loop.js",
+        "s": 4948,
+        "d": 25,
+        "i": "other"
+      },
+      {
+        "n": "src/engine/lazy_preload.js",
+        "s": 7075,
+        "d": 26,
+        "i": "other"
+      },
+      {
+        "n": "src/ui/platform.js",
+        "s": 39841,
+        "d": 25,
+        "i": "other"
+      },
+      {
+        "n": "src/assets/levels.js",
+        "s": 8548,
+        "d": 26,
+        "i": "other"
+      },
+      {
+        "n": "src/engine/audio.js",
+        "s": 69411,
+        "d": 27,
+        "i": "other"
+      },
+      {
+        "n": "src/game/hud.js",
+        "s": 18778,
+        "d": 31,
+        "i": "other"
+      },
+      {
+        "n": "src/game/spellCutin.js",
+        "s": 7460,
+        "d": 34,
+        "i": "other"
+      },
+      {
+        "n": "src/game/bootScreen.js",
+        "s": 7123,
+        "d": 35,
+        "i": "other"
+      },
+      {
+        "n": "src/game/dialogue.js",
+        "s": 12590,
+        "d": 35,
+        "i": "other"
+      },
+      {
+        "n": "src/game/difficulty.js",
+        "s": 10655,
+        "d": 36,
+        "i": "other"
+      },
+      {
+        "n": "src/art/genchars.js",
+        "s": 12966,
+        "d": 35,
+        "i": "other"
+      },
+      {
+        "n": "src/art/genboss.js",
+        "s": 10167,
+        "d": 36,
+        "i": "other"
+      },
+      {
+        "n": "src/art/img.js",
+        "s": 3762,
+        "d": 42,
+        "i": "other"
+      },
+      {
+        "n": "src/i18n/index.js",
+        "s": 9670,
+        "d": 42,
+        "i": "other"
+      },
+      {
+        "n": "src/game/power.js",
+        "s": 3407,
+        "d": 42,
+        "i": "other"
+      },
+      {
+        "n": "engine/songs/index.js",
+        "s": 15991,
+        "d": 42,
+        "i": "other"
+      },
+      {
+        "n": "src/game/balance.js",
+        "s": 2538,
+        "d": 43,
+        "i": "other"
+      },
+      {
+        "n": "src/art/avif_manifest.js",
+        "s": 1628,
+        "d": 43,
+        "i": "other"
+      },
+      {
+        "n": "engine/songs/title_full.js",
+        "s": 47058,
+        "d": 48,
+        "i": "other"
+      },
+      {
+        "n": "127.0.0.1:9666/src/title-intro.css?v=1.6.50",
+        "s": 5171,
+        "d": 48,
+        "i": "link"
+      },
+      {
+        "n": "src/ui/mobile.css?v=1.6.50",
+        "s": 24633,
+        "d": 49,
+        "i": "link"
+      },
+      {
+        "n": "src/ui/platform.css?v=1.6.50",
+        "s": 10389,
+        "d": 48,
+        "i": "link"
+      },
+      {
+        "n": "/127.0.0.1:9666/manifest.webmanifest",
+        "s": 1159,
+        "d": 7,
+        "i": "link"
+      },
+      {
+        "n": "art/gen/reimu.avif",
+        "s": 41159,
+        "d": 4,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/marisa.avif",
+        "s": 50954,
+        "d": 4,
+        "i": "img"
+      },
+      {
+        "n": "src/game/stage.js",
+        "s": 126944,
+        "d": 8,
+        "i": "script"
+      },
+      {
+        "n": "src/game/bullets.js",
+        "s": 40505,
+        "d": 9,
+        "i": "script"
+      },
+      {
+        "n": "src/game/story.js",
+        "s": 126983,
+        "d": 9,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/honou_pre1.js",
+        "s": 59102,
+        "d": 7,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/youma_stage1.js",
+        "s": 35619,
+        "d": 7,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/index.js",
+        "s": 2181,
+        "d": 6,
+        "i": "script"
+      },
+      {
+        "n": "src/game/camera.js",
+        "s": 4361,
+        "d": 9,
+        "i": "script"
+      },
+      {
+        "n": "src/game/player.js",
+        "s": 19159,
+        "d": 8,
+        "i": "script"
+      },
+      {
+        "n": "src/game/level.js",
+        "s": 8220,
+        "d": 8,
+        "i": "script"
+      },
+      {
+        "n": "src/game/fx.js",
+        "s": 17983,
+        "d": 10,
+        "i": "script"
+      },
+      {
+        "n": "src/game/playerShots.js",
+        "s": 23729,
+        "d": 9,
+        "i": "script"
+      },
+      {
+        "n": "src/game/miniboss.js",
+        "s": 39882,
+        "d": 22,
+        "i": "script"
+      },
+      {
+        "n": "src/game/stg.js",
+        "s": 55077,
+        "d": 21,
+        "i": "script"
+      },
+      {
+        "n": "src/game/enemies.js",
+        "s": 53485,
+        "d": 20,
+        "i": "script"
+      },
+      {
+        "n": "src/game/boss.js",
+        "s": 154875,
+        "d": 26,
+        "i": "script"
+      },
+      {
+        "n": "src/art/scenes.js",
+        "s": 212395,
+        "d": 31,
+        "i": "script"
+      },
+      {
+        "n": "src/game/cardfx.js",
+        "s": 15725,
+        "d": 22,
+        "i": "script"
+      },
+      {
+        "n": "src/game/cardEffects.js",
+        "s": 8463,
+        "d": 32,
+        "i": "script"
+      },
+      {
+        "n": "src/art/pwa-192.png",
+        "s": 58879,
+        "d": 22,
+        "i": "other"
+      },
+      {
+        "n": "game/bulletArt/types.js",
+        "s": 4270,
+        "d": 22,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/_lib.js",
+        "s": 12735,
+        "d": 21,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/dark.js",
+        "s": 16999,
+        "d": 23,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/ice.js",
+        "s": 11101,
+        "d": 30,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/bug.js",
+        "s": 17643,
+        "d": 31,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/leaf.js",
+        "s": 10229,
+        "d": 32,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/sakura.js",
+        "s": 12112,
+        "d": 31,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/stone.js",
+        "s": 10118,
+        "d": 32,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/jewel.js",
+        "s": 18469,
+        "d": 31,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/flame.js",
+        "s": 12890,
+        "d": 40,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/bird.js",
+        "s": 14848,
+        "d": 42,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/spear.js",
+        "s": 11789,
+        "d": 41,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/bat.js",
+        "s": 14204,
+        "d": 41,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/blade.js",
+        "s": 10792,
+        "d": 40,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/crystal.js",
+        "s": 10306,
+        "d": 42,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/knife.js",
+        "s": 6966,
+        "d": 48,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/lava.js",
+        "s": 11490,
+        "d": 48,
+        "i": "script"
+      },
+      {
+        "n": "src/art/favicon.png",
+        "s": 25679,
+        "d": 49,
+        "i": "other"
+      },
+      {
+        "n": "src/art/hitbox.js",
+        "s": 3126,
+        "d": 50,
+        "i": "script"
+      },
+      {
+        "n": "src/assets/levelgen.js",
+        "s": 52184,
+        "d": 49,
+        "i": "script"
+      },
+      {
+        "n": "src/art/genfairy.js",
+        "s": 4626,
+        "d": 38,
+        "i": "script"
+      },
+      {
+        "n": "src/game/bossTuning.js",
+        "s": 33793,
+        "d": 46,
+        "i": "script"
+      },
+      {
+        "n": "src/art/roster.js",
+        "s": 2304,
+        "d": 39,
+        "i": "script"
+      },
+      {
+        "n": "src/game/bossPatternDesigns.js",
+        "s": 20080,
+        "d": 38,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/cardSkins.js",
+        "s": 8065,
+        "d": 39,
+        "i": "script"
+      },
+      {
+        "n": "src/game/bossBullets.js",
+        "s": 54283,
+        "d": 39,
+        "i": "script"
+      },
+      {
+        "n": "art/gen/rumia.avif",
+        "s": 31964,
+        "d": 8,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/wriggle.avif",
+        "s": 41074,
+        "d": 11,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/cirno.avif",
+        "s": 97608,
+        "d": 15,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/aya.avif",
+        "s": 46150,
+        "d": 11,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/kaguya.avif",
+        "s": 44047,
+        "d": 12,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/yuyuko.avif",
+        "s": 56764,
+        "d": 12,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/flandre.avif",
+        "s": 64657,
+        "d": 13,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/remilia.avif",
+        "s": 49213,
+        "d": 21,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/youmu.avif",
+        "s": 21351,
+        "d": 22,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/sakuya.avif",
+        "s": 43326,
+        "d": 22,
+        "i": "img"
+      },
+      {
+        "n": "engine/songs/eurobeat_pre2.js",
+        "s": 34905,
+        "d": 32,
+        "i": "script"
+      },
+      {
+        "n": "gen/run/reimu_run_0.avif",
+        "s": 14775,
+        "d": 17,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_run_1.avif",
+        "s": 14270,
+        "d": 17,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_run_2.avif",
+        "s": 14729,
+        "d": 23,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_idle.avif",
+        "s": 9971,
+        "d": 23,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_run_3.avif",
+        "s": 14298,
+        "d": 24,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_jump.avif",
+        "s": 17640,
+        "d": 29,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_fall.avif",
+        "s": 16500,
+        "d": 30,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_fly.avif",
+        "s": 14821,
+        "d": 30,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_run_0.avif",
+        "s": 16955,
+        "d": 36,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_run_1.avif",
+        "s": 17160,
+        "d": 35,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_run_2.avif",
+        "s": 17018,
+        "d": 36,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_run_3.avif",
+        "s": 16651,
+        "d": 43,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_idle.avif",
+        "s": 13375,
+        "d": 43,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_jump.avif",
+        "s": 20856,
+        "d": 44,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_fly.avif",
+        "s": 17668,
+        "d": 55,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_fall.avif",
+        "s": 16225,
+        "d": 55,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/rumia.avif",
+        "s": 36850,
+        "d": 40,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/wriggle.avif",
+        "s": 45560,
+        "d": 49,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/cirno.avif",
+        "s": 131810,
+        "d": 50,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/aya.avif",
+        "s": 39726,
+        "d": 49,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/yuyuko.avif",
+        "s": 77155,
+        "d": 59,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/kaguya.avif",
+        "s": 61003,
+        "d": 59,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/flandre.avif",
+        "s": 144842,
+        "d": 61,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/youmu.avif",
+        "s": 37979,
+        "d": 63,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/remilia.avif",
+        "s": 92149,
+        "d": 64,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/sakuya.avif",
+        "s": 36430,
+        "d": 64,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/sakuya_title.avif",
+        "s": 0,
+        "d": 6,
+        "i": "img"
+      },
+      {
+        "n": "engine/songs/merge_stage2.js",
+        "s": 0,
+        "d": 5,
+        "i": "script"
+      },
+      {
+        "n": "gen/bg/shrine.avif",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "gen/bg/mountain.avif",
+        "s": 0,
+        "d": 11,
+        "i": "img"
+      },
+      {
+        "n": "gen/bg/mansion.avif",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "gen/bg/forest.avif",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "gen/bg/moon.avif",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "engine/songs/yuuhei_pre3.js",
+        "s": 0,
+        "d": 7,
+        "i": "script"
+      },
+      {
+        "n": "gen/fairy/blue.webp",
+        "s": 0,
+        "d": 8,
+        "i": "img"
+      },
+      {
+        "n": "gen/fairy/green.avif",
+        "s": 0,
+        "d": 9,
+        "i": "img"
+      },
+      {
+        "n": "gen/fairy/yellow.avif",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "gen/fairy/red.avif",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "gen/fairy/purple.webp",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/fairy.avif",
+        "s": 0,
+        "d": 13,
+        "i": "img"
+      },
+      {
+        "n": "engine/songs/ateam_stage3.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/fall_pre4.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/aya_stage4_b.js",
+        "s": 0,
+        "d": 5,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/tillwhen_pre5.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/yuuga_stage5.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/voyage_pre6.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/kaguya_stage6.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/sakuya_ex.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/septette_ex.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/flandre_devil.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      }
+    ]
+  },
+  "consoleEnd": {
+    "errors": [],
+    "warns": [],
+    "httpBad": [],
+    "netFails": [],
+    "resources": [
+      {
+        "n": "127.0.0.1:9666/src/style.css?v=1.6.50",
+        "s": 151036,
+        "d": 11,
+        "i": "link"
+      },
+      {
+        "n": "art/gen/title_bg.avif",
+        "s": 76122,
+        "d": 15,
+        "i": "link"
+      },
+      {
+        "n": "art/gen/marisa_title.avif",
+        "s": 34934,
+        "d": 14,
+        "i": "link"
+      },
+      {
+        "n": "art/gen/reimu_title.avif",
+        "s": 29752,
+        "d": 14,
+        "i": "link"
+      },
+      {
+        "n": "127.0.0.1:9666/src/main.js?v=1.6.50",
+        "s": 203044,
+        "d": 22,
+        "i": "other"
+      },
+      {
+        "n": "src/engine/renderer.js",
+        "s": 31207,
+        "d": 13,
+        "i": "other"
+      },
+      {
+        "n": "src/engine/input.js",
+        "s": 23669,
+        "d": 15,
+        "i": "other"
+      },
+      {
+        "n": "src/engine/loop.js",
+        "s": 4948,
+        "d": 25,
+        "i": "other"
+      },
+      {
+        "n": "src/engine/lazy_preload.js",
+        "s": 7075,
+        "d": 26,
+        "i": "other"
+      },
+      {
+        "n": "src/ui/platform.js",
+        "s": 39841,
+        "d": 25,
+        "i": "other"
+      },
+      {
+        "n": "src/assets/levels.js",
+        "s": 8548,
+        "d": 26,
+        "i": "other"
+      },
+      {
+        "n": "src/engine/audio.js",
+        "s": 69411,
+        "d": 27,
+        "i": "other"
+      },
+      {
+        "n": "src/game/hud.js",
+        "s": 18778,
+        "d": 31,
+        "i": "other"
+      },
+      {
+        "n": "src/game/spellCutin.js",
+        "s": 7460,
+        "d": 34,
+        "i": "other"
+      },
+      {
+        "n": "src/game/bootScreen.js",
+        "s": 7123,
+        "d": 35,
+        "i": "other"
+      },
+      {
+        "n": "src/game/dialogue.js",
+        "s": 12590,
+        "d": 35,
+        "i": "other"
+      },
+      {
+        "n": "src/game/difficulty.js",
+        "s": 10655,
+        "d": 36,
+        "i": "other"
+      },
+      {
+        "n": "src/art/genchars.js",
+        "s": 12966,
+        "d": 35,
+        "i": "other"
+      },
+      {
+        "n": "src/art/genboss.js",
+        "s": 10167,
+        "d": 36,
+        "i": "other"
+      },
+      {
+        "n": "src/art/img.js",
+        "s": 3762,
+        "d": 42,
+        "i": "other"
+      },
+      {
+        "n": "src/i18n/index.js",
+        "s": 9670,
+        "d": 42,
+        "i": "other"
+      },
+      {
+        "n": "src/game/power.js",
+        "s": 3407,
+        "d": 42,
+        "i": "other"
+      },
+      {
+        "n": "engine/songs/index.js",
+        "s": 15991,
+        "d": 42,
+        "i": "other"
+      },
+      {
+        "n": "src/game/balance.js",
+        "s": 2538,
+        "d": 43,
+        "i": "other"
+      },
+      {
+        "n": "src/art/avif_manifest.js",
+        "s": 1628,
+        "d": 43,
+        "i": "other"
+      },
+      {
+        "n": "engine/songs/title_full.js",
+        "s": 47058,
+        "d": 48,
+        "i": "other"
+      },
+      {
+        "n": "127.0.0.1:9666/src/title-intro.css?v=1.6.50",
+        "s": 5171,
+        "d": 48,
+        "i": "link"
+      },
+      {
+        "n": "src/ui/mobile.css?v=1.6.50",
+        "s": 24633,
+        "d": 49,
+        "i": "link"
+      },
+      {
+        "n": "src/ui/platform.css?v=1.6.50",
+        "s": 10389,
+        "d": 48,
+        "i": "link"
+      },
+      {
+        "n": "/127.0.0.1:9666/manifest.webmanifest",
+        "s": 1159,
+        "d": 7,
+        "i": "link"
+      },
+      {
+        "n": "art/gen/reimu.avif",
+        "s": 41159,
+        "d": 4,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/marisa.avif",
+        "s": 50954,
+        "d": 4,
+        "i": "img"
+      },
+      {
+        "n": "src/game/stage.js",
+        "s": 126944,
+        "d": 8,
+        "i": "script"
+      },
+      {
+        "n": "src/game/bullets.js",
+        "s": 40505,
+        "d": 9,
+        "i": "script"
+      },
+      {
+        "n": "src/game/story.js",
+        "s": 126983,
+        "d": 9,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/honou_pre1.js",
+        "s": 59102,
+        "d": 7,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/youma_stage1.js",
+        "s": 35619,
+        "d": 7,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/index.js",
+        "s": 2181,
+        "d": 6,
+        "i": "script"
+      },
+      {
+        "n": "src/game/camera.js",
+        "s": 4361,
+        "d": 9,
+        "i": "script"
+      },
+      {
+        "n": "src/game/player.js",
+        "s": 19159,
+        "d": 8,
+        "i": "script"
+      },
+      {
+        "n": "src/game/level.js",
+        "s": 8220,
+        "d": 8,
+        "i": "script"
+      },
+      {
+        "n": "src/game/fx.js",
+        "s": 17983,
+        "d": 10,
+        "i": "script"
+      },
+      {
+        "n": "src/game/playerShots.js",
+        "s": 23729,
+        "d": 9,
+        "i": "script"
+      },
+      {
+        "n": "src/game/miniboss.js",
+        "s": 39882,
+        "d": 22,
+        "i": "script"
+      },
+      {
+        "n": "src/game/stg.js",
+        "s": 55077,
+        "d": 21,
+        "i": "script"
+      },
+      {
+        "n": "src/game/enemies.js",
+        "s": 53485,
+        "d": 20,
+        "i": "script"
+      },
+      {
+        "n": "src/game/boss.js",
+        "s": 154875,
+        "d": 26,
+        "i": "script"
+      },
+      {
+        "n": "src/art/scenes.js",
+        "s": 212395,
+        "d": 31,
+        "i": "script"
+      },
+      {
+        "n": "src/game/cardfx.js",
+        "s": 15725,
+        "d": 22,
+        "i": "script"
+      },
+      {
+        "n": "src/game/cardEffects.js",
+        "s": 8463,
+        "d": 32,
+        "i": "script"
+      },
+      {
+        "n": "src/art/pwa-192.png",
+        "s": 58879,
+        "d": 22,
+        "i": "other"
+      },
+      {
+        "n": "game/bulletArt/types.js",
+        "s": 4270,
+        "d": 22,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/_lib.js",
+        "s": 12735,
+        "d": 21,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/dark.js",
+        "s": 16999,
+        "d": 23,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/ice.js",
+        "s": 11101,
+        "d": 30,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/bug.js",
+        "s": 17643,
+        "d": 31,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/leaf.js",
+        "s": 10229,
+        "d": 32,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/sakura.js",
+        "s": 12112,
+        "d": 31,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/stone.js",
+        "s": 10118,
+        "d": 32,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/jewel.js",
+        "s": 18469,
+        "d": 31,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/flame.js",
+        "s": 12890,
+        "d": 40,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/bird.js",
+        "s": 14848,
+        "d": 42,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/spear.js",
+        "s": 11789,
+        "d": 41,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/bat.js",
+        "s": 14204,
+        "d": 41,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/blade.js",
+        "s": 10792,
+        "d": 40,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/crystal.js",
+        "s": 10306,
+        "d": 42,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/knife.js",
+        "s": 6966,
+        "d": 48,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/lava.js",
+        "s": 11490,
+        "d": 48,
+        "i": "script"
+      },
+      {
+        "n": "src/art/favicon.png",
+        "s": 25679,
+        "d": 49,
+        "i": "other"
+      },
+      {
+        "n": "src/art/hitbox.js",
+        "s": 3126,
+        "d": 50,
+        "i": "script"
+      },
+      {
+        "n": "src/assets/levelgen.js",
+        "s": 52184,
+        "d": 49,
+        "i": "script"
+      },
+      {
+        "n": "src/art/genfairy.js",
+        "s": 4626,
+        "d": 38,
+        "i": "script"
+      },
+      {
+        "n": "src/game/bossTuning.js",
+        "s": 33793,
+        "d": 46,
+        "i": "script"
+      },
+      {
+        "n": "src/art/roster.js",
+        "s": 2304,
+        "d": 39,
+        "i": "script"
+      },
+      {
+        "n": "src/game/bossPatternDesigns.js",
+        "s": 20080,
+        "d": 38,
+        "i": "script"
+      },
+      {
+        "n": "game/bulletArt/cardSkins.js",
+        "s": 8065,
+        "d": 39,
+        "i": "script"
+      },
+      {
+        "n": "src/game/bossBullets.js",
+        "s": 54283,
+        "d": 39,
+        "i": "script"
+      },
+      {
+        "n": "art/gen/rumia.avif",
+        "s": 31964,
+        "d": 8,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/wriggle.avif",
+        "s": 41074,
+        "d": 11,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/cirno.avif",
+        "s": 97608,
+        "d": 15,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/aya.avif",
+        "s": 46150,
+        "d": 11,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/kaguya.avif",
+        "s": 44047,
+        "d": 12,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/yuyuko.avif",
+        "s": 56764,
+        "d": 12,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/flandre.avif",
+        "s": 64657,
+        "d": 13,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/remilia.avif",
+        "s": 49213,
+        "d": 21,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/youmu.avif",
+        "s": 21351,
+        "d": 22,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/sakuya.avif",
+        "s": 43326,
+        "d": 22,
+        "i": "img"
+      },
+      {
+        "n": "engine/songs/eurobeat_pre2.js",
+        "s": 34905,
+        "d": 32,
+        "i": "script"
+      },
+      {
+        "n": "gen/run/reimu_run_0.avif",
+        "s": 14775,
+        "d": 17,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_run_1.avif",
+        "s": 14270,
+        "d": 17,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_run_2.avif",
+        "s": 14729,
+        "d": 23,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_idle.avif",
+        "s": 9971,
+        "d": 23,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_run_3.avif",
+        "s": 14298,
+        "d": 24,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_jump.avif",
+        "s": 17640,
+        "d": 29,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_fall.avif",
+        "s": 16500,
+        "d": 30,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/reimu_fly.avif",
+        "s": 14821,
+        "d": 30,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_run_0.avif",
+        "s": 16955,
+        "d": 36,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_run_1.avif",
+        "s": 17160,
+        "d": 35,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_run_2.avif",
+        "s": 17018,
+        "d": 36,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_run_3.avif",
+        "s": 16651,
+        "d": 43,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_idle.avif",
+        "s": 13375,
+        "d": 43,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_jump.avif",
+        "s": 20856,
+        "d": 44,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_fly.avif",
+        "s": 17668,
+        "d": 55,
+        "i": "img"
+      },
+      {
+        "n": "gen/run/marisa_fall.avif",
+        "s": 16225,
+        "d": 55,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/rumia.avif",
+        "s": 36850,
+        "d": 40,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/wriggle.avif",
+        "s": 45560,
+        "d": 49,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/cirno.avif",
+        "s": 131810,
+        "d": 50,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/aya.avif",
+        "s": 39726,
+        "d": 49,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/yuyuko.avif",
+        "s": 77155,
+        "d": 59,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/kaguya.avif",
+        "s": 61003,
+        "d": 59,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/flandre.avif",
+        "s": 144842,
+        "d": 61,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/youmu.avif",
+        "s": 37979,
+        "d": 63,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/remilia.avif",
+        "s": 92149,
+        "d": 64,
+        "i": "img"
+      },
+      {
+        "n": "gen/boss/sakuya.avif",
+        "s": 36430,
+        "d": 64,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/sakuya_title.avif",
+        "s": 0,
+        "d": 6,
+        "i": "img"
+      },
+      {
+        "n": "engine/songs/merge_stage2.js",
+        "s": 0,
+        "d": 5,
+        "i": "script"
+      },
+      {
+        "n": "gen/bg/shrine.avif",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "gen/bg/mountain.avif",
+        "s": 0,
+        "d": 11,
+        "i": "img"
+      },
+      {
+        "n": "gen/bg/mansion.avif",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "gen/bg/forest.avif",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "gen/bg/moon.avif",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "engine/songs/yuuhei_pre3.js",
+        "s": 0,
+        "d": 7,
+        "i": "script"
+      },
+      {
+        "n": "gen/fairy/blue.webp",
+        "s": 0,
+        "d": 8,
+        "i": "img"
+      },
+      {
+        "n": "gen/fairy/green.avif",
+        "s": 0,
+        "d": 9,
+        "i": "img"
+      },
+      {
+        "n": "gen/fairy/yellow.avif",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "gen/fairy/red.avif",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "gen/fairy/purple.webp",
+        "s": 0,
+        "d": 10,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/fairy.avif",
+        "s": 0,
+        "d": 13,
+        "i": "img"
+      },
+      {
+        "n": "engine/songs/ateam_stage3.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/fall_pre4.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/aya_stage4_b.js",
+        "s": 0,
+        "d": 5,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/tillwhen_pre5.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/yuuga_stage5.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/voyage_pre6.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/kaguya_stage6.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/sakuya_ex.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/septette_ex.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "engine/songs/flandre_devil.js",
+        "s": 0,
+        "d": 4,
+        "i": "script"
+      },
+      {
+        "n": "gen/bg/mountain.avif",
+        "s": 0,
+        "d": 3,
+        "i": "img"
+      },
+      {
+        "n": "gen/bg/shrine.avif",
+        "s": 0,
+        "d": 2,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/reimu_title.avif",
+        "s": 0,
+        "d": 2,
+        "i": "img"
+      },
+      {
+        "n": "art/gen/marisa_title.avif",
+        "s": 0,
+        "d": 2,
+        "i": "img"
+      },
+      {
+        "n": "gen/bg/shrine_2.avif",
+        "s": 0,
+        "d": 11,
+        "i": "img"
+      },
+      {
+        "n": "gen/bg/forest.avif",
+        "s": 0,
+        "d": 1,
+        "i": "img"
+      },
+      {
+        "n": "gen/bg/forest_2.avif",
+        "s": 0,
+        "d": 22,
+        "i": "img"
+      }
+    ]
+  },
+  "progress": {
+    "samples": [
+      [
+        11,
+        null,
+        null
+      ],
+      [
+        133,
+        10,
+        8
+      ],
+      [
+        222,
+        28,
+        8
+      ],
+      [
+        376,
+        35,
+        8
+      ],
+      [
+        528,
+        49,
+        8
+      ],
+      [
+        610,
+        63,
+        8
+      ],
+      [
+        692,
+        71,
+        8
+      ],
+      [
+        788,
+        81,
+        8
+      ],
+      [
+        878,
+        86,
+        8
+      ],
+      [
+        971,
+        90,
+        8
+      ],
+      [
+        1069,
+        92,
+        8
+      ],
+      [
+        1159,
+        93,
+        8
+      ],
+      [
+        1252,
+        93,
+        8
+      ],
+      [
+        1344,
+        94,
+        8
+      ],
+      [
+        1438,
+        96,
+        8
+      ],
+      [
+        1535,
+        98,
+        8
+      ],
+      [
+        1625,
+        100,
+        8
+      ],
+      [
+        1720,
+        100,
+        8
+      ]
+    ],
+    "totalSamples": 18,
+    "distinctPct": 15,
+    "distinctTarget": 1
+  },
+  "checks": [
+    {
+      "id": "E-reveal",
+      "ok": true,
+      "detail": "揭幕用时 1896ms（预算 20000ms） trace.t=1685ms how=__boot.done"
+    },
+    {
+      "id": "E-gate-probe",
+      "ok": true,
+      "detail": "{\"art\":true,\"kit\":true,\"music\":true,\"failed\":[],\"startedAt\":81.80000000074506,\"finishedAt\":267.40000000037253,\"done\":true}"
+    },
+    {
+      "id": "E-pct-monotonic",
+      "ok": true,
+      "detail": "样本=17 回退次数=0 首=10 末=100"
+    },
+    {
+      "id": "E-pct-100-at-reveal",
+      "ok": true,
+      "detail": "__boot.pct@reveal=100（期望 100）"
+    },
+    {
+      "id": "E-status-exists",
+      "ok": true,
+      "detail": "text=\"准备完成\" rect=51x15@top336"
+    },
+    {
+      "id": "E-status-text",
+      "ok": true,
+      "detail": "text=\"准备完成\""
+    },
+    {
+      "id": "E-status-below-sub",
+      "ok": true,
+      "detail": "status.top=336 status.bottom=351 sub.top=311 sub.bottom=326"
+    },
+    {
+      "id": "E-status-dom-after-sub",
+      "ok": true,
+      "detail": "previousElementSibling=\"boot-sub\""
+    },
+    {
+      "id": "E-boot-hidden",
+      "ok": true,
+      "detail": "display=none visibility=hidden opacity=0 classes=js done"
+    },
+    {
+      "id": "E-state-menu",
+      "ok": true,
+      "detail": "state=menu page=title"
+    },
+    {
+      "id": "E-title-interactive",
+      "ok": true,
+      "detail": "Enter→难度页 成功（182ms, 1 次 Enter）"
+    },
+    {
+      "id": "E-entry-stage-built",
+      "ok": true,
+      "detail": "舞台已建（对话 0ms 出现，舞台 7545ms，presses=31）"
+    },
+    {
+      "id": "E-entry-no-kitload",
+      "ok": true,
+      "detail": "进关全程 #kitLoad 可见采样次数=0（期望 0，门禁已预载）"
+    },
+    {
+      "id": "E-entry-bgm-pre1",
+      "ok": true,
+      "detail": "audio.soundingSong=\"pre1\"（期望含 pre1）"
+    },
+    {
+      "id": "E-entry-state-play",
+      "ok": true,
+      "detail": "state=dialogue stageBuilt=true"
+    },
+    {
+      "id": "E-song-warmup-10s",
+      "ok": true,
+      "detail": "揭幕 10s 后 /engine/songs/*.js 去重 17 条（期望 ≥10）；档位=unknown（0KB/0.00s） connection={\"effectiveType\":\"4g\",\"saveData\":false} 样本=index.js,title_full.js,honou_pre1.js,youma_stage1.js,eurobeat_pre2.js,merge_stage2.js,yuuhei_pre3.js,ateam_stage3.js"
+    },
+    {
+      "id": "E-no-exception",
+      "ok": true,
+      "detail": "无未捕获异常"
+    },
+    {
+      "id": "E-no-console-error",
+      "ok": true,
+      "detail": "无 console.error"
+    }
+  ]
+}
