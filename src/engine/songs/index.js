@@ -117,9 +117,11 @@ const DEFS = [
   // fetch 失败时自动回退 sakuya_ex.js 里的合成数据。
   { id: 'sakuya_ex', url: './sakuya_ex.js', keys: ['ex_pre'],
     pick: (m) => ({ ex_pre: m.SAKUYA_EX?.ex_pre ? { ...m.SAKUYA_EX.ex_pre, audio: 'src/assets/bgm/sakuya_ex.mp3?v=1.6.36' } : undefined }) },
-  // EX 中段（雷米莉亚拦路）：亡き王女の為のセプテット —— 见 tools/ex_septette2.py
-  { id: 'septette_ex', url: './septette_ex.js', keys: ['ex_mid'],
-    pick: (m) => ({ ex_mid: m.REMILIA_EX?.ex_mid }) },
+  // EX 中段（雷米莉亚拦路）：亡き王女の為のセプテット —— 逐音搬入 + 重新配器（见 tools/build/_remi_compose.py）
+  // audio 让引擎直接播离线渲染成品 src/assets/bgm/remilia_septette.mp3，
+  // fetch 失败时自动回退 remilia_septette.js 里的合成数据。
+  { id: 'remilia_septette', url: './remilia_septette.js', keys: ['ex_mid'],
+    pick: (m) => ({ ex_mid: m.REMILIA_EX?.ex_mid ? { ...m.REMILIA_EX.ex_mid, audio: 'src/assets/bgm/remilia_septette.mp3?v=1.6.55' } : undefined }) },
 ];
 
 /** key → 所属动态模块 */

@@ -52,7 +52,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BGM = ROOT / "src" / "assets" / "bgm"
 
 # 目标曲目（离线渲染产物，原 WAV 一律保留）
-TRACKS = ("sakuya_ex", "flandre_devil", "festival_box")
+TRACKS = ("sakuya_ex", "flandre_devil", "festival_box", "remilia_septette")
 
 SR = 22050          # 离线渲染采样率（WAV 侧，MP3 不做重采样）
 SPF = 576           # MPEG-1/2 Layer III 每帧采样数

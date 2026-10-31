@@ -147,7 +147,8 @@ DNS 侧：主域名只有两条 A（`185.199.108.153` / `185.199.109.153`，TTL 
 | `sakuya_ex` | EXTRA 道中 | 5,292,044 B | **1,369,893 B** |
 | `festival_box` | EXTRA 结局（八音盒） | 9,664,118 B | **2,545,365 B** |
 | `flandre_devil` | EXTRA 终盘（恶魔之妹） | 6,615,044 B | **1,698,472 B** |
-| 合计 | | 21,571,206 B | **5,613,730 B（−74.0%）** |
+| `remilia_septette` | EXTRA 中段（七重奏） | 6,555,862 B | **1,668,508 B** |
+| 合计 | | 28,127,068 B | **7,282,238 B（−74.1%）** |
 
 - 脚本：`python tools/optimize_audio_mp3.py`（MPEG-2 Layer III / 22050 Hz / 单声道 / VBR ≈ 91.8 kbps）。源是 22.05 kHz 单声道母版，所以用 MPEG-2 L3，不用 44.1k 的 MPEG-1。
 - 关键在于**别让循环接缝变形**：lame 默认不写 Xing/Info 头，播放器只能猜时长；这里自己构造 Xing/Info + LAME tag，按 `n = 576 × 帧数 − delay − padding` 反解精确 padding、TOC 用真实帧偏移。验收（`node tools/verify_audio_mp3.mjs`，49 pass / 0 fail）：
