@@ -1,0 +1,1 @@
+for n in 1 3 4; do echo "pre$n"; python tools/build/_pret_lead/_an2.py pre$n tools/build/_pret_kit/pre${n}_v3_mono.wav tools/build/_pret_lead/stems_pre${n}_v3 2>&1 | grep -E "90_drums|bass"; done

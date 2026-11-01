@@ -71,12 +71,12 @@ const DEFS = [
   // fetch 失败时自动回退 extra_ending.js 里的合成数据。
   { id: 'extra_ending', url: './extra_ending.js', keys: ['endingW'],
     pick: (m) => ({ endingW: m.EXTRA_ENDING?.endingW ? { ...m.EXTRA_ENDING.endingW, audio: 'src/assets/bgm/festival_box.mp3' } : undefined }) },
-  // 1 面道中：ほおずきみたいに紅い魂 —— 照 ZUN 扒谱 1:1 直译（见 tools/pre1_honou.py）
-  { id: 'honou_pre1', url: './honou_pre1.js', keys: ['pre1'],
-    pick: (m) => ({ pre1: m.HONOU_PRE1?.pre1 }) },
-  // 2 面道中：幻視の夜 ～ Ghostly Eyes（EUROBEAT 157 BPM，见 tools/midi_to_eurobeat.py）
-  { id: 'eurobeat_pre2', url: './eurobeat_pre2.js', keys: ['pre2'],
-    pick: (m) => ({ pre2: m.PRE2_EURO?.pre2 }) },
+  // 1 面道中：ほおずきみたいに紅い魂 —— 原曲整块搬入 + 重配器（145 BPM / G 小调 / 56 小节，见 tools/build/_pret1_compose.py）
+  { id: 'honou_pre1', url: './pre1.js', keys: ['pre1'],
+    pick: (m) => ({ pre1: m.HONOU_PRE1?.pre1 ? { ...m.HONOU_PRE1.pre1, audio: 'src/assets/bgm/pre1.mp3?v=1.6.70' } : undefined }) },
+  // 2 面道中：幻視の夜 ～ Ghostly Eyes —— 原曲整块搬入 + 重配器（151 BPM / C# 小调 / 70 小节，见 tools/build/_pret2_compose.py）
+  { id: 'genshi_pre2', url: './pre2.js', keys: ['pre2'],
+    pick: (m) => ({ pre2: m.GENSHI_PRE2?.pre2 ? { ...m.GENSHI_PRE2.pre2, audio: 'src/assets/bgm/pre2.mp3?v=1.6.70' } : undefined }) },
   // 1 面 Boss：妖魔夜行 —— 逐音搬入 + 重配器（见 tools/build/_rumia_compose.py）
   { id: 'youma_stage1', url: './youma_stage1.js', keys: ['stage1'],
     pick: (m) => ({ stage1: m.YOUMA_STAGE1?.stage1
@@ -87,17 +87,17 @@ const DEFS = [
     pick: (m) => ({ stage2: m.WRIGGLE_STAGE2?.stage2
       ? { ...m.WRIGGLE_STAGE2.stage2, audio: 'src/assets/bgm/wriggle_stage2.mp3?v=1.6.64' }
       : undefined }) },
-  // 3 面道中：ルーネイトエルフ —— 幽閉サテライト 风重编（见 tools/yuuhei_pre3.py）
-  { id: 'yuuhei_pre3', url: './yuuhei_pre3.js', keys: ['pre3'],
-    pick: (m) => ({ pre3: m.YUUHEI_PRE3?.pre3 }) },
+  // 3 面道中：ルーネイトエルフ —— 原曲整块搬入 + 重配器（143 BPM / E 大调 / 56 小节，见 tools/build/_pret3_compose.py）
+  { id: 'lunate_pre3', url: './pre3.js', keys: ['pre3'],
+    pick: (m) => ({ pre3: m.LUNATE_PRE3?.pre3 ? { ...m.LUNATE_PRE3.pre3, audio: 'src/assets/bgm/pre3.mp3?v=1.6.70' } : undefined }) },
   // 3 面 Boss：おてんば恋娘 + 冒険 + 完美教室 —— 三曲逐音搬入重配器，176BPM / 88 小节 / 120s（见 tools/build/_cirno_compose.py）
   { id: 'cirno_stage3', url: './cirno_stage3.js', keys: ['stage3'],
     pick: (m) => ({ stage3: m.CIRNO_STAGE3?.stage3
       ? { ...m.CIRNO_STAGE3.stage3, audio: 'src/assets/bgm/cirno_stage3.mp3?v=1.6.64' }
       : undefined }) },
-  // 4 面道中：フォールオブフォール ～ 秋めく滝 —— 瀑布动机 × 和风 × 重低频（见 tools/pre4_fall.py）
-  { id: 'fall_pre4', url: './fall_pre4.js', keys: ['pre4'],
-    pick: (m) => ({ pre4: m.FALL_PRE4?.pre4 }) },
+  // 4 面道中：フォールオブフォール ～ 秋めく滝 —— 原曲 84 小节搬入 + 重配器（163 BPM / B 小调，见 tools/build/_pret4_compose.py）
+  { id: 'fall_pre4', url: './pre4.js', keys: ['pre4'],
+    pick: (m) => ({ pre4: m.FALL_PRE4?.pre4 ? { ...m.FALL_PRE4.pre4, audio: 'src/assets/bgm/pre4.mp3?v=1.6.70' } : undefined }) },
   // 4 面 Boss：風神少女 —— 原曲 bar14-109 逐音搬入重配器，4 小节新引子 + 升半音尾声（见 tools/build/_aya_compose.py）
   { id: 'aya_stage4', url: './aya_stage4.js', keys: ['stage4'],
     pick: (m) => ({ stage4: m.AYA_STAGE4?.stage4
@@ -109,12 +109,14 @@ const DEFS = [
   // 5 面 Boss：幽雅に咲かせ、墨染の桜 ～ Border of Life —— 照原曲 1:1 直译（见 tools/boss5_murasaki.py）
   { id: 'yuuga_stage5', url: './yuuga_stage5.js', keys: ['stage5'],
     pick: (m) => ({ stage5: m.YUGA_STAGE5?.stage5 }) },
-  // 6 面道中：ヴォヤージュ1970 —— 原谱钢琴托卡塔顶线原样 × 六段起伏重编（见 tools/pre6_voyage.py）
-  { id: 'voyage_pre6', url: './voyage_pre6.js', keys: ['pre6'],
-    pick: (m) => ({ pre6: m.VOYAGE_PRE6?.pre6 }) },
-  // 6 面 Boss：竹取飛翔 ～ Lunatic Princess —— 原曲三条轨逐音原样，外加月光琶音 / 铺底 / 补鼓（见 tools/kaguya_fuse2.py）
+  // 6 面道中：ヴォヤージュ1970 —— 原曲 58 小节搬入（含 16 小节 3/4）+ 重配器（162 BPM / D 小调，见 tools/build/_pret6_compose.py）
+  { id: 'voyage_pre6', url: './pre6.js', keys: ['pre6'],
+    pick: (m) => ({ pre6: m.VOYAGE_PRE6?.pre6 ? { ...m.VOYAGE_PRE6.pre6, audio: 'src/assets/bgm/pre6.mp3?v=1.6.70' } : undefined }) },
+  // 6 面 Boss：竹取飛翔 ～ Lunatic Princess —— 原曲 102 小节逐音搬入重配器（154 BPM / F 小调，见 tools/build/_kag_compose.py）
+  // audio 让引擎直接播离线立体声渲染成品 src/assets/bgm/kaguya_stage6.mp3，
+  // fetch 失败时自动回退 kaguya_stage6.js 里的合成数据。
   { id: 'kaguya_stage6', url: './kaguya_stage6.js', keys: ['stage6'],
-    pick: (m) => ({ stage6: m.KAGUYA_STAGE6?.stage6 }) },
+    pick: (m) => ({ stage6: m.KAGUYA_STAGE6?.stage6 ? { ...m.KAGUYA_STAGE6.stage6, audio: 'src/assets/bgm/kaguya_stage6.mp3?v=1.6.68' } : undefined }) },
   // EX Boss：恶魔之妹 —— 最終鬼畜妹フランドール・S × U.N.オーエンは彼女なのか？（见 tools/build/_fld_compose.py）
   // audio 让引擎直接播离线渲染成品 src/assets/bgm/flandre_devil.mp3，
   // fetch 失败时自动回退到 flandre_devil.js 里的合成数据。

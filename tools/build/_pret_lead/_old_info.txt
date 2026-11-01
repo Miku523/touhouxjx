@@ -1,0 +1,10 @@
+pre1 | title=像鬼灯一样鲜红的灵魂 | orig=原曲「像鬼灯一样鲜红的灵魂」/ 作曲：ZUN / 编曲：Miku523 | time=84.5 | note_len=9
+   NOTE:  + <NL>       
+pre2 | title=幻视之夜 ～ Ghostly Eyes | orig=原曲「幻视之夜 ～ Ghostly Eyes」/ 作曲：ZUN / 编曲：Miku523 | time=61.1 | note_len=9
+   NOTE:  + <NL>       
+pre3 | title=月牙精灵 | orig=原曲「月牙精灵」/ 作曲：ZUN / 编曲：Miku523 | time=66.7 | note_len=9
+   NOTE:  + <NL>       
+pre4 | title=秋意渐浓之瀑 | orig=原曲「秋意渐浓之瀑」/ 作曲：ZUN / 编曲：Miku523 | time=64.8 | note_len=93
+   NOTE: 四面道中。钢琴那条瀑布动机拆给木吉他和弦乐，一个接一个往下淌；鼓在底下压着，不然山体不够沉。尾句落回开头，循环听不出接缝——她说这样才能像一条不停的瀑布。山风七十天没换过气，这倒是真的。
+pre6 | title=旅人1970 | orig=原曲「旅人1970」/ 作曲：ZUN / 编曲：Miku523 | time=77.1 | note_len=92
+   NOTE: 六面道中。这份谱子没有单独的旋律轨，钢琴那条顶线就是歌。我排的只是轻重缓急——哪里该响，哪里该让开。那趟车从一九七〇年开出去就没打算停，这次停在永远亭门口——有人要把借走的一夜还回来。

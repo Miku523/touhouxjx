@@ -11,7 +11,7 @@
  */
 window.runVerify = async function runVerify() {
   const BASE = '/src/assets/bgm/';
-  const TRACKS = ['sakuya_ex', 'flandre_devil', 'festival_box', 'remilia_septette', 'youma_stage1', 'wriggle_stage2', 'cirno_stage3', 'aya_stage4'];
+  const TRACKS = ['sakuya_ex', 'flandre_devil', 'festival_box', 'remilia_septette', 'youma_stage1', 'wriggle_stage2', 'cirno_stage3', 'aya_stage4', 'kaguya_stage6', 'pre1', 'pre2', 'pre3', 'pre4', 'pre6'];
   const log = (s) => { const el = document.getElementById('out'); if (el) el.textContent += '\n' + s; };
 
   // 有些曲子的母版 WAV 不入库（超 Cloudflare 单文件上限），直接从 tools/build 下的 kit 读
@@ -20,7 +20,13 @@ window.runVerify = async function runVerify() {
     youma_stage1: '/tools/build/_rumia_kit/youma_stage1_stereo.wav',
     wriggle_stage2: '/tools/build/_wrig_kit/wriggle_stage2_stereo.wav',
     cirno_stage3: '/tools/build/_cirno_kit/cirno_stage3_stereo.wav',
+    pre1: '/tools/build/_pret_kit/pre1_stereo.wav',
+    pre2: '/tools/build/_pret_kit/pre2_stereo.wav',
+    pre3: '/tools/build/_pret_kit/pre3_stereo.wav',
+    pre4: '/tools/build/_pret_kit/pre4_stereo.wav',
+    pre6: '/tools/build/_pret_kit/pre6_stereo.wav',
     aya_stage4: '/tools/build/_aya_kit/aya_stage4_stereo.wav',
+    kaguya_stage6: '/tools/build/_kag_kit/kaguya_stage6_stereo.wav',
   };
   const getUrl = async (url) => {
     const r = await fetch(url, { cache: 'no-store' });
