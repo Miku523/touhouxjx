@@ -1,5 +1,5 @@
 // 1.6.65 门禁「真等」验收：三场景
-//   C 快网：曲库索引 + 第 1 面两首曲目在揭幕前真的被取下（1.6.54~1.6.64 的空转回归）
+//   C 快网：曲库索引 + 第 1 面两首曲目（pre1.js / youma_stage1.js）在揭幕前真的被取下（1.6.54~1.6.64 的空转回归）
 //   A 404 youma_stage1.js：music 这一路记失败，但门禁仍放行、不卡死
 //   B 400KB/s 节流：揭幕必须晚于 kit/曲目到货，且不再有 2.5s 软上限（reveal - startedAt > 2.6s）
 import { spawn } from 'node:child_process';
@@ -22,7 +22,7 @@ const PROBE = `(() => {
     bootDone: !!(g && g._boot && g._boot.done),
     state: g ? g.state : null,
     gate: bg,
-    songs: pick(/\\/engine\\/songs\\/(index|honou_pre1|youma_stage1|title_full)\\.js/),
+    songs: pick(/\\/engine\\/songs\\/(index|pre1|youma_stage1|title_full)\\.js/),
     kit: pick(/\\/src\\/game\\/(stage|bullets|story)\\.js/),
   });
 })()`;
@@ -45,7 +45,7 @@ async function scenarioFast(T) {
   check('C 门禁无失败项', Array.isArray(gate.failed) && gate.failed.length === 0, gate.failed);
   const names = s.songs.map((x) => x.n);
   check('C 曲库索引在首屏被取下', names.includes('index.js'), names);
-  check('C 第 1 面两首曲目模块在首屏被取下', names.includes('honou_pre1.js') && names.includes('youma_stage1.js'), names);
+  check('C 第 1 面两首曲目模块在首屏被取下', names.includes('pre1.js') && names.includes('youma_stage1.js'), names);
   const revealAt = Math.round(gate.finishedAt || 0);
   check('C 曲目模块早于门禁完成', s.songs.every((x) => x.end <= revealAt + 5), s.songs);
   check('C 进关模块早于门禁完成', s.kit.every((x) => x.end <= revealAt + 5), s.kit);

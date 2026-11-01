@@ -140,3 +140,28 @@ TTFB 601–659ms，errors 0。对比 1.6.51 的 3.0–21.7s、1.6.53 的 3.5–8
 - 版本串 1.6.65 → 1.6.66；docs/BOOT_SPLASH_DESIGN.md 升 v4（§2 六条取舍 / §4 降级表 / §5 契约第 6 条 / §6 调参）。
 - 注意：首屏字节继续上涨是**用户明确要的取舍**（宁可在加载页多等，也别在标题/进关再等）；
   弱网保命用 `?bootgate=lite`。以后再做首屏优化，别偷偷把任何一路改成空转。
+
+## 23:00 1.6.71 事故修复：主样式表 style.css 根本没被加载（本会话）
+
+用户发三张实机截图说「你工作做得非常失败」：难度页四张卡文字变成竖排裸文本、圆形难度徽章消失、
+EXTRA 选人页立绘只剩下半身、标题页字标被左裁 + 菜单文本裸排。根因不是排版参数，而是
+**1.6.51 之后线上一直没有主样式表**：
+
+- 1.6.51（f7bbbd0）把 `src/style.css`（142KB）从 `index.html` 撤掉，换 `title.css` 只留标题页
+  critical 样式，并依赖 `src/main.js:187` 的 `loadGameCss()` 在揭幕后补完整样式表。
+- 但 `loadGameCss()` **只被 `_prefetchGameKit()` 调用**，而 1.6.50 起 `_revealTitle()` 写的是
+  `if (!this._bootGate?.kit) this._prefetchGameKit();` —— 门禁成功（正常情况）就不预取 kit，
+  于是 `loadGameCss()` 永不执行，`document.styleSheets` 里从头到尾没有 `style.css`。
+  两者叠加：1.6.51~1.6.70 的站点全靠 `title.css` 撑着，一进难度页/选人页/游戏内就裸 DOM。
+
+修法（1.6.71）：
+- `_bootGateCss()` 变成门禁第 6 路：`loadGameCss()` + `#hks-game-css` 的 `sheet` 校验 + 30s 上限，
+  失败记 `failed: ['css']` 但不阻断；`__hksBootGate` 增加 `css` 字段。
+- `_revealTitle()` 里再无条件 `loadGameCss()` 一次（幂等）——不许再依赖 `_prefetchGameKit` 的副作用。
+- `tools/_lead_smoke.mjs` 加两条回归断言：揭幕前 `#hks-game-css` 已挂且 `cssRules > 200`、
+  难度页 `.dc-glyph` 计算尺寸 ≥40×40（实测 54×54 / 50%）。现在 20/20。
+- 验证：本地 1280×720 / 1366×768 / 1512×982 / 1536×864 / 1920×1080 / 1024×768 六档截图对比，
+  难度页徽章恢复 54×54 圆形、EXTRA 卡片 502×312 立绘完整（对象定位 100% 100% / contain）、
+  标题页字标与菜单完整无横向溢出（`scrollWidth - innerWidth === 0`）。
+- 教训：**凡是「首屏裸 DOM 就会难看」的资源，都不能只挂在某条成功路径的副作用上**；
+  以后改 `_revealTitle()` / `_prefetchGameKit()` 的条件前，先 grep `loadGameCss` 的调用点。

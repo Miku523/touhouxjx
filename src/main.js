@@ -441,7 +441,7 @@ class Game {
     // 揭幕门禁：标题三图 + 进关 game kit + 音频引擎 + 全曲库 + 关卡美术都就绪才放行（见 _waitBootReady）。
     // 各路状态同时挂在 window.__hksBootGate 上，QA 与线上排障都读它。
     this._bootGate = {
-      art: false, kit: false, audio: false, music: false, stageArt: false,
+      art: false, css: false, kit: false, audio: false, music: false, stageArt: false,
       failed: [], startedAt: 0, finishedAt: 0, done: false,
     };
     if (typeof window !== 'undefined') window.__hksBootGate = this._bootGate;
@@ -1075,22 +1075,27 @@ class Game {
     const gate = this._bootGate;
     gate.startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this._boot?.setTarget(0.10);
-    // 排障 / A-B 测速开关：?bootgate=off 只等标题图（等价改造前的旧行为）；
-    // ?bootgate=lite 退成 v3 口径（只等第 1 面曲目、不等关卡美术、不等全曲库）；
-    // 默认 v4 全量门禁，线上玩家不会带这些参数。
+    // 口径开关（1.6.71 起**默认 = v3 / lite**）：
+    //   默认   —— 标题三图 + 样式 + game kit + 音频引擎 + 第 1 面曲目。揭幕最快，
+    //             全曲库与关卡美术改走空闲队列后台灌（进关兜底见 _ensureStageMusic / _ensureStageBg）。
+    //   v4     —— 全曲库 18 模块 + 7 主题背景 / Boss 立绘 / 自机帧 / 对话立绘都等齐
+    //             （2.1MB、慢网 113.9s），只在快网或排障时用 ?bootgate=v4 打开。
+    //   off    —— 只等标题三图 + 样式（A-B 测速基线）。
+    // 用户 2026-11-01 决策：慢网下「进关零等待」的代价太大，先把标题页放出来。
     const q = typeof location !== 'undefined' ? String(location.search || '') : '';
     const gateOff = /[?&]bootgate=off(?:[&#]|$)/.test(q);
-    const gateLite = !gateOff && /[?&]bootgate=lite(?:[&#]|$)/.test(q);
+    const gateFull = !gateOff && /[?&]bootgate=v4(?:[&#]|$)/.test(q);
+    const gateLite = !gateOff && !gateFull;
     this._bootGateOff = gateOff;
     this._bootGateLite = gateLite;
     this._refreshBootStatus();
     const tasks = gateOff
-      ? [this._bootGateTitleArt()]
-      : gateLite
-        ? [this._bootGateTitleArt(), this._bootGateGameKit(),
-          this._bootGateAudio(), this._bootGateMusic('first')]
-        : [this._bootGateTitleArt(), this._bootGateGameKit(),
-          this._bootGateAudio(), this._bootGateMusic('all'), this._bootGateStageArt()];
+      ? [this._bootGateTitleArt(), this._bootGateCss()]
+      : gateFull
+        ? [this._bootGateTitleArt(), this._bootGateCss(), this._bootGateGameKit(),
+          this._bootGateAudio(), this._bootGateMusic('all'), this._bootGateStageArt()]
+        : [this._bootGateTitleArt(), this._bootGateCss(), this._bootGateGameKit(),
+          this._bootGateAudio(), this._bootGateMusic('first')];
     const hardCap = new Promise((resolve) => setTimeout(() => {
       if (gate.done) return;
       gate.failed.push('timeout');
@@ -1149,6 +1154,35 @@ class Game {
       this._bootGate.art = true;
       this._refreshBootStatus();
     });
+  }
+
+  /**
+   * 门禁 ①b：主样式表 src/style.css。
+   * index.html 只内联了标题页 critical 样式（title.css / title-intro.css），完整样式表由
+   * loadGameCss() 在首屏补齐 —— 它必须在揭幕前到货，否则露出来的是未排版的裸 DOM。
+   * 1.6.51~1.6.70 的界面事故就是这条路漏了：loadGameCss() 只挂在 _prefetchGameKit() 上，
+   * 而门禁成功时 _revealTitle() 不再预取 kit，于是完整样式表永远不会被请求。
+   * 失败（404 / 断网）只记 failed 不阻断：title.css 还能撑住标题页，30s 后放行。
+   */
+  _bootGateCss() {
+    const gate = this._bootGate;
+    const load = loadGameCss().then(() => {
+      const el = typeof document !== 'undefined' ? document.getElementById('hks-game-css') : null;
+      if (el && el.sheet) {
+        gate.css = true;
+      } else {
+        gate.failed.push('css');
+        if (typeof console !== 'undefined') {
+          console.warn('[boot] 主样式表未挂上，标题页只能退回 critical 样式');
+        }
+      }
+      this._refreshBootStatus();
+    }, (err) => {
+      gate.failed.push('css');
+      if (typeof console !== 'undefined') console.warn('[boot] 主样式表载入失败，先揭幕', err);
+    });
+    const cap = new Promise((resolve) => setTimeout(resolve, 30000));
+    return Promise.race([load, cap]).then(() => { this._refreshBootStatus(); });
   }
 
   /**
@@ -1370,6 +1404,10 @@ class Game {
   _revealTitle() {
     if (this._bootDone) return;
     this._bootDone = true;
+    // 主样式表兜底：门禁的 _bootGateCss() 已经等过它，这里再无条件摸一次（loadGameCss 幂等，
+    // 已经加载过就是现成的 resolved promise）。不许再依赖 _prefetchGameKit —— 门禁成功时它不跑，
+    // 而完整样式表一旦缺失，难度页 / 选人页 / 游戏内全都是裸 DOM。
+    loadGameCss();
     // 门禁已把进关模块拉下来时这里什么都不用做；只有门禁失败（404 / 断网 / 超时）
     // 才在揭幕后补一次后台重试 —— 玩家在标题页犹豫、挑难度、看选人页这几秒正好把它吃掉。
     // 就算这次也失败也没关系：进关前 ensureGameKit() 还会再等一次。

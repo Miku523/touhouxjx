@@ -35,7 +35,7 @@ try {
         S.timeline = (b.timeline || []).map((x) => x.n);
         const res = performance.getEntriesByType('resource');
         S.songs = res
-          .filter((e) => nameOf(e).includes('/engine/songs/honou_pre1.js') || nameOf(e).includes('/engine/songs/youma_stage1.js'))
+          .filter((e) => /\\/engine\\/songs\\/(?:pre1|youma_stage1)\\.js(\\?|$)/.test(nameOf(e)))
           .map((e) => ({ name: nameOf(e).split('/').pop(), end: endOf(e) }));
         S.songsAll = res
           .filter((e) => nameOf(e).includes('/engine/songs/') && /\\.js(\\?|$)/.test(nameOf(e)))
@@ -46,6 +46,14 @@ try {
         S.bgLq = res.filter((e) => /\\/art\\/gen\\/bg\\/[^/]+_lq\\.webp/.test(nameOf(e))).length;
         S.boss = res.filter((e) => /\\/art\\/gen\\/boss\\/[^/]+\\.(avif|webp)/.test(nameOf(e))).length;
         S.chars = res.filter((e) => /\\/art\\/gen\\/run\\//.test(nameOf(e))).length;
+        // 1.6.71 事故回归保护：主样式表必须已经挂上（style.css 的规则数远多于 title.css）
+        const cssEl = document.getElementById('hks-game-css');
+        S.css = {
+          hasLink: !!cssEl,
+          hasSheet: !!(cssEl && cssEl.sheet),
+          rules: cssEl && cssEl.sheet ? (cssEl.sheet.cssRules || []).length : 0,
+          status: cssEl && cssEl.sheet ? String(cssEl.sheet.disabled) : 'na',
+        };
         clearInterval(iv);
       }, 20);
     })()`,
@@ -79,11 +87,24 @@ try {
   const kit = (smoke && smoke.kit) || [];
   chk('三个 kit 入口模块到货', kit.length >= 3, JSON.stringify(kit));
   chk('进度时间线含 t94 里程碑', !!(smoke && smoke.timeline.indexOf('t94') >= 0), (smoke && smoke.timeline || []).join('>'));
+  const css = (smoke && smoke.css) || {};
+  chk('主样式表 src/style.css 在揭幕前挂上', !!(css.hasLink && css.hasSheet && css.rules > 200),
+    `hasLink=${css.hasLink} hasSheet=${css.hasSheet} rules=${css.rules}`);
 
   // 进关冒烟：标题 → 难度 → 开场对白（连续 Enter 推进）→ 进关
   await T.key('Enter');
   await sleep(600);
-  const diffPage = await T.eval('({ state: window.__game.state, page: window.__game._page || null, bootDone: window.__game._bootDone })');
+  const diffPage = await T.eval(`(() => {
+    const g = window.__game;
+    const el = document.querySelector('.dc-glyph');
+    let glyph = null;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      glyph = { w: Math.round(r.width), h: Math.round(r.height), radius: cs.borderRadius };
+    }
+    return { state: g.state, page: g._page || null, bootDone: g._bootDone, glyph };
+  })()`);
   await T.key('Enter');
   let reachedPlay = false;
   for (let i = 0; i < 25 && !reachedPlay; i += 1) {
@@ -105,6 +126,9 @@ try {
     };
   })()`);
   chk('揭幕后标题页可交互（难度页）', !!diffPage.bootDone && diffPage.state === 'menu', JSON.stringify(diffPage));
+  chk('难度页徽章 .dc-glyph 有完整样式（>=40px 圆形）',
+    !!(diffPage.glyph && diffPage.glyph.w >= 40 && diffPage.glyph.h >= 40),
+    diffPage.glyph ? JSON.stringify(diffPage.glyph) : 'no .dc-glyph');
   chk('难度页 Enter 后进入关卡（stage 已建）', !!play.stage, JSON.stringify(play));
   chk('无 kitLoad 全屏遮罩', play.kitLoad === 'none', `display=${play.kitLoad}`);
   chk('进关后 BGM 为该关道中曲', !!play.song && play.song !== 'title', `song=${JSON.stringify(play.song)} state=${play.state}`);
