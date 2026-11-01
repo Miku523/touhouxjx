@@ -182,3 +182,28 @@ EXTRA 选人页立绘只剩下半身、标题页字标被左裁 + 菜单文本�
 
 如果后续还想让标题页更快出，请改 `?bootgate=v3` 而非默认——默认口径代表用户明确要求，
 不要在没确认的情况下再翻。
+
+## 23:45 1.6.72–1.6.75 首屏字节大扫除（Lead 会话）
+
+**修掉一个大坑**：GitHub Pages 的 Source 不知何时被设成「Deploy from a branch」，
+导致 1.6.51 起做的 esbuild 压缩构建**从未被发布**——线上 src/main.js 一直是 215635B
+源码，不是 87837B 压缩产物。已用 `gh api -X PUT repos/Miku523/touhouxjx/pages
+-f build_type=workflow` 改回 Actions 并 workflow_dispatch 重新部署，现线上 91KB。
+
+**1.6.72**（efa2d19）门禁默认 v3 + story.js(125KB) 延后 + Boss 立绘 9 张&双自机帧重压
+（792017→356260B，-55%，AVIF q46）。
+**1.6.73**（77f832c）图标四件套重压：favicon 25379→5310、pwa-192 58579→12251、
+pwa-512 272216→67840、apple-touch-icon 44629→8705（64/128 色调色板，FASTOCTREE）。
+**1.6.74**（ee2860a，另一会话）门禁默认改回 v4 全量——用户要「标题之后零等待」。
+**1.6.75**（2fc7875）对话立绘 10 张 gen/*.avif q46 重压 493154→227801B（-53.8%）；
+关卡低清档 14 张 gen/bg/*_lq.webp 1280→1024 宽 q44 715506→444138B（-37.9%）。
+
+**实测（我的网络，mikuascendlog.com，v4 全量口径）**：揭幕 113.9s(1.6.71 原始)
+→ 76.2s(1.6.74 修压缩后) → **66.4s(1.6.75)**。到揭幕时下载 1037KB / 130 请求。
+
+**瓶颈定性**：`_perf_measure.mjs` 的收工条件原来是 `menu>0 && load>0`，而 menu 从
+Game 构造起就成立 → v4 长门禁下测量会提前 break、title 永远 -1。已改成
+`title>0 && load>0`（本次改动，注意别再改回去）。真正长尾是**曲库 19 个 JS 模块**
+（kaguya_stage6 50.3KB 59s、remilia_septette 38.9KB 67s、aya_stage4 41.7KB 28s…），
+单请求被并发压到 1–2KB/s；curl 单发同文件能跑 21–39KB/s，证明是并发摊薄不是 CDN 挂了。
+曲库乐谱数据精度压缩（小数 3→2 位）实测 gzip 只省 4–10%，不值得动生成器。
