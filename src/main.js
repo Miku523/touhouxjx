@@ -115,8 +115,7 @@ function loadGameKit() {
   _gameKitPromise = Promise.all([
     import('./game/stage.js'),
     import('./game/bullets.js'),
-    import('./game/story.js'),
-  ]).then(([stage, bullets, story]) => {
+  ]).then(([stage, bullets]) => {
     Stage = stage.Stage;
     EXTRA_CHAIN = stage.EXTRA_CHAIN;
     prefetchStageBg = stage.prefetchStageBg;
@@ -124,6 +123,23 @@ function loadGameKit() {
     waitStageBg = stage.waitStageBg;
     stageBgReady = stage.stageBgReady;
     prewarmSpriteCache = bullets.prewarmSpriteCache;
+  }).catch((err) => {
+    _gameKitPromise = null;   // 网络抖动允许下次进关重试，不要把失败永久钉住
+    throw err;
+  });
+  return _gameKitPromise;
+}
+
+/* ------------------------------------------------------------
+   剧情文本（story.js，未压缩约 125KB，纯数据、无副作用）
+   1.6.71 起从 loadGameKit 里摘出来：揭幕门禁只需要关卡逻辑，剧情可以晚一步。
+   进关入口统一 await loadStory()；后台预取会提前把它灌下来。
+   ------------------------------------------------------------ */
+let _storyPromise = null;
+/** 载入剧情文本；并发调用共享同一个 promise，失败后允许重试 */
+function loadStory() {
+  if (_storyPromise) return _storyPromise;
+  _storyPromise = import('./game/story.js').then((story) => {
     STORY = story.STORY;
     openingFor = story.openingFor;
     stageStoryFor = story.stageStoryFor;
@@ -132,10 +148,10 @@ function loadGameKit() {
     midbossPreFor = story.midbossPreFor;
     midbossPostFor = story.midbossPostFor;
   }).catch((err) => {
-    _gameKitPromise = null;   // 网络抖动允许下次进关重试，不要把失败永久钉住
+    _storyPromise = null;
     throw err;
   });
-  return _gameKitPromise;
+  return _storyPromise;
 }
 
 /* ------------------------------------------------------------
@@ -213,7 +229,7 @@ async function ensureGameKit() {
     kitLoading(true, '正在载入关卡…');
   }
   try {
-    await loadGameKit();
+    await Promise.all([loadGameKit(), loadStory()]);
     await loadGameCss();
     return true;
   } catch (err) {
@@ -1437,6 +1453,7 @@ class Game {
     this._kitPrefetchStarted = true;
     const go = () => {
       loadGameKit().catch(() => { /* 失败留给进关时的 ensureGameKit 兜底 */ });
+      loadStory().catch(() => { /* 同上 */ });
       loadGameCss();
     };
     if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 1200 });
