@@ -203,7 +203,7 @@ function kitLoading(on, text) {
 // 完整样式表（src/style.css，约 140KB）首屏不再阻塞：首屏只加载 src/title.css（标题页那部分规则）。
 // 这里在揭幕之后异步补齐，游戏内以 style.css 为准；进关前 ensureGameKit() 会等它到货。
 let _gameCssPromise = null;
-function loadGameCss() {
+function loadGameCss(attempt = 0) {
   if (_gameCssPromise) return _gameCssPromise;
   _gameCssPromise = new Promise((resolve) => {
     if (document.getElementById('hks-game-css')) { resolve(); return; }
@@ -211,11 +211,23 @@ function loadGameCss() {
     l.id = 'hks-game-css';
     l.rel = 'stylesheet';
     l.fetchPriority = 'low';
-    l.href = new URL('./style.css', import.meta.url).href;
+    // 1.6.76：失败不再一次就放弃。弱网下 style.css（约 140KB）被 SW 掐成 504 的概率不低，
+    // 而它是整个游戏内 UI 的唯一样式来源 —— 少它一个，对话框/面板/HUD 全部裸 DOM。
+    // 重试带 ?r=<n> 破坏缓存键，绕过上一轮那条 504 的缓存/连接；两次都失败才认命（内联 .hidden 兜底）。
+    const base = new URL('./style.css', import.meta.url);
+    if (attempt > 0) base.searchParams.set('r', String(attempt));
+    l.href = base.href;
     l.onload = () => resolve();
     l.onerror = () => {
-      // 样式表挂了不影响开跑：游戏内会退回浏览器默认样式，比卡在载入界面好
-      if (typeof console !== 'undefined') console.warn('[css] style.css 载入失败，游戏内样式可能不全');
+      try { l.remove(); } catch (e) { /* ignore */ }
+      _gameCssPromise = null;
+      if (attempt < 2) {
+        setTimeout(() => {
+          loadGameCss(attempt + 1).then(resolve);
+        }, 600 * (attempt + 1));
+        return;
+      }
+      if (typeof console !== 'undefined') console.warn('[css] style.css 载入失败（已重试 2 次），游戏内样式可能不全');
       resolve();
     };
     document.head.appendChild(l);

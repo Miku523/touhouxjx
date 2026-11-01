@@ -55,7 +55,8 @@ for (let i = 0; i < RUNS; i++) {
       if (s) {
         const now = Date.now() - t0;
         for (const k of Object.keys(marks)) if (marks[k] < 0 && s[k]) marks[k] = now;
-        if (marks.menu > 0 && marks.load > 0) break;
+        // v4 全量门禁下揭幕可能远晚于 load（menu state 从构造起就是 menu），收工要等揭幕
+        if (marks.title > 0 && marks.load > 0) break;
       }
       await sleep(100);
     }
