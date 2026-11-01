@@ -175,7 +175,7 @@ v3 的净代价（曲库索引 + 第 1 面两首曲目，raw 约 222KB）现在�
 | 音频引擎模块 404 | `_bootGateAudio()` 记 `failed: ['audio']` 后放行；首次手势时 `_unlockAudio()` 再试一次，仍失败则本次静音运行 |
 | 门禁某一路失败（模块 404 / 曲目模块没就绪 / 美术超时） | 只写进 `__hksBootGate.failed` 并 `console.warn`，不阻断揭幕；`kit` 未绿时 `_revealTitle()` 补一次后台预取 |
 | `?bootgate=off` | 排障 / A-B 对照开关：只等标题图，回到 v1「揭幕后后台预取 game kit」的行为；状态行同时留空 |
-| `?bootgate=lite` | 弱网保命开关：退回 v3 口径（标题图 + game kit + 音频 + 只第 1 面曲目，不等关卡美术） |
+| `?bootgate=lite`（别名 `?bootgate=v3`） | 弱网保命开关：退回 v3 口径（标题图 + 样式 + game kit + 音频 + 只第 1 面曲目，不等关卡美术）；默认口径仍是全量 v4 |
 | 状态行所在的 `#boot` 还没解析出来 | `_bootStatus()` 每路结算时重新找 `#boot .boot-sub` 作锚点，找不到就静默跳过，不影响门禁 |
 | 限流链路（`linkTier() === 'constrained'`） | v4 默认门禁本身不受影响；`?bootgate=lite`/`off` 下揭幕后不做全曲库空闲预热（`_warmRemainingSongs()` 直接 return） |
 | 后台标签页打开 | rAF 暂停 → 条子停在原处；切回前台继续追，不会在看不见的时候白白动画完 |
@@ -319,7 +319,7 @@ timeline 档位判定；headless 偶发 `visibilityState="hidden"` 会让 rAF �
 | 揭幕后预热哪些音乐 | `src/main.js` `_warmRemainingSongs()`（LEVELS 全部曲目；v4 门禁下只作 lite/off/超时的兜底；受限链路跳过） |
 | 状态行文案 / 位置 | `src/main.js` `_refreshBootStatus()` 里五条分支；样式 `src/style.css` `#boot .boot-status`，锚点 `.boot-sub` |
 | 门禁期间是否暂停空闲预取 | `src/engine/lazy_preload.js` 的 `holdIdleQueue()` 调用点（`main.js` 构造函数 / `_waitBootReady`） |
-| 弱网保命开关 | URL `?bootgate=lite`（v3 口径：不等关卡美术）与 `?bootgate=off`（只等标题图） |
+| 弱网保命开关 | URL `?bootgate=lite` / `?bootgate=v3`（不等关卡美术）与 `?bootgate=off`（只等标题图） |
 | 夜空的夜色 / 月晕位置 | `#boot` 的 `background` 三层 radial、`.boot-glow` 的 `top: 30%` |
 | 落樱数量 / 疏密 | `.boot-petals i` 的 `nth-child` 起点与周期（现在 7 片） |
 

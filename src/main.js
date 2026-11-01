@@ -1091,27 +1091,26 @@ class Game {
     const gate = this._bootGate;
     gate.startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this._boot?.setTarget(0.10);
-    // 口径开关（1.6.71 起**默认 = v3 / lite**）：
-    //   默认   —— 标题三图 + 样式 + game kit + 音频引擎 + 第 1 面曲目。揭幕最快，
-    //             全曲库与关卡美术改走空闲队列后台灌（进关兜底见 _ensureStageMusic / _ensureStageBg）。
-    //   v4     —— 全曲库 18 模块 + 7 主题背景 / Boss 立绘 / 自机帧 / 对话立绘都等齐
-    //             （2.1MB、慢网 113.9s），只在快网或排障时用 ?bootgate=v4 打开。
+    // 口径开关（默认 = 全量 v4：加载页把进关要用的都装好，标题之后不再等）：
+    //   默认   —— 标题三图 + 样式 + game kit + 音频引擎 + 全曲库 18 模块 + 关卡美术
+    //             （7 主题低清背景 / Boss 立绘 / 自机帧 / 对话立绘）。这是用户 2026-11-01
+    //             明确要的口径：「不能在标题页之前把全局资源都加载好吗」。
+    //   v3/lite—— 只等标题三图 + 样式 + game kit + 音频引擎 + 第 1 面曲目（慢网保命，
+    //             全曲库与关卡美术改走空闲队列后台灌，进关时 _ensureStageMusic/_ensureStageBg 兜底）。
     //   off    —— 只等标题三图 + 样式（A-B 测速基线）。
-    // 用户 2026-11-01 决策：慢网下「进关零等待」的代价太大，先把标题页放出来。
     const q = typeof location !== 'undefined' ? String(location.search || '') : '';
     const gateOff = /[?&]bootgate=off(?:[&#]|$)/.test(q);
-    const gateFull = !gateOff && /[?&]bootgate=v4(?:[&#]|$)/.test(q);
-    const gateLite = !gateOff && !gateFull;
+    const gateLite = !gateOff && /[?&]bootgate=(?:v3|lite)(?:[&#]|$)/.test(q);
     this._bootGateOff = gateOff;
     this._bootGateLite = gateLite;
     this._refreshBootStatus();
     const tasks = gateOff
       ? [this._bootGateTitleArt(), this._bootGateCss()]
-      : gateFull
+      : gateLite
         ? [this._bootGateTitleArt(), this._bootGateCss(), this._bootGateGameKit(),
-          this._bootGateAudio(), this._bootGateMusic('all'), this._bootGateStageArt()]
+          this._bootGateAudio(), this._bootGateMusic('first')]
         : [this._bootGateTitleArt(), this._bootGateCss(), this._bootGateGameKit(),
-          this._bootGateAudio(), this._bootGateMusic('first')];
+          this._bootGateAudio(), this._bootGateMusic('all'), this._bootGateStageArt()];
     const hardCap = new Promise((resolve) => setTimeout(() => {
       if (gate.done) return;
       gate.failed.push('timeout');

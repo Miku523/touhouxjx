@@ -41,7 +41,7 @@ try {
           .filter((e) => nameOf(e).includes('/engine/songs/') && /\\.js(\\?|$)/.test(nameOf(e)))
           .map((e) => ({ name: nameOf(e).split('/').pop(), end: endOf(e) }));
         S.kit = res
-          .filter((e) => nameOf(e).includes('/src/game/stage.js') || nameOf(e).includes('/src/game/bullets.js') || nameOf(e).includes('/src/game/story.js'))
+          .filter((e) => nameOf(e).includes('/src/game/stage.js') || nameOf(e).includes('/src/game/bullets.js'))
           .map((e) => ({ name: nameOf(e).split('/').pop(), end: endOf(e) }));
         S.bgLq = res.filter((e) => /\\/art\\/gen\\/bg\\/[^/]+_lq\\.webp/.test(nameOf(e))).length;
         S.boss = res.filter((e) => /\\/art\\/gen\\/boss\\/[^/]+\\.(avif|webp)/.test(nameOf(e))).length;
@@ -85,7 +85,7 @@ try {
   chk('Boss 立绘在揭幕前到货（>=7）', (smoke && smoke.boss) >= 7, `boss=${smoke && smoke.boss}`);
   chk('自机动作帧在揭幕前到货（>=8）', (smoke && smoke.chars) >= 8, `run=${smoke && smoke.chars}`);
   const kit = (smoke && smoke.kit) || [];
-  chk('三个 kit 入口模块到货', kit.length >= 3, JSON.stringify(kit));
+  chk('两个 kit 入口模块到货（story.js 1.6.72 起延后）', kit.length >= 2, JSON.stringify(kit));
   chk('进度时间线含 t94 里程碑', !!(smoke && smoke.timeline.indexOf('t94') >= 0), (smoke && smoke.timeline || []).join('>'));
   const css = (smoke && smoke.css) || {};
   chk('主样式表 src/style.css 在揭幕前挂上', !!(css.hasLink && css.hasSheet && css.rules > 200),
