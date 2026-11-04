@@ -730,7 +730,9 @@ class Builder {
     return len;
   }
 
-  /** 地板多坑：平地 + 2~4 个 1~3 列宽的坑，坑与坑之间留 3 列落脚。 */
+  /** 地板多坑：平地 + 2~4 个 2~3 列宽的坑，坑与坑之间留 3 列落脚。
+      坑宽至少 2 列：1 列窄坑在厚涂地表上几乎看不见，掉落惩罚却是整段重来，
+      玩家感知是「被阴了」而不是「我没跳好」（二面 col27 实测死亡循环）。 */
   floorHoles(len) {
     const c0 = this.cursor;
     const base = this.groundTop();
@@ -739,7 +741,7 @@ class Builder {
     used = 3;
     const holes = this.rows >= 34 ? this.ri(3, 4) : this.ri(2, 3);
     for (let k = 0; k < holes; k++) {
-      const w = this.ri(1, this.rows >= 34 ? 3 : 2);
+      const w = this.ri(2, this.rows >= 34 ? 3 : 2);
       if (used + w + 3 > len - 1) break;
       this.hole(c0 + used, w, base);
       this.coinArc(c0 + used + Math.floor(w / 2), base - 2, Math.max(1, Math.floor(w / 2)));
@@ -922,6 +924,7 @@ class Builder {
       const row = this.top[c] - 1;
       if (row <= 1 || this.get(c, row) !== AIR) continue;
       this.set(c, row, 'C');
+      (this.cpCols || (this.cpCols = [])).push(c);
       this.coins(c + 2, row, 3);
       return c;
     }
@@ -1000,6 +1003,7 @@ class Builder {
       lastBest = best;
       const row = this.top[best] - 1;
       this.set(best, row, 'C');
+      (this.cpCols || (this.cpCols = [])).push(best);
       this.coins(best + 2, this.top[best] - 1, 3);
     }
     // 最后一个检查点之后，玩家要一路走到 Boss 场，不能再掉出地图。
@@ -1034,7 +1038,10 @@ class Builder {
       if (this.gap[c] || this.surface[c] === 'M') continue;
       const row = this.top[c] - 1;
       if (this.get(c, row) !== AIR) continue;
-      if (this.get(c + 1, row) === 'C') continue;
+      // 检查点附近 ±8 列不刷地面兵：复活点旁贴脸刷怪，玩家 1.8s 无敌一结束就被压回检查点
+      //（一面检查点 219 与刷点 220 贴脸，实测复活即死的死亡循环）。
+      // 按记录的检查点列比较，别扫同行——地形起伏时 C 与刷点不在同一行，扫行会漏。
+      if (this.cpCols && this.cpCols.some((cp) => Math.abs(cp - c) <= 8)) continue;
       // 坑边留安全距离：离坑（含 2 列小坑）2 格内的位置不刷地面兵，
       // 免得踩踏/受击的弹跳把人带进坑里，也避免自动玩家在坑沿被逼出失误。
       let nearGap = false;
