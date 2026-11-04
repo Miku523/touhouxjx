@@ -68,12 +68,12 @@ await ev(`(() => {
 })()`);
 
 // 起关
-await ev(`(() => {
+await ev(`(async () => {
   const g = window.__game;
   g.lives = 50; g.char = 'reimu';
-  ${STAGE === 'extra' ? "g.unlockedExtra = true; g._startExtraStage({ skipIntro: true });" : `g.startStage(${STAGE});`}
+  ${STAGE === 'extra' ? "g.unlockedExtra = true; await g._startExtraStage({ skipIntro: true });" : `await g.startStage(${STAGE});`}
   window.__st = { i: 0, msSum: 0, msMax: 0, slow: 0, done: false, why: '', states: {} };
-  return g.state;
+  return g.state + '/' + !!g.stage;
 })()`);
 
 const SAMPLE = `(() => {

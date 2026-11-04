@@ -171,11 +171,11 @@ try {
   console.log('setup:', await ev(SETUP));
 
   // EXTRA：解锁后直接把时间轴拨到中途 Boss（雷米莉亚）前，跳过十几分钟道中
-  await ev(`(() => { const g = window.__game; g.lives = 50; g.char = '${CHAR}'; ${
+  await ev(`(async () => { const g = window.__game; g.lives = 50; g.char = '${CHAR}'; ${
     IS_EXTRA
-      ? `g.unlockedExtra = true; g.inExtra = true; g.carryPower = 0; g.continues = 0; g._startExtraStage({ resumeFrom: '${MODE === 'final' ? 'final' : 'midboss'}', skipIntro: true });`
-      : `g.startStage(${STAGE});`
-  } return g.state; })()`);
+      ? `g.unlockedExtra = true; g.inExtra = true; g.carryPower = 0; g.continues = 0; await g._startExtraStage({ resumeFrom: '${MODE === 'final' ? 'final' : 'midboss'}', skipIntro: true });`
+      : `await g.startStage(${STAGE});`
+  } return g.state + '/' + !!g.stage; })()`);
   await sleep(500);
   await ev(`(() => { const g = window.__game; let n = 0; while (g.state === 'dialogue' && n++ < 100) g.dialogue.advance(); return n; })()`);
   await sleep(250);

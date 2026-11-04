@@ -60,13 +60,13 @@ await ev(`(() => {
   return 'OK';
 })()`);
 
-// 从终盘 Boss（芙兰）前开始
-console.log('进 EXTRA:', await ev(`(() => {
+// 从终盘 Boss（芙兰）前开始（_startExtraStage 是异步：等 kit/背景/曲目链走完再断言）
+console.log('进 EXTRA:', await ev(`(async () => {
   const g = window.__game;
   g.lives = 50; g.char = 'reimu'; g.unlockedExtra = true; g.inExtra = true;
   g.carryPower = 0; g.continues = 0;
-  g._startExtraStage({ resumeFrom: 'final', skipIntro: true });
-  return JSON.stringify({ state: g.state, hasBoss: !!g.stage?.boss });
+  await g._startExtraStage({ resumeFrom: 'final', skipIntro: true });
+  return JSON.stringify({ state: g.state, hasBoss: !!g.stage?.boss, hasStage: !!g.stage });
 })()`));
 
 const snaps = [];
@@ -104,7 +104,7 @@ console.log(snaps.filter((_, i) => i % 3 === 0 || i >= snaps.length - 4).join('\
 if (ended === 'ending') {
   let adv = 0;
   for (let i = 0; i < 200; i++) {
-    const s = await ev('(() => { const g = window.__game; for (let k = 0; k < 40; k++) g.loop.update(1/60); if (g.state === "ending") g.ending.advance(); return g.state; })()');
+    const s = await ev('(() => { const g = window.__game; for (let k = 0; k < 40; k++) g.loop.update(1/60); if (g.state === "ending") g.ending?.advance?.(); return g.state; })()');
     adv++;
     if (s !== 'ending') { console.log(`\n结局演完（${adv} 次推进）→ state=${s}`); break; }
   }

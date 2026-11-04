@@ -2,7 +2,8 @@
 // 做法：把 preparePortraits 换成永不 resolve 的 Promise，强制进入最长等待期，
 //       再手动步进主循环，统计 stage.update 的调用次数。
 //   修复前：cnt === 0（画面完全冻结）
-//   修复后：cnt ≈ 步进帧数（场景继续推进），且 600ms 兜底超时后对话自动开播
+//   修复后：cnt ≈ 步进帧数（场景继续推进），且 1400ms 兜底超时后对话自动开播
+//   （注：兜底超时曾为 600ms，现行为 _playDialogue 统一等待 1400ms，本脚本按 1400ms 口径）
 // 用法: node tools/_verify_nofreeze.mjs [stageIndex] [port]
 import { spawn } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
@@ -49,8 +50,8 @@ await send('Page.navigate', { url: URL0 });
 await sleep(2500);
 console.log('加载:', await ev('(() => { const g = window.__game; return g ? "GAME_OK state=" + g.state : "NO_GAME"; })()'));
 
-// 1) 进关，手动步进 + 自动推进，把开场对话看完
-await ev(`(() => { const g = window.__game; g.lives = 99; g.char = 'reimu'; g.startStage(${STAGE}); return g.state; })()`);
+// 1) 进关（startStage 已改异步，必须 await），手动步进 + 自动推进，把开场对话看完
+await ev(`(async () => { const g = window.__game; g.lives = 99; g.char = 'reimu'; await g.startStage(${STAGE}); return g.state; })()`);
 let guard = 0;
 while (guard++ < 120) {
   const s = await ev('(() => { const g = window.__game; if (g.dialogue.active) g.dialogue.advance(); for (let i = 0; i < 20; i++) g.loop.update(1/60); return g.state; })()');
@@ -75,10 +76,11 @@ console.log('进入等待期:', await ev(`(() => {
 const during = await ev('(() => { const g = window.__game; for (let i = 0; i < 18; i++) g.loop.update(1/60); return JSON.stringify({ state: g.state, active: g.dialogue.active, cnt: window.__cnt }); })()');
 console.log('等待期步进 18 帧:', during);
 
-// 4) 真实等待 800ms > 600ms 兜底超时，确认对话最终会开播（不会永久卡住）
-await sleep(800);
+// 4) 真实等待 1700ms > 1400ms 兜底超时（见 main.js _playDialogue 的 Promise.race 1400ms），
+//    确认对话最终会开播（不会永久卡住）
+await sleep(1700);
 const after = await ev('(() => { const g = window.__game; for (let i = 0; i < 5; i++) g.loop.update(1/60); return JSON.stringify({ state: g.state, active: g.dialogue.active, cnt: window.__cnt }); })()');
-console.log('800ms 兜底超时后:', after);
+console.log('1700ms 兜底超时后:', after);
 
 console.log(errors.length ? '控制台错误: ' + errors.slice(0, 5).join(' | ') : '控制台: 无错误');
 try { proc.kill(); } catch {}

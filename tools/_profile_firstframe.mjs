@@ -8,7 +8,7 @@ import { join } from 'node:path';
 
 const PORT = Number(process.argv[2] ?? 9540);
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
-const URL0 = 'http://127.0.0.1:8142/index.html';
+const URL0 = 'http://127.0.0.1:8141/index.html';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const profile = mkdtempSync(join(tmpdir(), 'edge-prof-'));
 
@@ -83,7 +83,7 @@ const out = await ev(`(async () => {
     return r;
   };
 
-  g.startStage(0);
+  await g.startStage(0);
   await new Promise(r => setTimeout(r, 2500));
   stageMod.Stage.prototype.draw = origDraw;
   document.createElement = origCreate;

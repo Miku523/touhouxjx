@@ -207,3 +207,27 @@ Game 构造起就成立 → v4 长门禁下测量会提前 break、title 永远 
 （kaguya_stage6 50.3KB 59s、remilia_septette 38.9KB 67s、aya_stage4 41.7KB 28s…），
 单请求被并发压到 1–2KB/s；curl 单发同文件能跑 21–39KB/s，证明是并发摊薄不是 CDN 挂了。
 曲库乐谱数据精度压缩（小数 3→2 位）实测 gzip 只省 4–10%，不值得动生成器。
+
+## 2026-11-04 21:55 台架fleet修复 + 全链路流畅性复核（本会话）
+
+**背景**：用户要求「全面优化游戏流畅性和 bug 修复」。复核结论：运行时本体健康，
+坏的全是台架——`startStage`/`_startExtraStage` 改异步后一批老台架没跟上。
+
+**台架修复（只动 tools/，未动游戏代码，无版本 bump）**：
+- `_sim.mjs` / `_feel.mjs`：起关改 `await`（同步调用时 stage 尚未建立，_feel 曾直接 NO_STAGE 空跑）。
+- `_verify_nofreeze.mjs`：兜底超时口径 600ms → 现行 `_playDialogue` 的 **1400ms**（main.js:3124），
+  sleep 800→1700；startStage 加 await。**注意：等待期超时现在是 1400ms，别再按 600ms 断言。**
+- `_verify_extra_clear.mjs`：进 EXTRA 加 await（原来同步读 state='menu' 直接误判失败）；
+  结局推进 `g.ending.advance()` → `g.ending?.advance?.()`（_playEnding 先切 state 再异步载模块，
+  窗口期 ending 为 null，游戏自身全走 `?.` 是安全的）。
+- `_profile_render.mjs` / `_profile_firstframe.mjs`：startStage 加 await；URL 8142→8141 对齐现行端口。
+- 新增 `_probe_firstframe.mjs`：区分预热 draw 与可见帧 draw 的归因探针。
+
+**复核结果（全绿）**：
+- _lead_smoke 本地 20/20、线上（mikuascendlog.com）20/20，线上揭幕 28.7s 视网络。
+- 六 Boss + 魔理沙一面 Boss + EXTRA 全链（咲夜→雷米莉亚→芙兰→结局→回标题）全通，零 JS 错误。
+- 逻辑帧耗时均值 0.015–0.043ms，最差单帧 10.1ms；稳态 draw ≈0.7ms + present 0.4ms + bloom 0.37ms（软渲染口径）。
+- 首帧 119ms/28 canvas/69 渐变是**预热 draw 本身**（_prewarmStageArt 正常工作），可见帧进入即稳态，无回归。
+- 已知台架噪声（非 bug）：跑图 AI 过不了二面 col27 单格坑（ checkpoint 在 201 ）、一面检查点 219 旁有
+  敌人出生点 col220；五面「spell 2->0 回退」是妖梦中途战击破换主 Boss 的正常现象。
+  其余 _boss_shot*/_danmaku_* 等截图台架也未 await startStage，但它们后面有 sleep 兜底，暂能用。
