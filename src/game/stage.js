@@ -1005,6 +1005,8 @@ export class Stage {
         stageDensity: enemyStageDensityOf(this.extra ? 0 : this.index + 1),
       });
       this.camera.snapTo(this.player.x + this.player.w / 2);
+      // 敌人进场的视口兜底需要相机（相机贴边时玩家前方可见远大于 640px）
+      this.enemies.camera = this.camera;
       // 道中小头目（§6-D）：位置/数量由关卡几何 + 种子确定性布置，
       // 只负责道中骚扰与资源奖励，不锁场、不参与 Boss 触发/检查点/存档流程。
       // 血量统一取该面 Boss 伤害符卡的平均血量 ×0.25（2026-10-27 第六轮在原「半卡」上再减半，所有难度同 HP）。

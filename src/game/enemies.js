@@ -169,6 +169,9 @@ function pickPlatformKind(baseType, tier, rng, used) {
  * ===================================================================== */
 // 触发距离：相机把玩家放在约 58% 屏位，前方可见约 540~610px；取 640 让进场动画
 // 在 20%~70% 进度时已经落在可视区里（1100 会让整段动画发生在屏幕右缘之外）。
+// 另外 _updateEntry 里有「已经进视野就立刻触发」的兜底：关卡开场相机贴左边缘（x=0），
+// 玩家在屏幕最左侧时前方可见 1200+px，只按 640 判会出现「屏幕上明明有怪却一动不动」——
+// 实测首只敌人 705、玩家 64，差 641px，差 1px 就永远 idle（这就是「敌人不出现」的第二个原因）。
 const ENTRY_TRIGGER_PX = 640;
 /** 地面型进场权重：stand 45% / glideR 12% / glideL 12% / drop 12% / blink 8% / swoop 11% */
 const ENTRY_PLAN = [
@@ -514,8 +517,14 @@ export class EnemyManager {
    */
   _updateEntry(e, dt, px, py, fx) {
     if (e.entryState === 'idle') {
-      // 玩家进入该敌 ±1100px 才触发；站桩型直接到位（不播动画，保持原行为）
-      if (Math.abs(e.homeX + e.w / 2 - px) > ENTRY_TRIGGER_PX) return;
+      // 玩家进入该敌 ±640px 才触发；站桩型直接到位（不播动画，保持原行为）。
+      // 相机贴边（开场/关卡两端）时玩家前方可见距离远大于 640：只要已经进了视口就唤醒，
+      // 否则屏幕上看得见的怪会一直 idle（不画、不动、不打）。
+      const dist = Math.abs(e.homeX + e.w / 2 - px);
+      if (dist > ENTRY_TRIGGER_PX) {
+        const cam = this.camera;
+        if (!cam || !cam.visible(e.homeX, e.homeY, e.w, e.h, 0)) return;
+      }
       e.entryState = 'active';
       e.entryT = 0;
       e.entryFxT = 0;

@@ -1034,7 +1034,10 @@ class Builder {
     // 妖精实体不参与地形碰撞：只写在 AIR 格上 → 不堵路、不改可跳性；
     // 同时跳过蘑菇面与检查点，保证检查点/复活点干净。
     const groundSlots = [];
-    for (let c = 60; c < lastSafe; c++) {
+    // 从第 22 列就开始收刷点（原来是 60）：第 60 列 = 1920px，首屏 1280px 内一只怪都没有，
+    // 进关后要空跑 1.5 屏才见到第一个敌人，看起来就像「敌人不出现」。
+    // 出生安全区只有开头 20 列，22 列起放怪不会贴脸刷。
+    for (let c = 22; c < lastSafe; c++) {
       if (this.gap[c] || this.surface[c] === 'M') continue;
       const row = this.top[c] - 1;
       if (this.get(c, row) !== AIR) continue;
@@ -1044,8 +1047,12 @@ class Builder {
       if (this.cpCols && this.cpCols.some((cp) => Math.abs(cp - c) <= 8)) continue;
       // 坑边留安全距离：离坑（含 2 列小坑）2 格内的位置不刷地面兵，
       // 免得踩踏/受击的弹跳把人带进坑里，也避免自动玩家在坑沿被逼出失误。
+      // 首屏（前 48 列）放宽到 ±3：stage2 开头连着两个 2 列小坑，±6 会把首屏所有格子滤掉，
+      // 首只敌人被推到第 41 列（1312px），正好卡在视口边缘外 —— 还是「看不到敌人」。
+      // 坑本身只有 2 列宽，±3 已足够不贴坑沿。
       let nearGap = false;
-      for (let d = -6; d <= 6 && !nearGap; d++) nearGap = !!this.gap[c + d];
+      const reach = c < 48 ? 3 : 6;
+      for (let d = -reach; d <= reach && !nearGap; d++) nearGap = !!this.gap[c + d];
       if (nearGap) continue;
       groundSlots.push(c);
     }
@@ -1060,7 +1067,9 @@ class Builder {
       const n = groundSlots.length;
       if (!n) return picked;
       for (let k = 0; k < count; k++) {
-        picked.push(groundSlots[Math.min(n - 1, Math.floor(((k + 0.5) / count) * n))]);
+        // k=0 固定落在第一个合法列（起点附近），否则等距取样会把首只敌人推到第 46 列以后，
+        // 首屏 40 列里一只都没有（stage2 实测就是这样，仍然「看不到敌人」）。
+        picked.push(groundSlots[Math.min(n - 1, Math.floor((k / count) * n))]);
       }
       return picked;
     };

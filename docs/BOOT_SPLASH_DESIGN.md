@@ -175,9 +175,10 @@ v3 的净代价（曲库索引 + 第 1 面两首曲目，raw 约 222KB）现在�
 | 音频引擎模块 404 | `_bootGateAudio()` 记 `failed: ['audio']` 后放行；首次手势时 `_unlockAudio()` 再试一次，仍失败则本次静音运行 |
 | 门禁某一路失败（模块 404 / 曲目模块没就绪 / 美术超时） | 只写进 `__hksBootGate.failed` 并 `console.warn`，不阻断揭幕；`kit` 未绿时 `_revealTitle()` 补一次后台预取 |
 | `?bootgate=off` | 排障 / A-B 对照开关：只等标题图，回到 v1「揭幕后后台预取 game kit」的行为；状态行同时留空 |
-| `?bootgate=lite`（别名 `?bootgate=v3`） | 弱网保命开关：退回 v3 口径（标题图 + 样式 + game kit + 音频 + 只第 1 面曲目，不等关卡美术）；默认口径仍是全量 v4 |
+| `?bootgate=lite`（别名 `?bootgate=v3`） | 弱网保命开关：退回 v3 口径（标题图 + 样式 + game kit + 音频 + 只第 1 面曲目，不等关卡美术）；默认口径是全量 v4，受限链路会自动降到这里 |
+| `?bootgate=full` | 强制全量 v4，关掉自动降级（A-B 对照用） |
 | 状态行所在的 `#boot` 还没解析出来 | `_bootStatus()` 每路结算时重新找 `#boot .boot-sub` 作锚点，找不到就静默跳过，不影响门禁 |
-| 限流链路（`linkTier() === 'constrained'`） | v4 默认门禁本身不受影响；`?bootgate=lite`/`off` 下揭幕后不做全曲库空闲预热（`_warmRemainingSongs()` 直接 return） |
+| 限流链路（`linkTier() === 'constrained'`） | **自动降级**：门禁改二段式——标题三图到货后再测一次链路（实测吞吐样本就来自标题图），受限则就地退成 lite（只等第 1 面曲目、不等关卡美术），省约 780KB 曲库 + 关卡美术；快网 / 未知链路行为与全量 v4 一致。`?bootgate=full` 强制全量（测速对照或明知网慢也要一次装完）。`?bootgate=lite`/`off` 下揭幕后不做全曲库空闲预热（`_warmRemainingSongs()` 直接 return） |
 | 后台标签页打开 | rAF 暂停 → 条子停在原处；切回前台继续追，不会在看不见的时候白白动画完 |
 | `#boot` 元素缺失 | `BootScreen` 所有方法安全空转，`main.js` 的 `?.` 调用不影响启动 |
 | 界面语言切换 | 「少女祈祷中」走语言包（`data-i18n`），缺译回退中文；「東方新紀行」是品牌汉字，不做外语版 |

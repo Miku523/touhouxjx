@@ -1,4 +1,9 @@
-"""Dev server: same as http.server but sends no-store so the browser never caches modules."""
+"""Dev server: same as http.server, no-store so the browser never caches modules, and gzip like GitHub Pages.
+
+gzip 很关键：生产站点按 Accept-Encoding 压缩（main.js 211KB → 约 40KB），
+不压缩的台架在限速网络下会把加载时间放大三到四倍，测出来的「弱网等待」是假的。
+"""
+import gzip
 import http.server
 import socketserver
 import sys
@@ -12,7 +17,33 @@ class Threaded(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
 
 
+GZIP_TYPES = ('.js', '.css', '.html', '.json', '.svg', '.webmanifest', '.txt')
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        path = self.path.split('?', 1)[0]
+        if not path.endswith(GZIP_TYPES):
+            return super().do_GET()
+        if 'gzip' not in self.headers.get('Accept-Encoding', ''):
+            return super().do_GET()
+        try:
+            f = open(self.translate_path(path), 'rb')
+        except OSError:
+            return super().do_GET()
+        with f:
+            raw = f.read()
+        body = gzip.compress(raw, 6)
+        if len(body) >= len(raw):
+            return super().do_GET()
+        self.send_response(200)
+        self.send_header('Content-Type', self.guess_type(path))
+        self.send_header('Content-Encoding', 'gzip')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        if self.command != 'HEAD':
+            self.wfile.write(body)
+
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
         self.send_header('Pragma', 'no-cache')

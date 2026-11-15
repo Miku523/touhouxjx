@@ -1112,17 +1112,24 @@ class Game {
     //   off    —— 只等标题三图 + 样式（A-B 测速基线）。
     const q = typeof location !== 'undefined' ? String(location.search || '') : '';
     const gateOff = /[?&]bootgate=off(?:[&#]|$)/.test(q);
-    const gateLite = !gateOff && /[?&]bootgate=(?:v3|lite)(?:[&#]|$)/.test(q);
+    // ?bootgate=full 强制全量（测速对照 / 明知网慢也要一次装完）
+    const gateForceFull = /[?&]bootgate=full(?:[&#]|$)/.test(q);
+    let gateLite = !gateOff && !gateForceFull && /[?&]bootgate=(?:v3|lite)(?:[&#]|$)/.test(q);
+    // 受限链路早期只知道 navigator.connection；实测吞吐要等标题图下载完才有样本，
+    // 所以全量口径把「全曲库 + 关卡美术」挂到标题图之后，那时再测一次链路决定口径。
+    if (!gateOff && !gateForceFull && !gateLite && linkTier() === 'constrained') gateLite = true;
     this._bootGateOff = gateOff;
     this._bootGateLite = gateLite;
+    this._bootGateForceFull = gateForceFull;
     this._refreshBootStatus();
+    const titleP = this._bootGateTitleArt();
     const tasks = gateOff
-      ? [this._bootGateTitleArt(), this._bootGateCss()]
+      ? [titleP, this._bootGateCss()]
       : gateLite
-        ? [this._bootGateTitleArt(), this._bootGateCss(), this._bootGateGameKit(),
+        ? [titleP, this._bootGateCss(), this._bootGateGameKit(),
           this._bootGateAudio(), this._bootGateMusic('first')]
-        : [this._bootGateTitleArt(), this._bootGateCss(), this._bootGateGameKit(),
-          this._bootGateAudio(), this._bootGateMusic('all'), this._bootGateStageArt()];
+        : [titleP, this._bootGateCss(), this._bootGateGameKit(),
+          this._bootGateAudio(), this._bootGateMusicRest(titleP)];
     const hardCap = new Promise((resolve) => setTimeout(() => {
       if (gate.done) return;
       gate.failed.push('timeout');
@@ -1266,6 +1273,32 @@ class Game {
       });
     return Promise.race([load, new Promise((r) => setTimeout(r, 60000))])
       .then(() => this._refreshBootStatus());
+  }
+
+  /**
+   * 门禁 ④+⑤ 的二段式：等标题三图到货后再决定口径。
+   *
+   * 为什么不能一开始就排全曲库 + 关卡美术：linkTier() 的实测吞吐样本来自标题图
+   * （CRITICAL_ART_RE 匹配 title_bg / *_title），首帧时那些请求还没结束，只能拿到
+   * navigator.connection 的粗判；等标题图 decode 之后再测，弱网才有真实样本。
+   * 受限链路就地退成 lite：只等第 1 面曲目，全曲库与关卡美术交回空闲队列与进关兜底，
+   * 省下约 780KB 曲库 + 关卡美术，直接在加载页少等几十秒。
+   * fast / unknown 链路行为与 v4 全量完全一致（等全曲库 + 关卡美术）。
+   */
+  _bootGateMusicRest(titleP) {
+    return Promise.resolve(titleP)
+      .catch(() => {})
+      .then(() => {
+        if (!this._bootGateForceFull && linkTier() === 'constrained' && !this._bootGateLite) {
+          this._bootGateLite = true;
+          if (typeof console !== 'undefined') {
+            console.info('[boot] 实测链路受限，自动退回 lite 门禁（?bootgate=full 可强制全量）');
+          }
+          this._refreshBootStatus();
+          return this._bootGateMusic('first');
+        }
+        return Promise.all([this._bootGateMusic('all'), this._bootGateStageArt()]);
+      });
   }
 
   /**
