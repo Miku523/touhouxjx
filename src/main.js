@@ -3823,7 +3823,6 @@ class Game {
       if (s.quality === 'auto' || s.quality === 'high' || s.quality === 'low') this.quality = s.quality;
       if (Number.isFinite(s.lives)) this.lives = Math.max(1, Math.min(4, Math.round(s.lives)));
       if (typeof s.difficulty === 'string' && DIFFICULTY_KEYS.includes(s.difficulty)) this.difficulty = s.difficulty;
-      if (typeof s.muted === 'boolean') this._settingsMuted = s.muted;
       if (Number.isFinite(s.musicVolume)) this._settingsMusicVolume = Math.max(0, Math.min(1, s.musicVolume));
       if (Number.isFinite(s.sfxVolume)) this._settingsSfxVolume = Math.max(0, Math.min(1, s.sfxVolume));
       if (typeof s.sfxOn === 'boolean') this._settingsSfxOn = s.sfxOn;
@@ -3842,7 +3841,7 @@ class Game {
         quality: this.quality || 'auto',
         lives: Math.max(1, Math.min(4, this.lives)),
         difficulty: this.difficulty,
-        muted: !!this.audio.muted,
+        // 静音不进存档：否则玩家下次打开「整局没声」却看不出原因（静音只在本会话有效）
         musicVolume: this.audio.musicVolume,
         sfxVolume: this.audio.sfxVolume,
         sfxOn: this.audio.sfxEnabled,
