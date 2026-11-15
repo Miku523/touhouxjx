@@ -1613,6 +1613,12 @@ class Game {
 
     this._titleNotice = notice || '';
 
+    // 没有声音时给出可见原因：浏览器要求先有一次手势才允许出声（_unlockAudio），
+    // 而背景音乐开关关掉时引擎一切正常、只是不开曲 —— 以前这两种情况都是「静悄悄」
+    const voiceHint = this._audioReady
+      ? (this.musicOn === false ? tr('背景音乐已关闭（设置里可重新打开）') : '')
+      : tr('点击任意位置或按任意键开启声音');
+
     const buttons = [
       { label: tr('开始游戏'), en: 'START', key: 'ENTER', cls: 'primary', onPick: () => this.showDifficultySelect() },
       this.unlockedExtra
@@ -1634,7 +1640,7 @@ class Game {
       '東方新紀行',
       '～ Chronicle of Gensokyo ～',
       buttons,
-      notice || '',
+      voiceHint || notice || '',
       { title: true, page: 'title' }
     );
     if (replayIntro) this._playTitleIntro();
@@ -3395,6 +3401,7 @@ class Game {
         onPick: (i) => {
           this.musicOn = !(this.musicOn !== false);
           this.audio.setMusic?.(this.musicOn);
+          this._refreshTitleVoiceHint();
           this._saveSettings();
           this._showSettings(i, origin);
         },
@@ -3818,7 +3825,7 @@ class Game {
       // 存档只接受白名单内的值：手改/损坏的存档不能把帧率锁死、把隐藏难度
       // 塞进主线、或写进不存在的自机 id
       if (Game.FRAME_CAPS.includes(s.frameCap)) this.frameCap = s.frameCap;
-      if (typeof s.musicOn === 'boolean') this.musicOn = s.musicOn;
+      // 背景音乐开关同样不进存档：否则玩家上次关过就永远静音且看不出原因（本会话内有效）
       if (typeof s.screenShake === 'boolean') this.screenShake = s.screenShake;
       if (s.quality === 'auto' || s.quality === 'high' || s.quality === 'low') this.quality = s.quality;
       if (Number.isFinite(s.lives)) this.lives = Math.max(1, Math.min(4, Math.round(s.lives)));
@@ -3836,7 +3843,6 @@ class Game {
     try {
       window.localStorage.setItem('hks.settings.v1', JSON.stringify({
         frameCap: this.frameCap,
-        musicOn: this.musicOn !== false,
         screenShake: this.screenShake !== false,
         quality: this.quality || 'auto',
         lives: Math.max(1, Math.min(4, this.lives)),
@@ -4001,6 +4007,18 @@ class Game {
     const hadCtx = !!this.audio.ctx;
     this.audio.unlock?.();
     if (!hadCtx && this.audio.ctx) this._applyAudio();
+    // 标题页上还挂着「点击开启声音」的提示：解锁完成后就地换掉
+    this._refreshTitleVoiceHint();
+  }
+
+  /** 标题页的「没声音」提示随解锁 / 音乐开关变化 */
+  _refreshTitleVoiceHint() {
+    if (this.state !== 'menu' || this._page !== 'title' || !this.hintEl) return;
+    const hint = this._audioReady
+      ? (this.musicOn === false ? tr('背景音乐已关闭（设置里可重新打开）') : '')
+      : tr('点击任意位置或按任意键开启声音');
+    this.hintEl.textContent = hint;
+    this.hintEl.hidden = !hint;
   }
 
   /**
