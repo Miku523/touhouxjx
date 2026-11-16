@@ -3415,6 +3415,12 @@ class Game {
       },
       {
         group: 'sound',
+        cls: 'set-row', key: 'T', hotkey: 'KeyT',
+        html: row(tr('测试声音'), `<span class="seg"><b class="on">${tr('播放一声')}</b></span>`, 'T'),
+        onPick: () => this._testTone(),
+      },
+      {
+        group: 'sound',
         cls: 'set-row', key: 'N', hotkey: 'KeyN',
         html: row(tr('音效'), sw(this.audio.sfxEnabled), 'N'),
         onPick: (i) => {
@@ -4167,6 +4173,59 @@ class Game {
     } catch (e) {
       // 预热失败不影响游玩：最坏情况就是首帧照旧慢一点
     }
+  }
+
+  /**
+   * 「测试声音」：绕过曲库和一切开关，直接往总线送一声短促音。
+   *
+   * 存在的理由：分不清「代码没声」和「声音出了浏览器但进不了耳朵」时，
+   * 这声是所有诊断里最短的一条 —— 听得见就是系统侧，听不见才看下面的自检结论。
+   */
+  _testTone() {
+    const a = this.audio;
+    if (!a || !a.ctx || !a._master) {
+      this.showTitle(tr('音频引擎没建起来（浏览器可能拦了自动播放）'));
+      return;
+    }
+    if (a.ctx.state === 'suspended') { try { a.ctx.resume(); } catch (e) {} }
+    let peak = 0;
+    let an = null;
+    try {
+      an = a.ctx.createAnalyser();
+      an.fftSize = 512;
+      a._master.connect(an);
+      const t0 = a.ctx.currentTime;
+      const osc = a.ctx.createOscillator();
+      const g = a.ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.value = 660;
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.5, t0 + 0.02);
+      g.gain.setValueAtTime(0.5, t0 + 0.6);
+      g.gain.linearRampToValueAtTime(0, t0 + 0.8);
+      osc.connect(g);
+      g.connect(a._master);
+      osc.start(t0);
+      osc.stop(t0 + 0.85);
+    } catch (e) {
+      if (typeof console !== 'undefined') console.warn('[audio] 测试音失败', e);
+    }
+    const buf = new Float32Array(512);
+    const tick = () => {
+      try { an.getFloatTimeDomainData(buf); } catch (e) { return; }
+      for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i]); if (v > peak) peak = v; }
+    };
+    for (let i = 0; i < 6; i++) setTimeout(tick, 100 + i * 100);
+    setTimeout(() => {
+      try { a._master.disconnect(an); } catch (e) {}
+      if (typeof console !== 'undefined') {
+        console.info('[audio] 测试音', { state: a.ctx.state, muted: a.muted, volume: a.musicVolume, peak: +peak.toFixed(4) });
+      }
+      // 总线本身没波形：问题在引擎这一侧，直接说出来，别让玩家去查系统音量
+      if (peak < 0.01) {
+        this.showTitle(tr('测试音没有输出：音频上下文被浏览器拦住了（点击页面后再试）'));
+      }
+    }, 1100);
   }
 
   /** 全局静音开关：引擎状态为准，同时同步持久化快照 */
