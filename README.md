@@ -22,8 +22,8 @@
 | 主角 | 博丽灵梦 / 雾雨魔理沙，可切换 |
 | 残机 | 1–4 条，在设置页内调整，下一局生效；战斗中 1UP 累计满 99 点（吃 P 点、擦弹、符卡结算）可再恢复 1 条 |
 | 帧率 | 无上限 / 60 / 120 / 30（设置页内按此顺序循环） |
-| 音乐 | 19 首曲目里 5 首由 WebAudio 实时合成，十四首用预渲染 MP3（离线渲染母版转码，合计 36.8 MB：一面道中《像鬼灯一样鲜红的灵魂》`src/assets/bgm/pre1.mp3`、二面道中《幻视之夜》`src/assets/bgm/pre2.mp3`、三面道中《月牙精灵》`src/assets/bgm/pre3.mp3`、四面道中《秋意渐浓之瀑》`src/assets/bgm/pre4.mp3`、六面道中《旅人1970》`src/assets/bgm/pre6.mp3`、一面 Boss 露米娅《妖魔夜行》`src/assets/bgm/youma_stage1.mp3`、二面 Boss 莉格露《蠢蠢秋月》`src/assets/bgm/wriggle_stage2.mp3`、三面 Boss 琪露诺《活泼的恋之少女》`src/assets/bgm/cirno_stage3.mp3`、四面 Boss 射命丸文《风神少女》`src/assets/bgm/aya_stage4.mp3`、六面 Boss 蓬莱山辉夜《竹取飞翔》`src/assets/bgm/kaguya_stage6.mp3`、EXTRA 道中《红月下追逐不止的女仆》`src/assets/bgm/sakuya_ex.mp3`、EXTRA 中段雷米莉亚拦路《献给已逝王女的七重奏》`src/assets/bgm/remilia_septette.mp3`、EXTRA 终盘芙兰战《恶魔之妹》`src/assets/bgm/flandre_devil.mp3`、EXTRA 结局曲 `src/assets/bgm/festival_box.mp3`）：1–6 面各有道中曲与 Boss 曲（7 位 Boss 各用原作主题曲改编），EXTRA 另有道中曲与中途战曲，标题为 13 作主题曲融合 medley，失败 / 结局为原创曲，EXTRA 结局《今宵未尽的祭典》是《魔法少女達の百年祭》的八音盒改编（单曲，不拼 medley）；EXTRA 连环战里同一首战斗曲再次登场时（第二次咲夜战）从第一场被换下去的那一段接着放，不从头上重来 |
-| 音乐回忆室 | 标题菜单进入，19 首曲目可试听：没在旅途中听过的曲子显示「？？？」，播放前先确认，确认后才揭晓曲名与解说；记录单独存在 `hks.music.v1` |
+| 音乐 | 20 首曲目里 5 首由 WebAudio 实时合成，十五首用预渲染 MP3（离线渲染母版转码，合计 40.7 MB：一面道中《像鬼灯一样鲜红的灵魂》`src/assets/bgm/pre1.mp3`、二面道中《幻视之夜》`src/assets/bgm/pre2.mp3`、三面道中《月牙精灵》`src/assets/bgm/pre3.mp3`、四面道中《秋意渐浓之瀑》`src/assets/bgm/pre4.mp3`、六面道中《旅人1970》`src/assets/bgm/pre6.mp3`、一面 Boss 露米娅《妖魔夜行》`src/assets/bgm/youma_stage1.mp3`、二面 Boss 莉格露《蠢蠢秋月》`src/assets/bgm/wriggle_stage2.mp3`、三面 Boss 琪露诺《活泼的恋之少女》`src/assets/bgm/cirno_stage3.mp3`、四面 Boss 射命丸文《风神少女》`src/assets/bgm/aya_stage4.mp3`、六面 Boss 蓬莱山辉夜《竹取飞翔》`src/assets/bgm/kaguya_stage6.mp3`、EXTRA 道中《红月下追逐不止的女仆》`src/assets/bgm/sakuya_ex.mp3`、EXTRA 中段雷米莉亚拦路《献给已逝王女的七重奏》`src/assets/bgm/remilia_septette.mp3`、EXTRA 终盘芙兰战《恶魔之妹》`src/assets/bgm/flandre_devil.mp3`、EXTRA 结局曲 `src/assets/bgm/festival_box.mp3`、末尾追加的纯听曲《隙间妖蝶》`src/assets/bgm/yukari_ph.mp3`）：1–6 面各有道中曲与 Boss 曲（7 位 Boss 各用原作主题曲改编），EXTRA 另有道中曲与中途战曲，标题为 13 作主题曲融合 medley，失败 / 结局为原创曲，EXTRA 结局《今宵未尽的祭典》是《魔法少女達の百年祭》的八音盒改编（单曲，不拼 medley）；EXTRA 连环战里同一首战斗曲再次登场时（第二次咲夜战）从第一场被换下去的那一段接着放，不从头上重来；末尾追加一首纯听曲《隙间妖蝶》（八云紫），不参与任何遭遇演出，也没有曲名解说，在音乐回忆室里点开就能听 |
+| 音乐回忆室 | 标题菜单进入，20 首曲目可试听：没在旅途中听过的曲子显示「？？？」，播放前先确认，确认后才揭晓曲名与解说；记录单独存在 `hks.music.v1` |
 
 ## 故事
 
@@ -154,7 +154,7 @@ EXTRA 的主角按人分别解锁：灵梦达成 END 02 后能用灵梦进 EXTRA
 
 ## 音乐回忆室
 
-标题菜单里的「音乐回忆室 / MUSIC ROOM」是一间东方风格的试听室：左边是唱片目录，右边是唱机与解说。不用通关、不用进关卡，随时都能进来听。19 首曲子按故事顺序编号 01–19（标题 medley、1–6 面的道中与 Boss、EXTRA 道中与中途战、EXTRA Boss、失败、结局、EXTRA 结局）。
+标题菜单里的「音乐回忆室 / MUSIC ROOM」是一间东方风格的试听室：左边是唱片目录，右边是唱机与解说。不用通关、不用进关卡，随时都能进来听。20 首曲子按故事顺序编号 01–20（标题 medley、1–6 面的道中与 Boss、EXTRA 道中与中途战、EXTRA Boss、失败、结局、EXTRA 结局、末尾追加的纯听曲《隙间妖蝶》）。
 
 **没遇到过的曲子显示「？？？」**。只有真正在旅途中响过一次的旋律，才会在目录里露出曲名、时长和唱片标签；没听过的编号被薄雾罩着，右边只写「锁在旧留声机里」。选中它按 `Enter`（或用鼠标点一下）不会直接播放，而是先问一次：
 
@@ -356,5 +356,6 @@ git show HEAD:src/main.js | sha1sum      # 忽略 CRLF 时用 tr -d '\r'
   - 标题曲《東方新紀行 ～ Chronicle of Gensokyo》是一首 14 作主题曲的融合 medley，顺序为 TH16《桜舞い散る天空》→ TH07《妖々夢 ～ Snow or Cherry Petal》→ TH08《永夜抄 ～ Eastern Night》→ TH09《花映塚 ～ Higan Retour》→ TH10《封印されし神々》→ TH11《地霊達の起床》→ TH06《赤より紅い夢》→ TH13《欲深き霊魂》→ TH14《不思議な不思議な道具達》→ TH15《宇宙巫女現る》→ TH12《青空の影》→ TH17（标题曲 MIDI 缺失，改用《Idolatrize World》）→ TH03《夢は時空を越えて》（梦时空，2 小节客串）→ TH18《虹を渡る幻想郷》，每作取 4 小节主旋律，统一到 150 BPM / D 自然小调关系圈，配器与鼓由 `tools/build_medley.py` 重写。主旋律层做过清晰化处理：合并同音反复、剔除经过性 16 分音符、半音外音归位、八度外音折回、尾音拉长，音区统一在 74–81；TH14 起的 5 段加高八度加厚，琶音在旋律密集的小节让位成四分音符；每个段落拐点前 1.5 拍铺一条上行衔接（音阶与和弦琶音交替，triangle 0.075），末音落在下一段首音上，低音同时补一个导向音，配合段尾军鼓过门与段首吊镲，避免硬切。试听版 `tools/build/title_chronicle_preview.wav`。
   - 失败《失われた道標》、结局《帰り道の夕暮れ》是按游戏名与剧情原创的曲子。
   - EXTRA 结局（W1 灵梦 / W2 魔理沙）是《今宵未尽的祭典》：`tools/build/build_festival_ending.py` 把《魔法少女達の百年祭》**整首**搬进八音盒——原曲 149 BPM 的 94 小节整体放慢到 96 BPM（219.1 秒可循环），前奏跑动、A 段、两遍主题、C/D 段、终段高潮一个音没删，只做了三件事：同刻重音只留最高音、铺底吉他抽稀到每拍一音、低音与和弦照原谱音高搬（不猜和弦）；A 段那一遍压成「远处的影子」，只留旋律与低音、和声块与钟琴整段撤掉，B 段主题进来时才显得房间是空的。音色不再是正弦振荡器，而是由 `tools/build/_make_festival_wav.py` 离线渲染的真八音盒：钢齿按模态泛音 1 : 2 : 3.01 : 4.06 … 分别自由衰减、高音尾巴更短、±3 音分的机械误差、3k–9k 的击弦噪声；再挂 4.0 秒大厅的 FFT 循环卷积混响（只挂 44Hz 以上、低通压到 12kHz、湿声 0.38、尾巴折回开头，`src.loop = true` 循环时没有接缝）；低音齿单独限 2.4 秒余韵，免得八分音符的贝斯叠成一片糊。22.05kHz 单声道 PCM16 母版存成 `src/assets/bgm/festival_box.wav`（9.2MB），发布用转码后的 `festival_box.mp3`（2.4MB）。`endingW` 在 `src/engine/songs/index.js` 里带 `audio` 字段直接播这个 MP3，加载失败才回退 `extra_ending.js` 里的四轨 2130 音合成数据。整曲统一弱奏、句尾渐弱、B/C 段呼吸放长 3%、尾音多留半秒让最后一个和弦自己散掉、不加玻璃层和回音，结尾顺着原曲的渐慢落回主和弦再让余韵散掉——要的就是「祭典散了，房间还亮着」的那点遗憾。改参数重跑两个脚本即可复现，试听版 `tools/build/festival_preview.wav`。
+  - 末尾追加一首纯听曲《隙间妖蝶》（八云紫）：原曲《ネクロファンタジア》逐音搬入并重配器，母版 `tools/build/_yuk_kit/yukari_ph_stereo.wav` 转成 `src/assets/bgm/yukari_ph.mp3`（4,103,940 B / 320 kbps CBR）；它没有遭遇演出、没有曲名解说，音乐回忆室目录里排在 20 号，点开就能听。
   - 切歌会先掐掉旧曲已排期的音符，循环点由数据里的 `duration` 决定，接缝处无缝。
   - 五面是唯一「静音进关」的关卡：`src/assets/levels.js` 里用 `musicIntro: false` / `musicMid: 'pre5'` / `musicMidOnce: true` 描述「准备区静音 → 妖梦战起播道中曲 → 击破后放完再 5 秒渐出 → 幽幽子登场切 Boss 曲」，引擎侧对应 `audio.silenceMusic()` 与 `audio.playOutMusic()`（默认 5 秒渐出，内部走 `audio.fadeOutMusic()`；渐出期间继续排下一轮音符，听感是音乐自己淡下去，结束后才真正停机并恢复总线增益、清空曲目——这一曲算「放完了」，呼吸区里再开关 BGM 也不会从头重播）。

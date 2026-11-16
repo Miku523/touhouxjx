@@ -132,6 +132,12 @@ const DEFS = [
   // fetch 失败时自动回退 remilia_septette.js 里的合成数据。
   { id: 'remilia_septette', url: './remilia_septette.js', keys: ['ex_mid'],
     pick: (m) => ({ ex_mid: m.REMILIA_EX?.ex_mid ? { ...m.REMILIA_EX.ex_mid, audio: 'src/assets/bgm/remilia_septette.mp3?v=1.6.64' } : undefined }) },
+
+  // 追加曲（纯听曲，无遭遇演出）。逐音搬入 ZUN 原曲（ネクロファンタジア），新写引子与悬置尾声。
+  // v11「再演」已提正为正式版：102 小节整小节抽空的炸点、尾声压到 2 小节、20-63Hz 补下八度 sub、
+  // 鼓组补滚奏/加花/末段双踩、铜管加倍铺满全曲（见 tools/build/_yuk_compose2.py）。
+  { id: 'yukari_ph', url: './yukari_ph.js', keys: ['ph_boss'],
+    pick: (m) => ({ ph_boss: m.YUKARI_PH?.ph_boss ? { ...m.YUKARI_PH.ph_boss, audio: 'src/assets/bgm/yukari_ph.mp3?v=1.6.91' } : undefined }) },
 ];
 
 /** key → 所属动态模块 */

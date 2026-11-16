@@ -2187,4 +2187,9 @@ export default {
   "旅人1970（月都航路编）": "\"Voyage 1970\" (Lunar Capital Route Mix)",
   "原曲「旅人1970」/ 作曲：ZUN / 编曲：Miku523（逐音搬入重配器）": "\\\"Original \\\\\"Voyage 1970\\\\\" / Composer: ZUN / Arrangement: Miku523\\ (note-for-note re-orchestration)",
   "六面道中（1:23 · 重制版）。原曲 58 小节整块搬入，连中间那 16 小节的 3/4 拍也照样留着：162 BPM、D 小调，钢琴左手十六分托卡塔与右手顶线一个音没改，C 段转 B 大调与 D# 小调也照原谱。原谱没有独立低音轨，这次按每小节最低音补了一根八分低音踏板与 sub；顶线最高写到 D#8，重建时整体折回八度，免得刺穿耳膜；前后各加两小节「起飞」与「降落」，把车停在永远亭门口。\n——蓬莱山辉夜：「这趟车我坐过。到站之前，别问我时间。」": "Stage 6 theme (1:23, remastered). All 58 bars move over, including the sixteen bars of 3/4 in the middle: 162 BPM, D minor, the piano's left-hand sixteenth toccata and right-hand top line untouched, and the turn to B major / D# minor in section C kept as written. The source has no separate bass track, so an eighth-note pedal and a sub are added from each bar's lowest note; the top line reaches D#8, so the whole lead is folded back an octave on rebuild rather than piercing an eardrum; two bars of take-off before and two of landing after park the train at the gate of Eientei.\n- Kaguya Houraisan: \"I have ridden this train. Don't ask me the time before we arrive.\"",
+  "追加曲": "Bonus Track",
+  "八云紫": "Yukari Yakumo",
+  "隙间妖蝶": "Gap Phantom Butterfly",
+  "幻想乡境外 · 红月与隙间": "Beyond Gensokyo · Red Moon and Boundaries",
+  "原曲「ネクロファンタジア」/ 作曲：ZUN / 编曲：Miku523（逐音搬入重配器）": "Original \"Necrofantasia\" / Composer: ZUN / Arrangement: Miku523 (note-for-note re-orchestration)",
 };

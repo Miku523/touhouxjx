@@ -1696,7 +1696,7 @@ class Game {
           audio: this.audio,
           input: this.input,
           host: this.uiEl,
-          isHeard: (key) => this._heardSongs.has(key),
+          isHeard: (key) => key === 'ph_boss' || this._heardSongs.has(key),
           markHeard: (key) => this._rememberSong(key),
           onExit: () => this._leaveMusicRoom(),
           onMute: () => this._toggleMute(),
