@@ -1361,9 +1361,10 @@ class Game {
 
   /**
    * 门禁 ⑤：关卡美术。
-   * 7 个主题的低清背景（进关 _ensureStageBg 等的就是它们）+ 双自机动作帧 + 7 张 Boss 立绘
+   * 第 1 面的低清背景（进关 _ensureStageBg 等的就是它）+ 双自机动作帧 + 7 张 Boss 立绘
    * + 对话立绘：这些原来都排在 preloadWhenIdle 的空闲队列里、揭幕之后才慢慢下载，
    * 玩家进关时正好撞上「正在准备关卡画面…」。v4 把它们前置到加载页，进关那一步等于 0 等待。
+   * 1.6.90 起只预取第 1 面背景：7 个主题全上要拖 1MB+，剩下的主题进关时按需拉。
    * 单项 20s 上限（BOOT_ART_ITEM_MS），超时或失败只记 failed[]，不阻断揭幕。
    */
   _bootGateStageArt() {
@@ -1373,11 +1374,12 @@ class Game {
       .then(() => loadGameKit().catch(() => {}))
       .then(() => {
         const steps = [];
-        if (typeof prefetchStageBg === 'function') {
-          for (const theme of ALL_STAGE_THEMES) {
-            try { prefetchStageBg(theme); } catch (e) { /* 预取失败走 waitStageBg 的超时 */ }
-            steps.push(() => (typeof waitStageBg === 'function' ? waitStageBg(theme, 15000) : Promise.resolve(true)));
-          }
+        // 只预取玩家真正要先玩的那一面（第 1 面）：7 个主题全量预取要拖 1MB+
+        // 背景字节，而玩家多半打不到第 4 面，其余主题改由进关时 prefetchStageBg 按需拉。
+        const firstTheme = this._mainStages()[0]?.theme;
+        if (typeof prefetchStageBg === 'function' && firstTheme) {
+          try { prefetchStageBg(firstTheme); } catch (e) { /* 预取失败走 waitStageBg 的超时 */ }
+          steps.push(() => (typeof waitStageBg === 'function' ? waitStageBg(firstTheme, 15000) : Promise.resolve(true)));
         }
         for (const ch of ['reimu', 'marisa']) steps.push(() => ensureCharArt(ch));
         for (const key of ALL_BOSS_KEYS) steps.push(() => ensureBossArt(key));

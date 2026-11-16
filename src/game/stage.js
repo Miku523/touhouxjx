@@ -25,6 +25,7 @@ import { POWER, powerLevel, cardClearPower, cardNoHitPower } from './power.js';
 import { drawSky, drawParallax, drawTiles, drawAmbient } from '../art/scenes.js';
 // 符卡表现层：卡面叠加（屏幕空间）与逐卡玩家效果，只有纯函数、不反向 import stage，
 // 所以这里静态引入不会形成循环依赖（docs/BOSS_TIMING_SPEC.md §3.4）。
+import { linkTier } from '../engine/lazy_preload.js';
 import { drawCardFx } from './cardfx.js';
 import { updateCardEffect } from './cardEffects.js';
 
@@ -152,7 +153,7 @@ function _bgLoadLq(e) {
       e.lqDecoded = true;
       _bgScheduleUpgrade(e);
     });
-    _bgLoadHd(e);
+    _bgQueueHd(e);
   };
   img.onerror = () => {
     e.lqFailed = true;
@@ -169,6 +170,22 @@ function _bgLoadLq(e) {
   };
   _bgStallGuard(e, true);
   img.src = e.lqSrc;
+}
+
+/**
+ * 低清到货后把高清档排到空闲帧。
+ *
+ * 原来是在 lq.onload 里同步直发高清（一张 230–340KB），7 个主题一起预取时就是
+ * 1MB+ 的并发下载，弱网下把进关要用的连接全占满 —— 玩家看到的是「点了开始半天没反应」。
+ * 现在：受限链路（3G / saveData / 实测吞吐低）干脆不升档，低清单张 30–80KB 已经够看；
+ * 其余链路等 idle 再发，且只在本面确实要用时才发。
+ */
+function _bgQueueHd(e) {
+  if (!e || e.hdStarted) return;
+  if (linkTier() === 'constrained') return;
+  const go = () => { if (!e.ok) _bgLoadHd(e); };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 3000 });
+  else setTimeout(go, 500);
 }
 
 /** 请求高清档（artUrl 会优先 AVIF，失败自动退回 WebP） */
