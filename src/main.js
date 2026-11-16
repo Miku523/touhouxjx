@@ -4020,6 +4020,8 @@ class Game {
     if (!this._audioReady) return tr('点击任意位置或按任意键开启声音');
     if (this._audioSilent) return tr('曲目没有发出声音（可能没加载完）· 设置里重开一次背景音乐试试');
     if (this.musicOn === false) return tr('背景音乐已关闭（设置里可重新打开）');
+    // 音量拖到 0 会进存档：下一次打开就是「一切正常但永远没声」，和静音一样需要说出来
+    if (!(this.audio.musicVolume > 0.001)) return tr('背景音乐音量为 0（设置里调大即可）');
     return '';
   }
 
