@@ -420,6 +420,8 @@ class Game {
     this._settingsMusicVolume = 0.8;
     this._settingsSfxVolume = 1;
     this._settingsSfxOn = true;
+    this._audioSilent = false;      // 实测总线无输出（系统音量 / 站点静音 / 输出设备）
+    this._audioProbed = false;
     this._loadSettings();
     // 设置加载完再把操作方式同步给 Input（Input 在 105 行就建好了，必须先有设置值）
     this._applyControlScheme();
@@ -1615,9 +1617,7 @@ class Game {
 
     // 没有声音时给出可见原因：浏览器要求先有一次手势才允许出声（_unlockAudio），
     // 而背景音乐开关关掉时引擎一切正常、只是不开曲 —— 以前这两种情况都是「静悄悄」
-    const voiceHint = this._audioReady
-      ? (this.musicOn === false ? tr('背景音乐已关闭（设置里可重新打开）') : '')
-      : tr('点击任意位置或按任意键开启声音');
+    const voiceHint = this._titleVoiceHint();
 
     const buttons = [
       { label: tr('开始游戏'), en: 'START', key: 'ENTER', cls: 'primary', onPick: () => this.showDifficultySelect() },
@@ -4009,16 +4009,66 @@ class Game {
     if (!hadCtx && this.audio.ctx) this._applyAudio();
     // 标题页上还挂着「点击开启声音」的提示：解锁完成后就地换掉
     this._refreshTitleVoiceHint();
+    this._probeAudioOutput();
   }
 
-  /** 标题页的「没声音」提示随解锁 / 音乐开关变化 */
+  /**
+   * 标题页「为什么没声音」的一句话原因。按可信度排序：
+   * 检测不到输出 > 音乐开关关着 > 还没解锁。
+   */
+  _titleVoiceHint() {
+    if (!this._audioReady) return tr('点击任意位置或按任意键开启声音');
+    if (this._audioSilent) return tr('曲目没有发出声音（可能没加载完）· 设置里重开一次背景音乐试试');
+    if (this.musicOn === false) return tr('背景音乐已关闭（设置里可重新打开）');
+    return '';
+  }
+
+  /** 标题页的「没声音」提示随解锁 / 音乐开关 / 输出探测变化 */
   _refreshTitleVoiceHint() {
     if (this.state !== 'menu' || this._page !== 'title' || !this.hintEl) return;
-    const hint = this._audioReady
-      ? (this.musicOn === false ? tr('背景音乐已关闭（设置里可重新打开）') : '')
-      : tr('点击任意位置或按任意键开启声音');
+    const hint = this._titleVoiceHint();
     this.hintEl.textContent = hint;
     this.hintEl.hidden = !hint;
+  }
+
+  /**
+   * 解锁后实测一次总线输出，只用来区分「引擎根本没在发声」（曲目没加载 / 上下文没起来）
+   * 和「引擎在发声但用户听不到」。后者在 WebAudio 里看不出来 —— 系统音量合成器和
+   * 浏览器站点静音都在 analyser 之后，所以这里不下那种结论，只如实说引擎侧的情况。
+   */
+  _probeAudioOutput() {
+    if (this._audioProbed) return;
+    const a = this.audio;
+    if (!a || !a.ctx || !a._master) return;
+    // 静音 / 音乐关 / 音量为 0：没有声音是预期行为，不探测
+    if (a.muted || this.musicOn === false || !(a.musicVolume > 0)) return;
+    let an;
+    try {
+      an = a.ctx.createAnalyser();
+      an.fftSize = 512;
+      a._master.connect(an);
+    } catch (e) {
+      return;
+    }
+    this._audioProbed = true;
+    const buf = new Float32Array(an.fftSize);
+    let peak = 0;
+    let n = 0;
+    const done = () => {
+      try { a._master.disconnect(an); } catch (e) {}
+      if (peak < 0.002) {
+        this._audioSilent = true;
+        if (typeof console !== 'undefined') console.warn('[audio] 总线 2.3s 无输出：曲目可能没加载完');
+        this._refreshTitleVoiceHint();
+      }
+    };
+    const tick = () => {
+      try { an.getFloatTimeDomainData(buf); } catch (e) { done(); return; }
+      for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i]); if (v > peak) peak = v; }
+      if (++n < 10 && peak < 0.002) { setTimeout(tick, 160); return; }
+      done();
+    };
+    setTimeout(tick, 700);
   }
 
   /**
