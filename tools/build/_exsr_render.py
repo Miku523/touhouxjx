@@ -249,7 +249,7 @@ def _ring(seconds):
 
 # ============================================================ 音色模型
 def voice_lead(f0, dur, vel, rng):
-    ring = dur + 0.20
+    ring = dur + _tail('lead', 0.20)
     n = _ring(ring)
     t = np.arange(n, dtype=np.float64) / SR
     vib = _vibrato(t, 5.3, 0.0028, ramp=0.13)
@@ -281,7 +281,7 @@ def voice_guitar(f0, dur, vel, rng):
 
 
 def voice_brass(f0, dur, vel, rng):
-    ring = dur + 0.20
+    ring = dur + _tail('brass', 0.20)
     n = _ring(ring)
     t = np.arange(n, dtype=np.float64) / SR
     vib = _vibrato(t, 4.8, 0.0018, ramp=0.18)
@@ -295,7 +295,7 @@ def voice_brass(f0, dur, vel, rng):
 
 
 def voice_strings(f0, dur, vel, rng):
-    ring = dur + 0.50
+    ring = dur + _tail('strings', 0.50)
     n = _ring(ring)
     t = np.arange(n, dtype=np.float64) / SR
     vib = _vibrato(t, 4.3, 0.0012, ramp=0.30)
@@ -370,7 +370,7 @@ def voice_bass(f0, dur, vel, rng):
 
 
 def voice_pad(f0, dur, vel, rng):
-    ring = dur + 0.70
+    ring = dur + _tail('pad', 0.70)
     n = _ring(ring)
     t = np.arange(n, dtype=np.float64) / SR
     atk = min(0.50, max(0.18, dur * 0.25))
@@ -386,7 +386,7 @@ def voice_pad(f0, dur, vel, rng):
 
 def voice_choir(f0, dur, vel, rng):
     """人声垫（choir）：多个微失谐锯齿 + 元音共振峰（a），慢起音、轻呼吸噪声。"""
-    ring = dur + 0.65
+    ring = dur + _tail('choir', 0.65)
     n = _ring(ring)
     t = np.arange(n, dtype=np.float64) / SR
     atk = min(0.38, max(0.14, dur * 0.22))
@@ -477,7 +477,7 @@ def voice_arp(f0, dur, vel, rng):
 
 
 def voice_counter(f0, dur, vel, rng):
-    ring = dur + 0.18
+    ring = dur + _tail('counter', 0.18)
     n = _ring(ring)
     t = np.arange(n, dtype=np.float64) / SR
     vib = _vibrato(t, 5.0, 0.0016, ramp=0.15)
@@ -584,6 +584,7 @@ PAN_TABLE = {
     'piano': -0.12, 'harpsi': 0.12, 'arp': -0.35, 'bell': 0.38,
 }
 PAN_DEFAULT = 0.0
+PAN_WIDTH = 1.0                    # 声像宽度倍数（仅离线渲染；默认 1.0，既有曲目不变）
 HALF_SQRT2 = 0.7071067811865476
 STEREO_DELAY_OFFSET_MS = 7.5     # 右声道 delay tap 比左声道晚 7.5ms（去相关用，不改变节奏感）
 HALL_IR_SEED_OFFSET = 7919       # 右声道大厅 IR 用不同 seed（同参数去相关）
@@ -605,6 +606,18 @@ _HAT_PHASES = [0.0, 1.1, 2.3, 3.7, 4.9, 5.6, 0.7, 2.9]
 # 相对游戏内 drum_voice：整体约 1.5 倍厚（本 WAV 不走 warm_bus，需要自己补足存在感），
 # 但底鼓不再压过旋律——游戏内 kick 峰值 ~0.115，这里 0.185≈1.6 倍。
 KICK_BODY = 0.85                   # 底鼓 body 进 tanh 前的幅度（见 _synth_drum 注释）
+DRUM_BUS_DB = 0.0                  # 鼓总线增益 dB（仅离线渲染；默认 0，既有曲目不变）
+
+# 声部收尾秒数覆盖（song['tail']）：{voice: 秒}。默认值 = 各 voice_* 里的原值，
+# 只有写了 tail 的曲目才改，既有曲目/既有母版不受影响。
+TAIL = {}
+
+
+def _tail(name, default):
+    try:
+        return float(TAIL.get(name, default))
+    except (TypeError, ValueError):
+        return default
 DRUM_GAIN = {0: 0.185, 1: 0.120, 2: 0.068, 3: 0.058, 4: 0.052,
              5: 0.165, 6: 0.150, 7: 0.042, 8: 0.045, 9: 0.100}
 DRUM_KINDS = tuple(sorted(DRUM_GAIN))
@@ -944,7 +957,8 @@ def render_song(song, out_sr=DEFAULT_OUT_SR, wet=HALL_WET, drive=SAT_DRIVE,
                 sidechain_depth=SIDECHAIN_DEPTH, sidechain_tau=SIDECHAIN_TAU,
                 dedupe_drums_events=True):
     """渲染恰好一个循环（样本级精确），返回 dict。"""
-    global SR
+    global SR, TAIL
+    TAIL = dict(song.get('tail') or {})
     SR = 2 * int(out_sr)
     sr = SR
     dur = float(song['duration'])
@@ -991,7 +1005,7 @@ def render_song(song, out_sr=DEFAULT_OUT_SR, wet=HALL_WET, drive=SAT_DRIVE,
         print('[exsr] 同刻同 kind 重复鼓事件 %d 个：合并为单次命中（避免 +6dB 同相位叠加）'
               % drums_merged)
     if any(drum_counts.values()):
-        drums = tilt(drums, DRUM_SHAPE)
+        drums = tilt(drums, DRUM_SHAPE) * (10.0 ** (DRUM_BUS_DB / 20.0))
         drums_dry = drums
         bus += drums
 
@@ -1141,7 +1155,8 @@ def _render_song_stereo(song, out_sr=44100, wet=HALL_WET, drive=SAT_DRIVE,
     返回的 y 是 (n_out, 2) 的 float64；RMS 用左右总功率计（与 mono 同读数），
     另给 rms_db_ch = 每声道独立计的常规立体声 RMS（比总功率低 3.01dB）。
     """
-    global SR
+    global SR, TAIL
+    TAIL = dict(song.get('tail') or {})
     SR = 2 * int(out_sr)
     sr = SR
     dur = float(song['duration'])
@@ -1174,7 +1189,7 @@ def _render_song_stereo(song, out_sr=44100, wet=HALL_WET, drive=SAT_DRIVE,
         ducked = bool(sidechain and voice == SIDECHAIN_TRACK and sc_env is not None)
         if ducked:
             buf = buf * sc_env
-        pan = float(PAN_TABLE.get(voice, PAN_DEFAULT))
+        pan = float(PAN_TABLE.get(voice, PAN_DEFAULT)) * PAN_WIDTH
         gl, gr = pan_gain(pan)
         busL += buf * gl
         busR += buf * gr
@@ -1195,7 +1210,7 @@ def _render_song_stereo(song, out_sr=44100, wet=HALL_WET, drive=SAT_DRIVE,
         print('[exsr] 同刻同 kind 重复鼓事件 %d 个：合并为单次命中（避免 +6dB 同相位叠加）'
               % drums_merged)
     if any(drum_counts.values()):
-        drums = tilt(drums, DRUM_SHAPE)
+        drums = tilt(drums, DRUM_SHAPE) * (10.0 ** (DRUM_BUS_DB / 20.0))
         drums_dry = drums
         busL += drums * HALF_SQRT2
         busR += drums * HALF_SQRT2
@@ -1453,7 +1468,7 @@ def analyze_stereo(yL, yR, sr):
 
 # ============================================================ CLI
 def main():
-    global KICK_BODY, MASTER_HIGH_DB
+    global KICK_BODY, MASTER_HIGH_DB, DRUM_BUS_DB, PAN_WIDTH
     ap = argparse.ArgumentParser(
         description='band arrange 离线渲染器：曲目数据 → 无缝循环 WAV')
     ap.add_argument('--file', required=True, help='曲目 js 文件')
@@ -1483,6 +1498,10 @@ def main():
     ap.add_argument('--sc-depth', type=float, default=SIDECHAIN_DEPTH, help='侧链深度（默认 0.45）')
     ap.add_argument('--sc-tau', type=float, default=SIDECHAIN_TAU, help='侧链时间常数秒（默认 0.10）')
     ap.add_argument('--no-reverb', action='store_true')
+    ap.add_argument('--width', type=float, default=1.0,
+                    help='声像宽度倍数（默认 1.0；>1 更宽，1.3~1.5 用于加宽立体声）')
+    ap.add_argument('--drum-db', type=float, default=0.0,
+                    help='鼓总线增益 dB（默认 0；旋律把鼓压住时给 +3~+5）')
     ap.add_argument('--no-delay', action='store_true')
     ap.add_argument('--section-gain', action='append', default=[], metavar='START:END:DB',
                     help='段平衡（mix 自动化）：给 START-END 秒加 DB 增益，归一化前作用，'
@@ -1496,6 +1515,8 @@ def main():
         _DRUM_CACHE.clear()
     if args.high_db is not None:
         MASTER_HIGH_DB = float(args.high_db)
+    DRUM_BUS_DB = float(args.drum_db or 0.0)
+    PAN_WIDTH = float(args.width or 1.0)
 
     section_gain = []
     for sg in args.section_gain:

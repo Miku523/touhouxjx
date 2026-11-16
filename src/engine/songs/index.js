@@ -103,12 +103,12 @@ const DEFS = [
     pick: (m) => ({ stage4: m.AYA_STAGE4?.stage4
       ? { ...m.AYA_STAGE4.stage4, audio: 'src/assets/bgm/aya_stage4.mp3?v=1.6.64' }
       : undefined }) },
-  // 5 面道中：広有射怪鳥事 ～ Till When? —— 摇滚乐队编制，原曲主旋律占大头（见 tools/pre5_tillwhen.py）
+  // 5 面道中：広有射怪鳥事 ～ Till When? —— 魂魄妖梦「半人魂」重编，原曲 ch0 逐音搬入 + 妖侧对句（见 tools/build/_youmu_compose.py）
   { id: 'tillwhen_pre5', url: './tillwhen_pre5.js', keys: ['pre5'],
-    pick: (m) => ({ pre5: m.TILLWHEN_PRE5?.pre5 }) },
-  // 5 面 Boss：幽雅に咲かせ、墨染の桜 ～ Border of Life —— 照原曲 1:1 直译（见 tools/boss5_murasaki.py）
+    pick: (m) => ({ pre5: m.TILLWHEN_PRE5?.pre5 ? { ...m.TILLWHEN_PRE5.pre5, audio: 'src/assets/bgm/youmu_pre5.mp3?v=1.6.92' } : undefined }) },
+  // 5 面 Boss：幽雅に咲かせ、墨染の桜 ～ Border of Life —— 西行寺幽幽子重编，20 段速度全保留 + 副歌八度光环（见 tools/build/_yuyuko_compose.py）
   { id: 'yuuga_stage5', url: './yuuga_stage5.js', keys: ['stage5'],
-    pick: (m) => ({ stage5: m.YUGA_STAGE5?.stage5 }) },
+    pick: (m) => ({ stage5: m.YUGA_STAGE5?.stage5 ? { ...m.YUGA_STAGE5.stage5, audio: 'src/assets/bgm/yuyuko_stage5.mp3?v=1.6.92' } : undefined }) },
   // 6 面道中：ヴォヤージュ1970 —— 原曲 58 小节搬入（含 16 小节 3/4）+ 重配器（162 BPM / D 小调，见 tools/build/_pret6_compose.py）
   { id: 'voyage_pre6', url: './pre6.js', keys: ['pre6'],
     pick: (m) => ({ pre6: m.VOYAGE_PRE6?.pre6 ? { ...m.VOYAGE_PRE6.pre6, audio: 'src/assets/bgm/pre6.mp3?v=1.6.70' } : undefined }) },

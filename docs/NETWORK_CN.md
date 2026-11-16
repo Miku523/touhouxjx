@@ -140,7 +140,7 @@ DNS 侧：主域名只有两条 A（`185.199.108.153` / `185.199.109.153`，TTL 
 - 引用改造：`src/art/genboss.js`、`src/art/genchars.js`、`src/art/genfairy.js`、`src/game/dialogue.js`（`AI_PORTRAITS`）、`src/game/ending.js`、`src/game/spellCutin.js`、`src/game/stage.js`、`src/main.js`；`index.html` 三条首屏 preload 加 `type="image/webp"` 并指向 `.webp`。
 - 逐张体积 / PSNR 表：`tools/_opt/webp_table.md`，机器可读：`tools/_opt/webp_report.json`；运行时验收：`node tools/_opt_art_check.mjs`（62 张 decode 与尺寸一致、全部 `200 + image/webp`、0 4xx）。
 
-### 3.2 预渲染 BGM 转 MP3（15 首）
+### 3.2 预渲染 BGM 转 MP3（17 首）
 
 | 曲目 | 用途 | WAV | MP3 |
 | --- | --- | --- | --- |
@@ -152,16 +152,18 @@ DNS 侧：主域名只有两条 A（`185.199.108.153` / `185.199.109.153`，TTL 
 | `wriggle_stage2` | STAGE 2 Boss（蠢蠢秋月·萤火夜雾编） | —（母版 20,485,200 B 不入库） | **4,647,705 B** |
 | `cirno_stage3` | STAGE 3 Boss（活泼的恋之少女·冰上算术编） | —（母版 21,168,044 B 不入库） | **2,881,409 B** |
 | `aya_stage4` | STAGE 4 Boss（风神少女·天狗疾风编） | —（母版 27,490,924 B 不入库） | **3,741,569 B** |
+| `yuyuko_stage5` | STAGE 5 Boss（墨染之樱·白玉楼编） | —（母版 25,126,108 B 不入库） | **5,699,917 B** |
 | `kaguya_stage6` | STAGE 6 Boss（竹取飞翔·月之公主编） | —（母版 28,590,604 B 不入库） | **3,891,408 B** |
 | `pre1` | STAGE 1 道中（夜樱小径编） | —（母版 16,350,560 B 不入库） | **2,226,258 B** |
 | `pre2` | STAGE 2 道中（萤火夜雾编） | —（母版 19,625,956 B 不入库） | **2,672,012 B** |
 | `pre3` | STAGE 3 道中（冰蓝晨曦编） | —（母版 16,579,176 B 不入库） | **2,256,978 B** |
 | `pre4` | STAGE 4 道中（瀑布溪谷编） | —（母版 21,817,372 B 不入库） | **2,969,808 B** |
 | `pre6` | STAGE 6 道中（月都航路编） | —（母版 14,634,716 B 不入库） | **1,992,410 B** |
+| `youmu_pre5` | STAGE 5 道中（广有射怪鸟事·半人魂编） | —（母版 18,846,620 B 不入库） | **4,275,721 B** |
 | `yukari_ph` | 追加曲（隙间妖蝶·八云紫，纯听曲） | —（母版 30,152,096 B 不入库） | **4,103,940 B** |
-| 合计 | | 21,571,206 B（三首入库母版） | **42,671,089 B**（十五首母版合计 282,990,362 B，MP3 占 15.1%，省 84.9%） |
+| 合计 | | 21,571,206 B（三首入库母版） | **52,646,727 B**（十七首母版合计 326,963,090 B，MP3 占 16.1%，省 83.9%） |
 
-- 脚本：`python tools/optimize_audio_mp3.py`。前三首源是 22.05 kHz 单声道母版，用 MPEG-2 Layer III / 单声道 / VBR ≈ 91 kbps；`remilia_septette`、`youma_stage1`、`wriggle_stage2`、`cirno_stage3`、`aya_stage4`、`kaguya_stage6` 与五首道中曲、追加曲 `yukari_ph` 的母版是 44.1 kHz 立体声，改走 MPEG-1 Layer III / 192 kbps CBR（帧长 1152、side info 32 B）；`wriggle_stage2` 单独用 320 kbps CBR（192 kbps 时循环边界跳变 0.00495 超过 WAV 的 1.62 倍、越过 1.5 倍阈值，320 kbps 降到 0.00400），LAME tag 的 padding 要跟着补 `spf − delay` 的差（MPEG-1 多 576），才能解出和母版一模一样的采样数。
+- 脚本：`python tools/optimize_audio_mp3.py`。前三首源是 22.05 kHz 单声道母版，用 MPEG-2 Layer III / 单声道 / VBR ≈ 91 kbps；`remilia_septette`、`youma_stage1`、`wriggle_stage2`、`cirno_stage3`、`aya_stage4`、`kaguya_stage6` 与五首道中曲、追加曲 `yukari_ph` 的母版是 44.1 kHz 立体声，改走 MPEG-1 Layer III / 192 kbps CBR（帧长 1152、side info 32 B）；`wriggle_stage2` 单独用 320 kbps CBR（192 kbps 时循环边界跳变 0.00495 超过 WAV 的 1.62 倍、越过 1.5 倍阈值，320 kbps 降到 0.00400），LAME tag 的 padding 要跟着补 `spf − delay` 的差（MPEG-1 多 576），才能解出和母版一模一样的采样数。`youmu_pre5`（母版 18,846,620 B）与 `yuyuko_stage5`（母版 25,126,108 B）同样是 44.1 kHz 立体声、320 kbps CBR 单声道不变，两首母版都不入库：前者留作重渲对照，后者已超过 Cloudflare 单文件 25 MiB 上限。
 - 关键在于**别让循环接缝变形**：lame 默认不写 Xing/Info 头，播放器只能猜时长；这里自己构造 Xing/Info + LAME tag，按 `n = spf × 帧数 − delay − padding` 反解精确 padding（MPEG-2 spf=576、MPEG-1 spf=1152）、TOC 用真实帧偏移。验收（`node tools/verify_audio_mp3.mjs`，9 首 145 pass / 0 fail）：
   - Edge `decodeAudioData` 时长差 **0.000000 s**、采样数差 **0**（22050 native、44100 native、48000 三种 context 都比过）；
   - 与 WAV 互相关 lag = 0、corr 0.9994–0.99998（remilia / youma 立体声 0.9999）；

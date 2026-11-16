@@ -85,6 +85,7 @@ class Song(object):
         self.DRUMS = []
         self.SECS = []
         self.track_defs = []
+        self.tail = {}          # 每首曲可选的声部收尾秒数覆盖（渲染器 song['tail']）
 
     def _recalc(self):
         acc = 0.0
@@ -149,6 +150,8 @@ class Song(object):
                 out_tracks.append({'name': name, 'wave': wave, 'gain': float(gain), 'notes': ns})
         song = {'title': self.title, 'duration': self.dur, 'bpm': self.bpm,
                 'tracks': out_tracks, 'drums': sorted(self.DRUMS)}
+        if self.tail:
+            song['tail'] = {k: float(v) for k, v in self.tail.items()}
         os.makedirs(LEAD, exist_ok=True)
         js = ('// 由 tools/build/_pret%s_compose.py 生成，勿手改。\n' % self.name[-1])
         js += 'export const %s = {\n  %s: ' % (self.export, self.keyname)

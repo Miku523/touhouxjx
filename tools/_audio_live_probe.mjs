@@ -1,0 +1,22 @@
+import { launch, sleep } from './_pt_core.mjs';
+const T = await launch({ port: 9508, width: 1280, height: 720 });
+const EVAL = (e) => 'JSON.stringify((()=>{try{return (' + e + ')}catch(err){return {__err:String(err)}}})())';
+await T.nav('https://mikuascendlog.com/touhouxjx/index.html?nocache=1');
+await T.waitFor("!!window.__game", 120000);
+await sleep(1500);
+console.log('ver', await T.eval(EVAL("(document.querySelector('.title-ver')||{}).textContent||window.__game.state")));
+// 模拟老玩家脏存档
+await T.eval(EVAL("(()=>{localStorage.setItem('hks.settings.v1',JSON.stringify({muted:true,musicVolume:0.8}));return 1})()"));
+await T.eval("location.reload()");
+await sleep(1500);
+await T.waitFor("!!window.__game", 120000);
+await sleep(3000);
+await T.key('Enter'); await sleep(2500);
+console.log('audio', await T.eval(EVAL("(()=>{const a=window.__game.audio;return {muted:a.muted,master:a._master?a._master.gain.value:null,voices:a._musicVoices.size,ctx:a.ctx&&a.ctx.state}})()")));
+await T.eval("(()=>{const a=window.__game.audio;const an=a.ctx.createAnalyser();an.fftSize=1024;a._master.connect(an);window.__an=an;return 1})()");
+await sleep(700);
+console.log('rms', await T.eval("(()=>{const an=window.__an,b=new Float32Array(an.fftSize);an.getFloatTimeDomainData(b);let s=0;for(const v of b)s+=v*v;return +Math.sqrt(s/b.length).toFixed(5)})()"));
+const rep = await T.report();
+console.log('errors', JSON.stringify((rep.errors||[]).slice(0,3)).slice(0,300));
+await T.shot('_perf/live_1685_audio.png');
+await T.close();

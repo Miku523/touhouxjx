@@ -45,8 +45,10 @@ export async function launch(opts = {}) {
     ...(opts.headless === false ? [] : ['--headless=new']),
     ...(opts.gpu === true ? [] : ['--disable-gpu']),
     '--hide-scrollbars', '--no-first-run',
-    '--no-default-browser-check', '--autoplay-policy=no-user-gesture-required',
-    '--mute-audio', '--disable-background-timer-throttling',
+    '--no-default-browser-check',
+    // realAudio: 去掉自动播放豁免与静音，模拟玩家真实浏览器（默认保留，老脚本行为不变）
+    ...(opts.realAudio ? [] : ['--autoplay-policy=no-user-gesture-required', '--mute-audio']),
+    '--disable-background-timer-throttling',
     '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
     '--window-size=' + W + ',' + H,
   ];

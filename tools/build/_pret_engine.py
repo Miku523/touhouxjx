@@ -32,6 +32,7 @@ class Eng(object):
         self.by_bar = collections.defaultdict(list)
         for n in self.notes:
             self.by_bar[n['k']].append(n)
+        self.song.tail = dict(cfg.get('tail') or {})
         self.extra_fn = cfg.get('extra')
         self.lead_notes = []          # (t, m, d, v) 主旋律记录，用于加倍/装饰
         self.bar_pc = {}              # 新小节 → 出现的音级
@@ -50,8 +51,9 @@ class Eng(object):
         return self.song.section(*a, **k)
 
     # ---- 搬入
-    def copy(self, tag, src_b0, src_b1, new_b0, tr=0, dyn=None):
-        """把原曲 [src_b0, src_b1] 小节搬到 new_b0 起，按通道路由表分发。"""
+    def copy(self, tag, src_b0, src_b1, new_b0, tr=0, dyn=None, add=None):
+        """把原曲 [src_b0, src_b1] 小节搬到 new_b0 起，按通道路由表分发。
+        add={ch: [(track, shift, vmul, dmul), ...]} 可给该段落临时追加路由。"""
         if dyn is None:
             dyn = self.dyn.get(tag, 1.0)
         src_bar_n = src_b1 - src_b0 + 1
@@ -59,13 +61,13 @@ class Eng(object):
             nb = new_b0 + (k - src_b0)
             for n in self.by_bar.get(k, ()):
                 t = self.song.bt(nb, n['beat'])
-                self.route(n, t, tr, dyn, nb)
+                self.route(n, t, tr, dyn, nb, add)
         return new_b0 + src_bar_n
 
     DEFAULT_DRUM = {35: 0, 36: 0, 37: 1, 38: 1, 39: 1, 40: 1, 41: 6, 42: 2, 43: 6, 44: 2,
                     45: 5, 46: 3, 47: 5, 48: 6, 49: 4, 50: 6, 51: 7, 52: 4, 53: 7, 57: 4}
 
-    def route(self, n, t, tr, dyn, nb):
+    def route(self, n, t, tr, dyn, nb, add=None):
         ch = n['ch']
         if ch == self.cfg.get('drum_ch', 9):
             dm = self.cfg.get('drum_map') or self.DEFAULT_DRUM
@@ -73,7 +75,9 @@ class Eng(object):
             if kind is not None:
                 self.song.drum(t, kind, max(1, min(127, n['v'] * dyn)))
             return
-        rules = self.voice.get(ch)
+        rules = list(self.voice.get(ch) or ())
+        if add and ch in add:
+            rules = rules + list(add[ch])
         if not rules:
             return
         for track, shift, vmul, dmul in rules:
@@ -165,7 +169,8 @@ class Eng(object):
             tag, sb0, sb1, nb0 = seg[:4]
             opts = seg[4] if len(seg) > 4 else {}
             tr = opts.get('tr', 0)
-            end = self.copy(tag, sb0, sb1, nb0, tr=tr, dyn=opts.get('dyn'))
+            end = self.copy(tag, sb0, sb1, nb0, tr=tr, dyn=opts.get('dyn'),
+                           add=opts.get('add'))
             self.sec(tag, nb0, end - 1)
         if self.extra_fn:
             self.extra_fn(self)
