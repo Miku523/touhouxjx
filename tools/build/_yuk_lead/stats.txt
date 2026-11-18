@@ -1,0 +1,244 @@
+{
+ "rows": [
+  {
+   "sec": "intro",
+   "lead": 0,
+   "counter": 0,
+   "brass": 0,
+   "strings": 12,
+   "harpsi": 90,
+   "arp": 1,
+   "bell": 8,
+   "choir": 3,
+   "pad": 9,
+   "bass": 1,
+   "sub": 6,
+   "riser": 1,
+   "reverse": 1,
+   "drums": 6
+  },
+  {
+   "sec": "A",
+   "lead": 105,
+   "counter": 105,
+   "brass": 0,
+   "strings": 225,
+   "harpsi": 519,
+   "arp": 512,
+   "bell": 0,
+   "choir": 105,
+   "pad": 105,
+   "bass": 557,
+   "sub": 16,
+   "riser": 0,
+   "reverse": 0,
+   "drums": 202
+  },
+  {
+   "sec": "B",
+   "lead": 0,
+   "counter": 0,
+   "brass": 0,
+   "strings": 174,
+   "harpsi": 511,
+   "arp": 515,
+   "bell": 0,
+   "choir": 0,
+   "pad": 0,
+   "bass": 631,
+   "sub": 15,
+   "riser": 0,
+   "reverse": 0,
+   "drums": 183
+  },
+  {
+   "sec": "A2",
+   "lead": 124,
+   "counter": 124,
+   "brass": 0,
+   "strings": 256,
+   "harpsi": 8,
+   "arp": 272,
+   "bell": 0,
+   "choir": 0,
+   "pad": 0,
+   "bass": 486,
+   "sub": 17,
+   "riser": 0,
+   "reverse": 0,
+   "drums": 205
+  },
+  {
+   "sec": "C",
+   "lead": 129,
+   "counter": 0,
+   "brass": 129,
+   "strings": 201,
+   "harpsi": 237,
+   "arp": 478,
+   "bell": 0,
+   "choir": 48,
+   "pad": 48,
+   "bass": 453,
+   "sub": 16,
+   "riser": 0,
+   "reverse": 0,
+   "drums": 220
+  },
+  {
+   "sec": "C2",
+   "lead": 160,
+   "counter": 0,
+   "brass": 160,
+   "strings": 232,
+   "harpsi": 255,
+   "arp": 510,
+   "bell": 0,
+   "choir": 48,
+   "pad": 48,
+   "bass": 477,
+   "sub": 15,
+   "riser": 0,
+   "reverse": 0,
+   "drums": 361
+  },
+  {
+   "sec": "D",
+   "lead": 162,
+   "counter": 0,
+   "brass": 299,
+   "strings": 234,
+   "harpsi": 257,
+   "arp": 990,
+   "bell": 299,
+   "choir": 0,
+   "pad": 0,
+   "bass": 481,
+   "sub": 17,
+   "riser": 0,
+   "reverse": 0,
+   "drums": 375
+  },
+  {
+   "sec": "D2",
+   "lead": 160,
+   "counter": 0,
+   "brass": 328,
+   "strings": 232,
+   "harpsi": 255,
+   "arp": 1022,
+   "bell": 328,
+   "choir": 0,
+   "pad": 5,
+   "bass": 477,
+   "sub": 15,
+   "riser": 0,
+   "reverse": 0,
+   "drums": 385
+  },
+  {
+   "sec": "END",
+   "lead": 33,
+   "counter": 0,
+   "brass": 33,
+   "strings": 36,
+   "harpsi": 20,
+   "arp": 80,
+   "bell": 35,
+   "choir": 0,
+   "pad": 5,
+   "bass": 64,
+   "sub": 4,
+   "riser": 0,
+   "reverse": 0,
+   "drums": 17
+  },
+  {
+   "sec": "coda",
+   "lead": 0,
+   "counter": 0,
+   "brass": 0,
+   "strings": 2,
+   "harpsi": 0,
+   "arp": 0,
+   "bell": 5,
+   "choir": 0,
+   "pad": 3,
+   "bass": 0,
+   "sub": 2,
+   "riser": 0,
+   "reverse": 0,
+   "drums": 0
+  }
+ ],
+ "leadGaps": [
+  [
+   30.91,
+   25.06
+  ],
+  [
+   60,
+   1.83
+  ],
+  [
+   71.71,
+   1.83
+  ],
+  [
+   79.02,
+   1.83
+  ],
+  [
+   83.6,
+   1.46
+  ],
+  [
+   107.01,
+   1.46
+  ],
+  [
+   130.43,
+   1.46
+  ],
+  [
+   153.84,
+   1.46
+  ]
+ ],
+ "uniqueDrumBars": 72,
+ "barsWithDrums": 116,
+ "top": [
+  {
+   "bars": 7,
+   "hits": 10
+  },
+  {
+   "bars": 6,
+   "hits": 9
+  },
+  {
+   "bars": 6,
+   "hits": 13
+  },
+  {
+   "bars": 6,
+   "hits": 9
+  },
+  {
+   "bars": 6,
+   "hits": 11
+  },
+  {
+   "bars": 5,
+   "hits": 14
+  },
+  {
+   "bars": 5,
+   "hits": 15
+  },
+  {
+   "bars": 4,
+   "hits": 15
+  }
+ ]
+}

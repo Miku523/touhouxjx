@@ -2593,7 +2593,7 @@ export class Boss {
     // 落地硬直期不打身体伤害：这一段就是让玩家跳上头顶的奖励窗口，
     // 否则玩家还没踩到就被撞飞（Boss 立绘比碰撞盒高得多，观感上本来就在「身上」）。
     if (this.hurtCd <= 0 && this._dive.state !== 'land' && this._ram.state === 'idle' && this._overlapPlayer(player)) {
-      player.hurt(1, this.x);
+      player.hurt(1, this.x, 'boss');
       this.hurtCd = 0.6;
     }
   }
@@ -3027,7 +3027,7 @@ export class Boss {
       this.x = r.fromX + (r.tx - r.fromX) * e;
       this.y = r.fromY + (r.ty - r.fromY) * (0.45 + 0.55 * e);
       if (this.hurtCd <= 0 && player && player.alive !== false && this._overlapPlayer(player)) {
-        player.hurt(1, this.x);
+        player.hurt(1, this.x, 'boss');
         this.hurtCd = 0.6;
         r.hit = true;
       }

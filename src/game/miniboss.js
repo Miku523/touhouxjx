@@ -466,7 +466,7 @@ export class MinibossManager {
       m.facing = px < m.x ? -1 : 1;
 
       // 接触伤害（只在自己没死、玩家无敌帧结束时由 Player.hurt 内部挡掉）
-      if (p.alive && this._touches(m, p)) p.hurt(1, m.x);
+      if (p.alive && this._touches(m, p)) p.hurt(1, m.x, 'miniboss');
 
       // 弹幕循环（进场无敌期已过）
       this._updateFire(m, stage, px, py, dt);

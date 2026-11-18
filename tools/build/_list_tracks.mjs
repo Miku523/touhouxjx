@@ -1,0 +1,1 @@
+import('../../src/game/musicTracks.js').then(m=>{for(const t of m.MUSIC_TRACKS) console.log(t.no, t.key, '|', t.title, '|', t.sub, '|', t.cat, '|', t.time)});

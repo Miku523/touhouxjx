@@ -1,0 +1,7 @@
+{
+ "groupsAtOnce": {
+  "1": 105
+ },
+ "clashCount": 0,
+ "sample": []
+}

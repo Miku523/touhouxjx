@@ -499,7 +499,7 @@ export class EnemyManager {
           fx?.burst(e.x + e.w / 2, e.y + e.h / 2, e.colors.glow, 10, 240);
           if (e.hp <= 0) this._kill(e, fx, opts);
         } else {
-          player.hurt(1, e.x + e.w / 2);
+          player.hurt(1, e.x + e.w / 2, 'enemy');
         }
       }
     }

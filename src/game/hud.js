@@ -2,6 +2,7 @@
  * HUD：把游戏状态同步到 DOM。只在数值变化时写 DOM，避免每帧触发重排。
  */
 import { POWER, powerLevel } from './power.js';
+import { formatScore, SCORE } from './score.js';
 import { tr } from '../i18n/index.js';
 
 // 残机图标最多画 10 个，超出用「×N」计数：
@@ -64,6 +65,141 @@ export class Hud {
 
     this._buildLives(4);
     this.setChar('reimu');
+
+    // 分数（右上角）：东方正作的分数在右上，本作沿用。
+    // index.html / style.css 不在本次改动范围，所以节点由 JS 建、样式走内联，
+    // 但度量仍然引用 --s / --gold 这些 CSS 变量，缩放时和其它 HUD 一起变。
+    this._scoreStr = '';
+    this._grazeStr = '';
+    this._grazeN = -1;
+    this._grazeDirty = true;
+    this._grazeMultTarget = 1;
+    this._grazeMultShown = 1;   // 平滑追 target，衰减时不会一帧掉回 1.0
+    this._grazeDirty = false;
+    this._scoreBumpT = 0;
+    this._buildScoreBox();
+  }
+
+  _buildScoreBox() {
+    // 分数框在 JS 里建、样式写在行内，而不是加进 index.html + style.css：
+    // 那两处是 Lead 的地盘，而且这样整块功能能跟着 hud.js 一起摘掉。
+    // 引用 --s / --serif / --gold 等 CSS 变量，缩放和主题仍然统一。
+    // ponytail: 行内样式不能复用媒体查询。若将来要针对窄屏换布局，
+    // 应当把 .hud-score 搬进 style.css，这里只保留建节点的部分。
+    const host = document.querySelector('.hud-right .stage-info') || document.querySelector('.hud-right');
+    if (!host || typeof document.createElement !== 'function') return;
+
+    const box = document.createElement('div');
+    box.className = 'hud-score';
+    box.style.display = 'flex';
+    box.style.flexDirection = 'column';
+    box.style.alignItems = 'flex-end';
+    box.style.lineHeight = '1.12';
+    box.style.padding = '0 0 calc(var(--s) * 3px)';
+    box.style.fontFamily = 'var(--serif)';
+    box.style.pointerEvents = 'none';
+
+    const num = document.createElement('span');
+    num.className = 'hs-num';
+    num.textContent = formatScore(0);
+    num.style.fontSize = 'max(13px, calc(var(--s) * 17px))';
+    num.style.letterSpacing = '.14em';
+    num.style.fontVariantNumeric = 'tabular-nums';
+    num.style.color = 'var(--text)';
+    num.style.textShadow = '0 calc(var(--s) * 2px) calc(var(--s) * 8px) rgba(0, 0, 0, .85)';
+    // 分数跳动时才做一次微放大；用 transform 而不是字号，避免每帧重排
+    num.style.transition = 'color .25s ease, transform .25s ease';
+    num.style.transformOrigin = 'right center';
+
+    const graze = document.createElement('span');
+    graze.className = 'hs-graze';
+    graze.textContent = '';
+    graze.style.fontSize = 'max(9px, calc(var(--s) * 10.5px))';
+    graze.style.letterSpacing = '.12em';
+    graze.style.fontVariantNumeric = 'tabular-nums';
+    graze.style.color = 'var(--dim)';
+    graze.style.opacity = '0';   // 还没擦过弹时整行不占视线
+    graze.style.transition = 'color .2s ease, opacity .3s ease';
+
+    box.appendChild(num);
+    box.appendChild(graze);
+    host.insertBefore(box, host.firstChild);
+
+    this.elScoreBox = box;
+    this.elScore = num;
+    this.elScoreGraze = graze;
+  }
+
+  /** 分数（每帧或每次变化都可以调，内部缓存上一次的值，没变就不写 DOM） */
+  setScore(n) {
+    const v = Math.max(0, Math.floor(Number(n) || 0));
+    // 补零 8 位，显示位数是固定的；只有数值变了才动 DOM
+    const s = formatScore(v);
+    if (s === this._scoreStr) return;
+    const grew = this._scoreStr !== '';
+    this._scoreStr = s;
+    if (this.elScore) this.elScore.textContent = s;
+    // 涨分才闪一下：掉分不会发生（分数只增不减），所以这里不用判方向
+    if (grew && this._scoreBumpT <= 0) this._scoreBumpT = 0.18;
+  }
+
+  /**
+   * 擦弹数 + 当前倍率。
+   * 倍率不直接生效，而是记成 target 交给 update() 平滑追 ——
+   * 连击断掉时数字向下滚，而不是一帧跳回 1.0（跳变像 bug）。
+   */
+  setGraze(n, mult = 1) {
+    const g = Math.max(0, Math.floor(Number(n) || 0));
+    const m = Math.min(SCORE.grazeMultMax, Math.max(1, Number(mult) || 1));
+    if (g === this._grazeN && Math.abs(m - this._grazeMultTarget) < 1e-3) return;
+    this._grazeN = g;
+    this._grazeMultTarget = m;
+    this._grazeDirty = true;
+  }
+
+  /** 分数 / 擦弹的逐帧刷新：只在这里动动画与样式，数值比较全走缓存 */
+  _refreshScore(dt) {
+    const step = dt > 0 ? Math.min(0.1, dt) : 1 / 60;
+    if (this._scoreBumpT > 0) {
+      this._scoreBumpT -= step;
+      if (this.elScore) this.elScore.style.transform = this._scoreBumpT > 0 ? 'scale(1.06)' : 'scale(1)';
+    }
+    if (this._grazeMultShown !== this._grazeMultTarget) {
+      // 指数逼近：约 0.25s 追平，够快能看出「在掉」，又不至于闪
+      this._grazeMultShown += (this._grazeMultTarget - this._grazeMultShown) * Math.min(1, step * 14);
+      if (Math.abs(this._grazeMultShown - this._grazeMultTarget) < 0.005) {
+        this._grazeMultShown = this._grazeMultTarget;
+      }
+      this._grazeDirty = true;
+    }
+    if (!this._grazeDirty) return;
+    this._grazeDirty = false;
+    this._writeGraze();
+  }
+
+  _writeGraze() {
+    const g = Math.max(0, this._grazeN);
+    if (g <= 0) {
+      if (this._grazeStr !== '') {
+        this._grazeStr = '';
+        if (this.elScoreGraze) this.elScoreGraze.textContent = '';
+      }
+      if (this.elScoreGraze) this.elScoreGraze.style.opacity = '0';
+      return;
+    }
+    const m = this._grazeMultShown;
+    const hot = m > 1.001;
+    // 倍率 1.0 时不显示 "×1.0"：没连击就是干净的一行 GRAZE，省得像是坏了
+    const s = hot ? `GRAZE ${g}  ×${m.toFixed(1)}` : `GRAZE ${g}`;
+    if (s !== this._grazeStr) {
+      this._grazeStr = s;
+      if (this.elScoreGraze) this.elScoreGraze.textContent = s;
+    }
+    if (this.elScoreGraze) {
+      this.elScoreGraze.style.opacity = '1';
+      // 连击热起来才染色变亮；1.0 时保持暗色，视觉上等于「无连击」
+      this.elScoreGraze.style.color = hot ? 'var(--gold)' : 'var(--dim)';
+    }
   }
 
   /** 残机图标随主角变化：灵梦 = 灵符，魔理沙 = 星星 */
@@ -291,6 +427,9 @@ export class Hud {
         this.elBanner?.classList.remove('show');
       }
     }
+
+    // 分数与擦弹倍率（数值缓存都在 setScore / setGraze 里比较，这里只跑动画）
+    this._refreshScore(dt);
   }
 
   /**
@@ -460,6 +599,19 @@ export class Hud {
       for (const pip of this.elPowerPips.children) pip.classList.remove('on');
     }
     this.elPowerPop?.classList.remove('show', 'up', 'down', 'gain');
+    // 分数归零：进关 / 重开时都要回到 00000000，不能带着上一关的数
+    this._scoreStr = '';
+    this._grazeStr = '';
+    this._grazeN = -1;
+    this._grazeDirty = true;
+    this._grazeMultTarget = 1;
+    this._grazeMultShown = 1;
+    this._scoreBumpT = 0;
+    if (this.elScore) {
+      this.elScore.textContent = formatScore(0);
+      this.elScore.style.transform = 'scale(1)';
+    }
+    this._writeGraze();
     this.hideBossBar();
     this.clearBanner();
   }

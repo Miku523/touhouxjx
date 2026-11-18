@@ -1,0 +1,11 @@
+import { launch, sleep } from './_pt_core.mjs';
+const T = await launch({ port: 9499, width: 1280, height: 720 });
+await T.nav('https://mikuascendlog.com/touhouxjx/index.html?nocache=1');
+await T.waitFor("!!window.__game", 90000);
+await sleep(6000);
+const v = await T.eval("JSON.stringify({t:window.__game.t,ver:(document.querySelector('.title-ver')||{}).textContent,gate:window.__game._bootGate&&window.__game._bootGate.done,lite:window.__game._bootGateLite})", { awaitPromise: false });
+console.log('state', v);
+const rep = await T.report();
+console.log('errors', JSON.stringify(rep.errors||[]).slice(0,300), 'bad', JSON.stringify(rep.httpBad||[]).slice(0,300));
+await T.shot('_perf/live_1684.png');
+await T.close();

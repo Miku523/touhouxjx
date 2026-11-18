@@ -1,0 +1,16 @@
+const fs=require('fs'),cp=require('child_process');
+const g=(a)=>{try{return cp.execSync(a,{encoding:'utf8'}).trim()}catch(e){return 'ERR '+e.message.slice(0,200)}};
+const out={};
+const html=fs.readFileSync('index.html','utf8');
+const vers=[...new Set(html.match(/1\.6\.[0-9]+/g)||[])];
+out.htmlVers=vers;
+const sw=fs.readFileSync('sw.js','utf8');
+out.swVer=[...new Set(sw.match(/hks-v1\.6\.[0-9]+/g)||[])];
+out.platVer=[...new Set((fs.readFileSync('src/ui/platform.js','utf8').match(/1\.6\.[0-9]+/g)||[]))];
+out.reg=g("grep -n -A3 \"id: 'yukari_ph'\" src/engine/songs/index.js");
+out.diffStat=g('git diff --stat');
+out.diffMain=g('git diff -- src/main.js | head -60');
+out.diffIdx=g('git diff -- src/engine/songs/index.js | head -40');
+out.diffMT=g('git diff -- src/game/musicTracks.js | head -40');
+out.ffprobe=g('ffprobe -v error -show_entries format=duration,size,bit_rate -of default=nw=1 src/assets/bgm/yukari_ph.mp3');
+fs.writeFileSync('tools/build/_yuk_kit/_probe3.txt', JSON.stringify(out,null,1));

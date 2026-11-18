@@ -2829,17 +2829,21 @@ body {
 }
 
 /* ============================================================
-   首屏启动幕（开屏）
+   首屏启动幕（开屏）—— 东方 Project 正作的启幕语法
    标题插画 + 立绘 decode 完成前盖住整屏；揭幕时菜单与人物同一帧出现，
    避免弱网下「先看到菜单面板，过一会儿才看到人物」。
 
    构图（自上而下）：
-     夜空（月晕 / 星点 / 落樱）
-     短金线 → 東方新紀行（逐字入场）→ ～ Chronicle of Gensokyo ～
-     细线 → 进度条（LOADING · 轨道 · 百分比）→ 少女祈祷中…
+     黑场（几乎看不见的星点 / 极慢落樱）
+     细线（自中向两侧展开）→ 東方新紀行（逐字淡入）→ ～ Chronicle of Gensokyo ～
+     细线 → 进度细线（LOADING · 百分比）→ 少女祈祷中…
+
+   为什么这么素：东方正作启幕的辨识度不在华丽，在克制——黑就真的黑，
+   光只有一点点，会动的只有极慢的东西。所以这里没有发光雾团、没有彩色
+   渐变进度条、没有扫描光带；字号、字距、细线才是主角。
 
    进度条宽度由 bootScreen.js 写进 --boot-p（0~100%）；脚本没起来时
-   （纯 CSS 阶段）条子停在 8%，靠 .bm-scan 的扫描光带表示「还在动」。
+   （纯 CSS 阶段）条子停在 8%——一条不动的细线，本来就像东方的读盘。
    ============================================================ */
 #boot {
   position: absolute;
@@ -2848,25 +2852,26 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* 视觉重心上移：Logo 的分量在顶部，正中心居中会显得整体偏下 */
   padding-bottom: calc(var(--s) * 26px);
   overflow: hidden;
   pointer-events: auto;
   isolation: isolate;
+  /* 黑场要真的黑：只在正中留一层极弱的墨蓝余温，边缘直接压到 #04050a。
+     弱网兜底（#boot-fallback）也是深底，从它切换到正式样式不会肉眼可见地跳。 */
   background:
-    radial-gradient(ellipse 88% 80% at 50% 46%, rgba(0, 0, 0, 0) 36%, rgba(0, 0, 0, .58) 100%),
-    radial-gradient(ellipse 74% 64% at 50% 36%, rgba(86, 46, 132, .50) 0%, rgba(32, 16, 58, .86) 46%, rgba(5, 3, 12, .98) 78%),
-    radial-gradient(ellipse 120% 62% at 50% 104%, rgba(126, 34, 54, .20) 0%, rgba(5, 3, 12, 0) 62%),
-    #05030a;
-  transition: opacity .55s ease, visibility .55s ease;
+    radial-gradient(ellipse 78% 66% at 50% 44%, rgba(12, 16, 26, .72) 0%, rgba(6, 8, 14, .94) 58%, #04050a 100%),
+    #04050a;
+  color: rgba(232, 226, 214, .9);
+  /* 揭幕是干净的整体淡出：不缩放、不闪白。0.8s 足够让人看清「暗下去」这件事 */
+  transition: opacity .8s ease, visibility .8s ease;
 }
+
 #boot.done {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
 
-/* ---------- 夜空：全部装饰层，别挡点击 ---------- */
 .boot-sky {
   position: absolute;
   inset: 0;
@@ -2875,78 +2880,77 @@ body {
   pointer-events: none;
 }
 
-/* 月晕：大半圆压在 Logo 身后，慢呼吸 */
 .boot-glow {
   position: absolute;
   left: 50%;
-  top: 30%;
-  width: calc(var(--s) * 560px);
-  height: calc(var(--s) * 560px);
+  top: 32%;
+  width: calc(var(--s) * 620px);
+  height: calc(var(--s) * 620px);
   transform: translate(-50%, -50%);
-  background: radial-gradient(
-    circle,
-    rgba(255, 246, 232, .13) 0%,
-    rgba(255, 186, 214, .07) 34%,
-    rgba(150, 90, 200, .05) 52%,
-    rgba(0, 0, 0, 0) 72%
-  );
-  animation: bootBreath 7.5s ease-in-out infinite;
+  border-radius: 50%;
+  /* 单色、极暗。东方启幕不靠光雾撑场，这层只是让纯黑不至于「死」掉 */
+  background: radial-gradient(circle, rgba(214, 202, 178, .16) 0%, rgba(214, 202, 178, .05) 38%, rgba(0, 0, 0, 0) 68%);
+  opacity: .15;
+  animation: bootBreath 11s ease-in-out infinite;
 }
 
-/* 星点：十几个 1~2px 的点，用多背景画，闪烁靠整体透明度 */
 .boot-stars {
   position: absolute;
   inset: 0;
+  opacity: .32;
+  /* 星点是「背景的一点脏」，不是星空。所以只有十来颗、亮度很低 */
   background-image:
-    radial-gradient(1.6px 1.6px at 11% 21%, rgba(255, 246, 232, .80), rgba(255, 246, 232, 0) 100%),
-    radial-gradient(1.2px 1.2px at 24% 13%, rgba(255, 246, 232, .62), rgba(255, 246, 232, 0) 100%),
-    radial-gradient(1.8px 1.8px at 37% 29%, rgba(255, 236, 244, .72), rgba(255, 236, 244, 0) 100%),
-    radial-gradient(1.2px 1.2px at 52% 16%, rgba(255, 246, 232, .55), rgba(255, 246, 232, 0) 100%),
-    radial-gradient(1.6px 1.6px at 67% 24%, rgba(255, 236, 226, .70), rgba(255, 236, 226, 0) 100%),
-    radial-gradient(1.2px 1.2px at 81% 15%, rgba(255, 246, 232, .58), rgba(255, 246, 232, 0) 100%),
-    radial-gradient(1.8px 1.8px at 91% 33%, rgba(255, 240, 214, .66), rgba(255, 240, 214, 0) 100%),
-    radial-gradient(1.2px 1.2px at 7% 43%, rgba(255, 246, 232, .50), rgba(255, 246, 232, 0) 100%),
-    radial-gradient(1.4px 1.4px at 19% 57%, rgba(255, 236, 244, .60), rgba(255, 236, 244, 0) 100%),
-    radial-gradient(1.2px 1.2px at 45% 48%, rgba(255, 246, 232, .46), rgba(255, 246, 232, 0) 100%),
-    radial-gradient(1.6px 1.6px at 61% 55%, rgba(255, 240, 222, .56), rgba(255, 240, 222, 0) 100%),
-    radial-gradient(1.2px 1.2px at 78% 47%, rgba(255, 246, 232, .44), rgba(255, 246, 232, 0) 100%),
-    radial-gradient(1.4px 1.4px at 88% 63%, rgba(255, 236, 244, .52), rgba(255, 236, 244, 0) 100%),
-    radial-gradient(1.2px 1.2px at 16% 74%, rgba(255, 246, 232, .40), rgba(255, 246, 232, 0) 100%),
-    radial-gradient(1.4px 1.4px at 34% 69%, rgba(255, 240, 222, .46), rgba(255, 240, 222, 0) 100%),
-    radial-gradient(1.2px 1.2px at 69% 77%, rgba(255, 246, 232, .38), rgba(255, 246, 232, 0) 100%);
-  animation: bootTwinkle 6.4s ease-in-out infinite;
+    radial-gradient(circle at 12% 18%, rgba(226, 222, 210, .55) 0, rgba(226, 222, 210, .55) 1px, transparent 1.7px),
+    radial-gradient(circle at 27% 42%, rgba(226, 222, 210, .32) 0, rgba(226, 222, 210, .32) 1px, transparent 1.8px),
+    radial-gradient(circle at 41% 12%, rgba(226, 222, 210, .42) 0, rgba(226, 222, 210, .42) 1.2px, transparent 2px),
+    radial-gradient(circle at 58% 30%, rgba(226, 222, 210, .26) 0, rgba(226, 222, 210, .26) 1px, transparent 1.8px),
+    radial-gradient(circle at 73% 16%, rgba(226, 222, 210, .48) 0, rgba(226, 222, 210, .48) 1px, transparent 1.7px),
+    radial-gradient(circle at 88% 38%, rgba(226, 222, 210, .3) 0, rgba(226, 222, 210, .3) 1.1px, transparent 1.9px),
+    radial-gradient(circle at 18% 74%, rgba(226, 222, 210, .3) 0, rgba(226, 222, 210, .3) 1px, transparent 1.8px),
+    radial-gradient(circle at 66% 82%, rgba(226, 222, 210, .34) 0, rgba(226, 222, 210, .34) 1px, transparent 1.8px),
+    radial-gradient(circle at 35% 88%, rgba(226, 222, 210, .24) 0, rgba(226, 222, 210, .24) 1px, transparent 1.9px),
+    radial-gradient(circle at 92% 68%, rgba(226, 222, 210, .28) 0, rgba(226, 222, 210, .28) 1px, transparent 1.8px);
+  animation: bootTwinkle 13s ease-in-out infinite;
 }
 
-/* 落樱：7 片，纯 CSS 定时；负延迟让首帧就已经在半空，不然前几秒是空屏 */
 .boot-petals {
   position: absolute;
   inset: 0;
+  overflow: hidden;
 }
+
 .boot-petals i {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: -6vh;
   width: calc(var(--s) * 12px);
   height: calc(var(--s) * 9px);
   border-radius: 62% 38% 58% 42% / 58% 62% 38% 42%;
-  background: linear-gradient(140deg, rgba(255, 228, 240, .96), rgba(255, 138, 190, .40));
-  box-shadow: 0 0 calc(var(--s) * 5px) rgba(255, 150, 200, .22);
+  /* 花瓣压成灰樱色：它是氛围，不是主角，抢戏就俗了 */
+  background: linear-gradient(140deg, rgba(226, 206, 210, .55), rgba(196, 158, 172, .18));
   opacity: 0;
   will-change: transform, opacity;
-  animation: bootPetal 18s linear infinite;
+  /* 极慢：60s 以上才走完一屏，肉眼几乎察觉不到它在动 */
+  animation: bootPetalSlow 68s linear infinite;
 }
-/* 用独立的 scale 属性做远近层次（不和 transform 动画打架） */
-.boot-petals i:nth-child(3n) { scale: .66; }
-.boot-petals i:nth-child(3n + 2) { scale: 1.22; }
-.boot-petals i:nth-child(1) { left: 5%;  animation-duration: 21s; animation-delay: -3s; }
-.boot-petals i:nth-child(2) { left: 21%; animation-duration: 17s; animation-delay: -11s; }
-.boot-petals i:nth-child(3) { left: 38%; animation-duration: 24s; animation-delay: -7s; }
-.boot-petals i:nth-child(4) { left: 56%; animation-duration: 19s; animation-delay: -15s; }
-.boot-petals i:nth-child(5) { left: 71%; animation-duration: 23s; animation-delay: -1s; }
-.boot-petals i:nth-child(6) { left: 85%; animation-duration: 16s; animation-delay: -9s; }
-.boot-petals i:nth-child(7) { left: 95%; animation-duration: 20s; animation-delay: -18s; }
 
-/* ---------- 中央一列：金字 / 副标 / 进度条 / 祈祷 ---------- */
+.boot-petals i:nth-child(3n) {
+  width: calc(var(--s) * 9px);
+  height: calc(var(--s) * 7px);
+}
+
+.boot-petals i:nth-child(3n + 2) {
+  width: calc(var(--s) * 14px);
+  height: calc(var(--s) * 10px);
+}
+
+.boot-petals i:nth-child(1) { left: 5%;  animation-duration: 72s; animation-delay: -9s; }
+.boot-petals i:nth-child(2) { left: 21%; animation-duration: 64s; animation-delay: -31s; }
+.boot-petals i:nth-child(3) { left: 38%; animation-duration: 78s; animation-delay: -51s; }
+.boot-petals i:nth-child(4) { left: 56%; animation-duration: 66s; animation-delay: -18s; }
+.boot-petals i:nth-child(5) { left: 71%; animation-duration: 74s; animation-delay: -44s; }
+.boot-petals i:nth-child(6) { left: 85%; animation-duration: 62s; animation-delay: -26s; }
+.boot-petals i:nth-child(7) { left: 95%; animation-duration: 70s; animation-delay: -58s; }
+
 .boot-center {
   position: relative;
   z-index: 1;
@@ -2954,164 +2958,155 @@ body {
   flex-direction: column;
   align-items: center;
   text-align: center;
+  /* 明朝体气质全靠这套系统字体栈撑（零依赖，不许下载字体） */
+  font-family: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "Songti SC", "STSong", "SimSun", serif;
 }
 
-/* Logo 上方的短金线：和标题页 logo-block 的 ::before 同一语言 */
 .boot-rule-top {
-  width: calc(var(--s) * 38px);
-  height: calc(var(--s) * 2px);
-  margin-bottom: calc(var(--s) * 18px);
-  background: linear-gradient(90deg, rgba(232, 54, 79, 0), var(--reimu) 22%, var(--gold) 78%, rgba(242, 210, 75, 0));
-  box-shadow: 0 0 calc(var(--s) * 8px) rgba(232, 54, 79, .45);
-  animation: bootIn .8s ease both;
-  animation-delay: .06s;
+  width: calc(var(--s) * 86px);
+  height: 1px;
+  margin-bottom: calc(var(--s) * 26px);
+  /* 低对比灰金：像纸上的一道铅笔线，不是发光装饰件 */
+  background: linear-gradient(90deg, rgba(200, 190, 170, 0), rgba(200, 190, 170, .34) 50%, rgba(200, 190, 170, 0));
+  transform-origin: center;
+  /* 东方的细线都是「从中间往两侧长出来」的，不是整体淡入 */
+  animation: bootRuleX 1.1s cubic-bezier(.2, .8, .25, 1) .1s both;
 }
 
-/* 金字：每个字各自一段竖直金色渐变，逐字入场 */
 .boot-logo {
   display: flex;
   align-items: baseline;
-  font-size: calc(var(--s) * 62px);
-  font-weight: 600;
-  line-height: 1.1;
+  justify-content: center;
+  font-size: calc(var(--s) * 58px);
+  font-weight: 400;
+  line-height: 1.18;
+  letter-spacing: .18em;
+  /* 字距在最后一个字后面也会多出一份，用负右外边距抵掉才真的居中 */
+  margin-right: -.18em;
   white-space: nowrap;
-  filter:
-    drop-shadow(0 calc(var(--s) * 2px) 0 rgba(62, 6, 26, .85))
-    drop-shadow(0 calc(var(--s) * 7px) calc(var(--s) * 14px) rgba(14, 2, 8, .72))
-    drop-shadow(0 0 calc(var(--s) * 28px) rgba(255, 104, 148, .40));
+  color: #ece6d8;
+  /* 只要一点极轻的暗影把字从黑场里托起来，不要金色光晕 */
+  text-shadow: 0 calc(var(--s) * 2px) calc(var(--s) * 12px) rgba(0, 0, 0, .8);
 }
+
 .boot-logo .bl-ch {
   display: inline-block;
-  padding: 0 calc(var(--s) * 10px); /* 字距用内边距撑，渐变不会被 letter-spacing 拉断 */
-  background: linear-gradient(178deg, #fffdf7 0%, #ffefd0 30%, #ffd98f 52%, #f0b355 66%, #ffe8b8 88%, #fffdf4 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: bootCh .78s cubic-bezier(.2, .7, .3, 1) both;
+  /* 逐字淡入：只有透明度 + 极小位移，不做 scale 弹跳 */
+  animation: bootChIn .9s cubic-bezier(.25, .8, .3, 1) both;
 }
-.boot-logo .bl-ch:nth-child(2) { animation-delay: .06s; }
-.boot-logo .bl-ch:nth-child(3) { animation-delay: .12s; }
-.boot-logo .bl-ch:nth-child(4) { animation-delay: .18s; }
-.boot-logo .bl-ch:nth-child(5) { animation-delay: .24s; }
+
+/* 120ms 一个字：像笔尖一个字一个字落下来，慢到能被看见 */
+.boot-logo .bl-ch:nth-child(1) { animation-delay: .18s; }
+.boot-logo .bl-ch:nth-child(2) { animation-delay: .30s; }
+.boot-logo .bl-ch:nth-child(3) { animation-delay: .42s; }
+.boot-logo .bl-ch:nth-child(4) { animation-delay: .54s; }
+.boot-logo .bl-ch:nth-child(5) { animation-delay: .66s; }
 
 .boot-sub {
-  margin-top: calc(var(--s) * 16px);
-  font-size: calc(var(--s) * 12px);
-  letter-spacing: calc(var(--s) * 3.4px);
-  padding-left: calc(var(--s) * 3.4px); /* 抵掉字距，保持视觉居中 */
-  color: rgba(255, 216, 166, .82);
-  animation: bootIn .9s ease both;
-  animation-delay: .34s;
+  margin-top: calc(var(--s) * 20px);
+  font-size: calc(var(--s) * 11px);
+  letter-spacing: .42em;
+  padding-left: .42em;
+  color: rgba(190, 182, 168, .55);
+  animation: bootFadeUp 1.1s ease .9s both;
 }
 
-/* 门禁状态行：启动幕在等关键资源时播报当前阶段（JS 动态插入，见 main.js _refreshBootStatus） */
+/* 运行时状态行（main.js _refreshBootStatus 动态插入）：压到几乎只剩一个暗示 */
 .boot-status {
-  margin-top: calc(var(--s) * 10px);
+  margin-top: calc(var(--s) * 12px);
   min-height: calc(var(--s) * 15px);
-  font-size: calc(var(--s) * 11px);
-  letter-spacing: calc(var(--s) * 1.4px);
-  padding-left: calc(var(--s) * 1.4px);
-  color: rgba(255, 226, 190, .58);
+  font-size: calc(var(--s) * 10.5px);
+  letter-spacing: .22em;
+  padding-left: .22em;
+  color: rgba(180, 174, 162, .4);
   opacity: 0;
   transition: opacity .4s ease;
 }
-.boot-status.on { opacity: 1; }
+
+.boot-status.on {
+  opacity: 1;
+}
 
 .boot-rule {
   width: calc(var(--s) * 132px);
   height: 1px;
-  margin-top: calc(var(--s) * 20px);
-  background: linear-gradient(90deg, rgba(255, 224, 170, 0), rgba(255, 224, 170, .42), rgba(255, 224, 170, 0));
-  animation: bootIn .9s ease both;
-  animation-delay: .4s;
+  margin-top: calc(var(--s) * 22px);
+  background: linear-gradient(90deg, rgba(200, 190, 170, 0), rgba(200, 190, 170, .28) 50%, rgba(200, 190, 170, 0));
+  transform-origin: center;
+  animation: bootRuleX 1s cubic-bezier(.2, .8, .25, 1) 1s both;
 }
 
-/* 进度条一行：LOADING · 轨道 · 百分比 */
 .boot-meter {
   display: flex;
   align-items: center;
-  gap: calc(var(--s) * 14px);
-  width: calc(var(--s) * 460px);
-  margin-top: calc(var(--s) * 40px);
-  animation: bootIn .9s ease both;
-  animation-delay: .46s;
+  gap: calc(var(--s) * 16px);
+  width: calc(var(--s) * 380px);
+  margin-top: calc(var(--s) * 34px);
+  animation: bootFadeUp 1.1s ease 1.15s both;
 }
+
 .bm-load {
   flex: none;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
   font-size: calc(var(--s) * 9px);
-  letter-spacing: calc(var(--s) * 2.6px);
-  color: rgba(242, 233, 216, .52);
-  animation: bootLoad 2.4s ease-in-out infinite;
+  letter-spacing: .34em;
+  color: rgba(190, 182, 168, .4);
 }
+
+/* 轨道是 1px 的单色细线，没有圆角、没有内描边——东方的读盘就是这样一根线 */
 .bm-track {
   position: relative;
   flex: 1;
-  height: calc(var(--s) * 3px);
-  border-radius: calc(var(--s) * 2px);
-  background: rgba(255, 226, 178, .10);
-  box-shadow: inset 0 0 0 1px rgba(255, 226, 178, .10);
+  height: 1px;
+  background: rgba(200, 190, 170, .14);
 }
-/* 内层裁切：扫描光带跑到头不会溢到右边的百分比上 */
+
 .bm-clip {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border-radius: inherit;
 }
+
 .bm-fill {
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
   width: var(--boot-p, 0%);
-  border-radius: inherit;
-  background: linear-gradient(90deg, rgba(232, 54, 79, .72) 0%, #f2d24b 58%, #fff6da 100%);
-  box-shadow:
-    0 0 calc(var(--s) * 6px) rgba(242, 210, 75, .55),
-    0 0 calc(var(--s) * 18px) rgba(232, 54, 79, .28);
+  /* 单色灰白填充，宽度平滑过渡就够；渐变与光晕在这里都是噪音 */
+  background: rgba(226, 218, 202, .62);
+  transition: width .28s linear;
 }
+
+/* 扫描光带是现代 loading 的语汇，东方没有这东西；保留节点只为不改 DOM */
 .bm-scan {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 32%;
-  background: linear-gradient(90deg, rgba(255, 246, 220, 0), rgba(255, 246, 220, .38), rgba(255, 246, 220, 0));
-  animation: bootScan 1.9s linear infinite;
+  display: none;
 }
-/* 纯 CSS 阶段还不知道进度：只留扫描光带，菱形头等 JS 接管后再出现 */
-#boot:not(.js) .bm-head { opacity: 0; }
-/* 条子满 100% 时：扫描光带收掉，头部亮点换成暖白色 */
-.boot-meter.full .bm-scan { opacity: 0; transition: opacity .25s ease; }
-.boot-meter.full .bm-head {
-  background: #fffdf4;
-  box-shadow:
-    0 0 calc(var(--s) * 10px) rgba(255, 250, 226, .95),
-    0 0 calc(var(--s) * 26px) rgba(242, 210, 75, .65);
+
+#boot:not(.js) .bm-head {
+  opacity: 0;
 }
-/* 进度头的菱形亮点：clamp 让它不会在 0% / 100% 探出轨道 */
+
+/* 菱形进度头同理：一根线走到哪里，本身就说明了进度 */
 .bm-head {
-  position: absolute;
-  top: 50%;
-  left: clamp(calc(var(--s) * 4px), var(--boot-p, 0%), calc(100% - calc(var(--s) * 4px)));
-  width: calc(var(--s) * 8px);
-  height: calc(var(--s) * 8px);
-  transform: translate(-50%, -50%) rotate(45deg);
-  background: #fff8e2;
-  box-shadow:
-    0 0 calc(var(--s) * 8px) rgba(255, 238, 190, .95),
-    0 0 calc(var(--s) * 20px) rgba(242, 210, 75, .55);
+  display: none;
 }
+
 .bm-pct {
   flex: none;
   min-width: calc(var(--s) * 34px);
   text-align: right;
-  font-size: calc(var(--s) * 12px);
-  letter-spacing: .12em;
-  color: #ffd8a6;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: calc(var(--s) * 10px);
+  letter-spacing: .08em;
+  color: rgba(200, 192, 178, .5);
   font-variant-numeric: tabular-nums;
 }
-.bm-pct b { font-weight: 500; }
+
+.bm-pct b {
+  font-weight: 400;
+}
+
 .bm-pct i {
   font-style: normal;
   margin-left: calc(var(--s) * 1px);
@@ -3119,85 +3114,108 @@ body {
   opacity: .6;
 }
 
+/* 「少女祈祷中…」是点睛，不是标题：小号、低对比、宽字距，别做大做亮 */
 .boot-pray {
-  margin-top: calc(var(--s) * 34px);
-  font-size: calc(var(--s) * 13px);
-  letter-spacing: calc(var(--s) * 3px);
-  padding-left: calc(var(--s) * 3px);
-  color: rgba(242, 233, 216, .66);
-  text-shadow: 0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .65);
-  animation: bootIn 1s ease both;
-  animation-delay: .54s;
+  margin-top: calc(var(--s) * 30px);
+  font-size: calc(var(--s) * 11.5px);
+  letter-spacing: .4em;
+  padding-left: .4em;
+  color: rgba(180, 175, 165, .42);
+  animation: bootFadeUp 1.2s ease 1.5s both;
 }
-/* 三个点依次亮起（不是整句闪），像在真的默念 */
-.bp-dots { display: inline-block; }
+
+.bp-dots {
+  display: inline-block;
+}
+
+/* 三个点各自延后出现，像真的在默念；出现后停在那儿，不整串闪 */
 .bp-dots i {
   font-style: normal;
-  opacity: .12;
-  animation: bootDot 1.6s ease-in-out infinite;
+  opacity: 0;
+  animation: bootDotIn .7s ease both;
 }
-.bp-dots i:nth-child(2) { animation-delay: .22s; }
-.bp-dots i:nth-child(3) { animation-delay: .44s; }
 
-/* 内框与角饰：和标题页 .title-mode .title-deco 用同一套几何（inset 13px、26px 角），
-   开屏淡出后边框留在原位，落到标题页时不会有任何位移。 */
+.bp-dots i:nth-child(1) { animation-delay: 1.75s; }
+.bp-dots i:nth-child(2) { animation-delay: 1.95s; }
+.bp-dots i:nth-child(3) { animation-delay: 2.15s; }
+
 .boot-frame {
-  --bc: rgba(255, 224, 176, .55);
+  /* 和标题页 .title-mode .title-deco 用同一套几何（inset 13px、26px 角），
+     开屏淡出后边框留在原位，落到标题页时不会有任何位移 */
+  --bc: rgba(200, 190, 170, .22);
   position: absolute;
   inset: calc(var(--s) * 13px);
   z-index: 2;
   pointer-events: none;
-  border: 1px solid rgba(255, 214, 160, .15);
+  border: 1px solid rgba(200, 190, 170, .1);
   background:
     linear-gradient(var(--bc), var(--bc)) left top / calc(var(--s) * 26px) 1px no-repeat,
-    linear-gradient(var(--bc), var(--bc)) left top / 1px calc(var(--s) * 26px) no-repeat,
-    linear-gradient(var(--bc), var(--bc)) right top / calc(var(--s) * 26px) 1px no-repeat,
     linear-gradient(var(--bc), var(--bc)) right top / 1px calc(var(--s) * 26px) no-repeat,
-    linear-gradient(var(--bc), var(--bc)) left bottom / calc(var(--s) * 26px) 1px no-repeat,
-    linear-gradient(var(--bc), var(--bc)) left bottom / 1px calc(var(--s) * 26px) no-repeat,
+    linear-gradient(var(--bc), var(--bc)) right top / calc(var(--s) * 26px) 1px no-repeat,
+    linear-gradient(var(--bc), var(--bc)) right bottom / 1px calc(var(--s) * 26px) no-repeat,
     linear-gradient(var(--bc), var(--bc)) right bottom / calc(var(--s) * 26px) 1px no-repeat,
-    linear-gradient(var(--bc), var(--bc)) right bottom / 1px calc(var(--s) * 26px) no-repeat;
-  animation: bootFade 1.4s ease both;
-  animation-delay: .3s;
+    linear-gradient(var(--bc), var(--bc)) left bottom / 1px calc(var(--s) * 26px) no-repeat,
+    linear-gradient(var(--bc), var(--bc)) left bottom / calc(var(--s) * 26px) 1px no-repeat,
+    linear-gradient(var(--bc), var(--bc)) left top / 1px calc(var(--s) * 26px) no-repeat;
+  animation: bootFade 1.6s ease .3s both;
+}
+
+/* 右下角版本号：纯 CSS 生成，不动 DOM。东方的版本号就是这种「几乎看不见」的存在 */
+#boot::after {
+  content: "ver 1.6.92";
+  position: absolute;
+  right: calc(var(--s) * 28px);
+  bottom: calc(var(--s) * 24px);
+  z-index: 3;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: calc(var(--s) * 9px);
+  letter-spacing: .22em;
+  color: rgba(180, 174, 162, .24);
+  pointer-events: none;
 }
 
 @keyframes bootFade {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
 @keyframes bootBreath {
-  0%, 100% { opacity: .7; transform: translate(-50%, -50%) scale(.96); }
-  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+  0%, 100% { opacity: .7; transform: translate(-50%, -50%) scale(.97); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.02); }
 }
+
 @keyframes bootTwinkle {
-  0%, 100% { opacity: .55; }
-  50% { opacity: .95; }
+  0%, 100% { opacity: .26; }
+  50% { opacity: .4; }
 }
-@keyframes bootPetal {
-  0% { transform: translate3d(0, -6vh, 0) rotate(0deg); opacity: 0; }
-  9% { opacity: .9; }
-  82% { opacity: .55; }
-  100% { transform: translate3d(calc(var(--s) * 96px), 108vh, 0) rotate(300deg); opacity: 0; }
+
+@keyframes bootPetalSlow {
+  0% { opacity: 0; transform: translate3d(0, -8vh, 0) rotate(0deg); }
+  12% { opacity: .17; }
+  86% { opacity: .1; }
+  100% { opacity: 0; transform: translate3d(calc(var(--s) * 62px), 108vh, 0) rotate(150deg); }
 }
-@keyframes bootScan {
-  from { transform: translateX(-105%); }
-  to { transform: translateX(430%); }
+
+/* 细线自中向两侧展开 */
+@keyframes bootRuleX {
+  from { opacity: 0; transform: scaleX(0); }
+  to { opacity: 1; transform: scaleX(1); }
 }
-@keyframes bootIn {
+
+/* 逐字入场：位移只有 6px，够了 */
+@keyframes bootChIn {
   from { opacity: 0; transform: translateY(calc(var(--s) * 6px)); }
   to { opacity: 1; transform: none; }
 }
-@keyframes bootCh {
-  from { opacity: 0; transform: translateY(calc(var(--s) * 16px)) scale(.94); }
+
+@keyframes bootFadeUp {
+  from { opacity: 0; transform: translateY(calc(var(--s) * 4px)); }
   to { opacity: 1; transform: none; }
 }
-@keyframes bootLoad {
-  0%, 100% { opacity: .42; }
-  50% { opacity: 1; }
-}
-@keyframes bootDot {
-  0%, 100% { opacity: .12; }
-  30%, 55% { opacity: 1; }
+
+@keyframes bootDotIn {
+  from { opacity: 0; }
+  to { opacity: .55; }
 }
 
 /* ============================================================
@@ -3615,20 +3633,35 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* 启动幕：入场、呼吸、落樱、闪烁、扫描全停，但字和进度条必须还在（别留空屏） */
+  /* 启动幕：入场、呼吸、落樱、闪烁全停，但字和进度条必须还在（别留空屏）。
+     新加的 bootRuleX / bootChIn / bootFadeUp / bootDotIn / bootPetalSlow 都挂在这里，
+     逐字、逐线的动画关掉后靠 opacity/transform 的终值兜住，画面仍是完整的静态一帧。 */
   #boot .boot-glow,
   #boot .boot-stars,
   #boot .boot-petals i,
   #boot .boot-rule-top,
   #boot .boot-logo .bl-ch,
   #boot .boot-sub,
+  #boot .boot-status,
   #boot .boot-rule,
   #boot .boot-meter,
   #boot .bm-load,
+  #boot .bm-fill,
   #boot .boot-pray,
-  #boot .bp-dots i { animation: none; }
-  #boot .bm-scan { display: none; }
-  #boot .bp-dots i { opacity: 1; }
+  #boot .bp-dots i,
+  #boot .boot-frame { animation: none; }
+  #boot .boot-rule-top,
+  #boot .boot-rule { opacity: .9; transform: none; }
+  #boot .boot-logo .bl-ch,
+  #boot .boot-sub,
+  #boot .boot-meter,
+  #boot .boot-pray,
+  #boot .boot-status { opacity: 1; transform: none; }
+  #boot .boot-frame { opacity: 1; }
+  #boot .bm-scan,
+  #boot .bm-head { display: none; }
+  #boot .bm-fill { transition: none; }
+  #boot .bp-dots i { opacity: .55; }
   #boot .boot-status { transition: none; }
   .spell-cutin.show .sc-rays,
   .spell-cutin.show .sc-speed,

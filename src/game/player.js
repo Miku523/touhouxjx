@@ -371,12 +371,12 @@ export class Player {
 
     // ---------- 尖刺 ----------
     if (this.invuln <= 0 && this.level.rectHitsSpike(this.x, this.y, this.w, this.h)) {
-      this.hurt(this.facing * -1);
+      this.hurt(this.facing * -1, null, 'spike');
     }
 
     // ---------- 掉出地图 ----------
     if (this.y > this.level.h + 80) {
-      this.die();
+      this.die('fall');
     }
   }
 
@@ -489,8 +489,8 @@ export class Player {
     return false;
   }
 
-  /** 受伤。dir：伤害来源方向（-1 从左边来，玩家被推向右边） */
-  hurt(dir, sourceX = null) {
+  /** 受伤。dir：伤害来源方向（-1 从左边来，玩家被推向右边）；cause：死因标记，只用于结算文案 */
+  hurt(dir, sourceX = null, cause = 'hit') {
     if (this.invuln > 0 || !this.alive || this.casting) return;
     if (sourceX !== null) dir = this.x + this.w / 2 < sourceX ? -1 : 1;
     this.hearts--;
@@ -506,17 +506,18 @@ export class Player {
       x: this.x + this.w / 2,
       y: this.y + this.h / 2,
       hearts: this.hearts,
+      cause,
     });
-    if (this.hearts <= 0) this.die();
+    if (this.hearts <= 0) this.die(cause);
   }
 
-  die() {
+  die(cause = 'hit') {
     if (!this.alive) return;
     this.alive = false;
     this.hearts = 0;
     this.vy = -620;
     this.vx = 0;
-    this.emit('die', { x: this.x + this.w / 2, y: this.y + this.h / 2 });
+    this.emit('die', { x: this.x + this.w / 2, y: this.y + this.h / 2, cause });
   }
 
   /** 消耗一条残机，回到检查点。返回是否还能继续 */

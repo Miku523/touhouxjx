@@ -126,3 +126,11 @@ tools/build/_remi_lead/preview_v2.wav
 # 本地调试截图 / 性能实测临时产物
 .tmp_shots/
 _perf/
+
+# BGM 母版 wav（构建中间产物，运行时只取 mp3；tools/build 可重新生成）
+src/assets/bgm/*.wav
+
+# 部署/线上截图（一次性核对用，不该留在仓库）
+_online_*.png
+_deploy_local_dist_*.png
+NUL

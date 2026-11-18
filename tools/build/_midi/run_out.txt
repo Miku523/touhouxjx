@@ -1,0 +1,4 @@
+tillwhen -> an_tillwhen.json  dur=106.84s bars=70 melody=ch3 segments=12
+border13 -> an_border.json  dur=142.44s bars=91 melody=ch0 segments=21
+border14 -> an_border14.json  dur=90.00s bars=58 melody=ch7 segments=38
+REPORT_MIDI.md written

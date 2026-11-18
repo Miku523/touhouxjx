@@ -6,11 +6,15 @@
    _drawTitleCharacter() 负责，本文件负责标题、副标题、选项、
    角饰、版本号与底部提示的入场 DOM 动画。
 
-   标题曲 150 BPM（一拍 0.4s），这里所有延时都是拍的整数/半整数倍：
+   节奏照东方正作的启动演出：安静、克制、一步一步来。
+   不是「一堆东西同时从远处飞进来」，而是先出线，再出字。
+
+   标题曲 150 BPM（一拍 0.4s），延时都是拍的整数/半整数倍：
      · 人物：0 拍起，4 拍落位（canvas，见 main.js）
-     · 标题：2 拍起，2 拍落位，同时展开左上金色短线
-     · 选项：4 拍起，每行再迟半拍（8 分音符），一行比一行
-             更靠左、更靠下，形成一条斜向的入场梯度
+     · 细线：1 拍起，从中心向两侧展开（scaleX 0 → 1）
+     · 标题：2 拍起，整块淡入 + 极小的上浮（位移 10px，不做横向飞入）
+     · 副标题：3 拍起
+     · 选项：4 拍起，每行再迟半拍（8 分音符），只有 24px 的横向位移
    main.js 会算出「离下一拍还有多久」，写进 overlay 的 --lead；
    CSS 每段延时都加上它，整段动画就压在鼓点上起步。
 
@@ -23,23 +27,34 @@
   --lead: 0s; /* main.js 会覆盖成离下一拍的时间 */
 }
 
-.title-mode.intro .logo-block {
-  animation: titleLogoIn .8s cubic-bezier(.16, .84, .22, 1) calc(var(--lead) + .8s) both;
-}
+/* 细线先出来：东方每个标题下面那道线都是「从无到有地长出来」，
+   不是淡入。用 transform 而不是 width，避免逐帧改布局。 */
 .title-mode.intro .logo-block::before {
   transform-origin: left center;
-  animation: titleRuleIn .6s cubic-bezier(.2, .9, .25, 1) calc(var(--lead) + 1.2s) both;
+  animation: titleRuleIn .7s cubic-bezier(.22, .8, .26, 1) calc(var(--lead) + .4s) both;
 }
+
+/* 标题本体：只淡入 + 上浮 10px。
+   原先是 translate -760px 的横向飞入，像 PV 片头，不像东方。 */
+.title-mode.intro .logo-block {
+  animation: titleLogoIn 1s cubic-bezier(.22, .8, .26, 1) calc(var(--lead) + .8s) both;
+}
+
+/* 副标题跟在标题后面一拍，纯淡入 */
 .title-mode.intro #subtitle {
-  animation: titleSubIn .8s cubic-bezier(.16, .84, .22, 1) calc(var(--lead) + 1s) both;
+  animation: titleSubIn .9s ease calc(var(--lead) + 1.2s) both;
 }
+
+/* 选项：从左侧 24px 处依次滑入，每行差半拍。
+   --ti 由 main.js 逐行写入，这里只负责把它换算成延时与位移。 */
 .title-mode.intro .btn {
-  animation: titleBtnIn .6s cubic-bezier(.18, .82, .2, 1) both;
+  animation: titleBtnIn .7s cubic-bezier(.22, .8, .26, 1) both;
   animation-delay: calc(var(--lead) + 1.6s + var(--ti, 0) * .2s);
 }
+/* 每项的底横线跟着那一项一起长出来 */
 .title-mode.intro .btn::after {
   transform-origin: left center;
-  animation: titleRuleIn .45s ease-out both;
+  animation: titleRuleIn .5s ease-out both;
   animation-delay: calc(var(--lead) + 1.75s + var(--ti, 0) * .2s);
 }
 .title-mode.intro .title-deco {
@@ -49,46 +64,39 @@
   animation: titleFadeIn .6s ease calc(var(--lead) + 1.8s) both;
 }
 .title-mode.intro .hint {
-  animation: titleHintIn .6s ease calc(var(--lead) + 2s) both;
+  animation: titleHintIn .6s ease calc(var(--lead) + 2.2s) both;
 }
 
-/* 选项区的一次斜向扫光：跟着逐行入场从右上扫到左下 */
+/* 选项区的斜向扫光：东方不做这种「UI 高光扫过」的效果，改成
+   一条极细的横线从上往下压过整个菜单区，速度慢、亮度极低，
+   只是把视线从标题带到菜单。 */
 .title-mode.intro .menu-block::before {
   content: "";
   position: absolute;
-  left: calc(var(--s) * -30px);
-  top: calc(var(--s) * -150px);
-  width: calc(var(--s) * 520px);
-  height: calc(var(--s) * 430px);
+  left: 0;
+  top: 0;
+  width: calc(var(--s) * 360px);
+  height: 1px;
   pointer-events: none;
-  background: linear-gradient(104deg,
-    rgba(255, 224, 176, 0) 36%,
-    rgba(255, 232, 190, .13) 46%,
-    rgba(255, 240, 206, .05) 54%,
-    rgba(255, 224, 176, 0) 64%);
-  filter: blur(calc(var(--s) * 5px));
-  mix-blend-mode: screen;
+  background: linear-gradient(90deg,
+    rgba(200, 190, 170, 0) 0%,
+    rgba(200, 190, 170, .22) 40%,
+    rgba(200, 190, 170, .22) 60%,
+    rgba(200, 190, 170, 0) 100%);
   opacity: 0;
-  animation: titleMenuSweep 1s cubic-bezier(.3, .6, .3, 1) calc(var(--lead) + 1.2s) both;
+  animation: titleMenuSweep 1.6s cubic-bezier(.3, .6, .3, 1) calc(var(--lead) + 1.4s) both;
 }
 
 @keyframes titleLogoIn {
-  0%   { opacity: 0; translate: calc(var(--s) * -760px) 0; }
-  16%  { opacity: 1; }
+  0%   { opacity: 0; translate: 0 calc(var(--s) * 10px); }
   100% { opacity: 1; translate: 0 0; }
 }
 @keyframes titleSubIn {
-  0%   { opacity: 0; translate: calc(var(--s) * -520px) 0; }
-  26%  { opacity: 1; }
-  100% { opacity: 1; translate: 0 0; }
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
 }
 @keyframes titleBtnIn {
-  0% {
-    opacity: 0;
-    translate: calc(var(--s) * (-430px - var(--ti, 0) * 46px))
-               calc(var(--s) * (14px + var(--ti, 0) * 8px));
-  }
-  18% { opacity: 1; }
+  0%   { opacity: 0; translate: calc(var(--s) * -24px) 0; }
   100% { opacity: 1; translate: 0 0; }
 }
 @keyframes titleRuleIn {
@@ -96,10 +104,12 @@
   30%  { opacity: 1; }
   100% { opacity: 1; transform: scaleX(1); }
 }
+/* 细线从上到下压过菜单区，扫完就停（不循环，不闪） */
 @keyframes titleMenuSweep {
-  0%   { opacity: 0; translate: calc(var(--s) * 140px) calc(var(--s) * -40px); }
-  22%  { opacity: .8; }
-  100% { opacity: 0; translate: calc(var(--s) * -170px) calc(var(--s) * 46px); }
+  0%   { opacity: 0; translate: 0 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: .8; }
+  100% { opacity: 0; translate: 0 calc(var(--s) * 300px); }
 }
 @keyframes titleHintIn {
   0%   { opacity: 0; translate: 0 calc(var(--s) * 8px); }

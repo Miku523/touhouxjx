@@ -1,0 +1,71 @@
+=== tillwhen : 11. Hiroari Shoots a Strange Bird ~ Till When (ZUN).mid
+division=480  tracks=1  bpm_of=155
+tempo segs (tick, sec, uspq):
+   tick=0 sec=0.000 uspq=387097 bpm=155.00
+  ch0 notes=418 pitch=64..83 progs=[1] avgvel=110.5 t=1.548..106.839
+  ch1 notes=180 pitch=40..67 progs=[32] avgvel=116.1 t=32.516..106.839
+  ch2 notes=704 pitch=37..59 progs=[36] avgvel=112.7 t=1.548..106.839
+  ch3 notes=192 pitch=62..100 progs=[30] avgvel=104.0 t=1.548..82.474
+  ch4 notes=128 pitch=81..91 progs=[16] avgvel=98.7 t=20.129..32.516
+  ch5 notes=256 pitch=70..82 progs=[4] avgvel=109.9 t=7.742..32.516
+  ch6 notes=238 pitch=66..95 progs=[56] avgvel=115.3 t=31.742..106.839
+  ch7 notes=238 pitch=63..87 progs=[56] avgvel=113.3 t=31.742..106.839
+  ch8 notes=120 pitch=45..81 progs=[48] avgvel=116.1 t=32.516..106.839
+  ch9 notes=1774 pitch=36..51 progs=[24] avgvel=100.0 t=1.548..106.839
+  ch10 notes=238 pitch=63..87 progs=[61] avgvel=73.3 t=31.742..106.839
+  ch11 notes=238 pitch=66..95 progs=[61] avgvel=115.3 t=31.742..106.839
+
+=== border13 : 13. Bloom Nobly, Ink-black Cherry Blossom ~ Border of Life (ZUN).mid
+division=480  tracks=1  bpm_of=144
+tempo segs (tick, sec, uspq):
+   tick=0 sec=0.000 uspq=416667 bpm=144.00
+   tick=17280 sec=15.000 uspq=387096 bpm=155.00
+   tick=30720 sec=25.839 uspq=382165 bpm=157.00
+   tick=30721 sec=25.839 uspq=387096 bpm=155.00
+   tick=30821 sec=25.920 uspq=389610 bpm=154.00
+   tick=30921 sec=26.001 uspq=392156 bpm=153.00
+   tick=31001 sec=26.067 uspq=394736 bpm=152.00
+   tick=31061 sec=26.116 uspq=397350 bpm=151.00
+   tick=31141 sec=26.182 uspq=400000 bpm=150.00
+   tick=31201 sec=26.232 uspq=402684 bpm=149.00
+   tick=31241 sec=26.266 uspq=405405 bpm=148.00
+   tick=31301 sec=26.316 uspq=408163 bpm=147.00
+   tick=31381 sec=26.384 uspq=410958 bpm=146.00
+   tick=31421 sec=26.419 uspq=413793 bpm=145.00
+   tick=31501 sec=26.488 uspq=416666 bpm=144.00
+   tick=31581 sec=26.557 uspq=419580 bpm=143.00
+   tick=31661 sec=26.627 uspq=422535 bpm=142.00
+   tick=31680 sec=26.644 uspq=400000 bpm=150.00
+   tick=32160 sec=27.044 uspq=387096 bpm=155.00
+   tick=143040 sec=116.463 uspq=405405 bpm=148.00
+  ch0 notes=1304 pitch=39..106 progs=[1] avgvel=105.9 t=1.667..142.408
+  ch1 notes=186 pitch=37..76 progs=[0] avgvel=98.8 t=1.667..142.410
+  ch2 notes=300 pitch=62..83 progs=[80] avgvel=106.4 t=67.108..116.438
+  ch3 notes=597 pitch=55..95 progs=[4] avgvel=103.1 t=1.875..142.410
+  ch4 notes=1010 pitch=40..71 progs=[36] avgvel=113.5 t=15.774..116.463
+  ch5 notes=272 pitch=57..86 progs=[0] avgvel=88.1 t=27.430..52.979
+  ch6 notes=216 pitch=48..96 progs=[56] avgvel=109.9 t=27.818..142.408
+  ch7 notes=378 pitch=62..99 progs=[80] avgvel=107.8 t=79.302..116.463
+  ch8 notes=256 pitch=51..71 progs=[0] avgvel=113.7 t=66.915..116.666
+  ch9 notes=2460 pitch=36..50 progs=[24] avgvel=96.3 t=1.667..142.438
+  ch10 notes=398 pitch=54..98 progs=[48] avgvel=104.2 t=1.667..142.408
+  ch11 notes=129 pitch=61..95 progs=[81] avgvel=121.9 t=27.818..116.282
+  ch12 notes=300 pitch=74..95 progs=[80] avgvel=95.7 t=67.108..116.438
+  ch14 notes=266 pitch=46..93 progs=[48] avgvel=99.5 t=1.667..142.438
+  ch15 notes=80 pitch=39..56 progs=[35] avgvel=117.0 t=66.915..116.463
+
+=== border14 : 14. Border of Life (ZUN).mid
+division=480  tracks=1  bpm_of=152
+tempo segs (tick, sec, uspq):
+   tick=0 sec=0.000 uspq=394737 bpm=152.00
+  ch0 notes=317 pitch=51..77 progs=[1] avgvel=106.9 t=1.579..90.000
+  ch1 notes=264 pitch=63..89 progs=[1] avgvel=105.0 t=14.211..90.000
+  ch2 notes=833 pitch=41..57 progs=[26] avgvel=112.4 t=7.895..90.000
+  ch3 notes=588 pitch=54..94 progs=[5] avgvel=102.4 t=1.579..90.000
+  ch4 notes=833 pitch=41..57 progs=[36] avgvel=112.4 t=7.895..90.000
+  ch5 notes=176 pitch=42..80 progs=[52] avgvel=102.7 t=1.579..89.925
+  ch6 notes=182 pitch=51..97 progs=[56] avgvel=115.3 t=13.816..64.737
+  ch7 notes=169 pitch=65..101 progs=[16] avgvel=110.6 t=7.895..89.925
+  ch8 notes=176 pitch=54..92 progs=[49] avgvel=102.7 t=1.579..89.925
+  ch9 notes=1298 pitch=36..49 progs=[24] avgvel=98.9 t=26.053..90.000
+  ch10 notes=272 pitch=60..89 progs=[30] avgvel=117.3 t=63.947..90.000

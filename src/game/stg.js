@@ -209,22 +209,22 @@ export class StgPlayer {
     this.syncWorld(scroll);
   }
 
-  hurt(dir = 1) {
+  hurt(dir = 1, cause = 'bullet') {
     if (this.invuln > 0 || !this.alive) return;
     this.hearts--;
     this.invuln = 1.4;
     this.hitFlash = 0.3;
     this.hurtT = 0.28;
-    this.emit('hurt', { x: this.worldX, y: this.worldY, hearts: this.hearts });
-    if (this.hearts <= 0) this.die();
+    this.emit('hurt', { x: this.worldX, y: this.worldY, hearts: this.hearts, cause });
+    if (this.hearts <= 0) this.die(cause);
   }
 
-  die() {
+  die(cause = 'bullet') {
     if (!this.alive) return;
     this.alive = false;
     this.deadT = 0;
     this.hearts = 0;
-    this.emit('die', { x: this.worldX, y: this.worldY });
+    this.emit('die', { x: this.worldX, y: this.worldY, cause });
   }
 
   respawn() {

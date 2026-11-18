@@ -1,0 +1,11 @@
+const {execFileSync}=require('child_process'),fs=require('fs');
+const run=(args)=>{try{return execFileSync('git',args,{encoding:'utf8'}).trim()}catch(e){return 'ERR '+String(e.message).slice(0,200)}};
+const out={};
+out.headIdx=run(['show','HEAD:src/engine/songs/index.js']).split('\n').filter(l=>/yukari|ph_boss/.test(l));
+out.headMT=run(['show','HEAD:src/game/musicTracks.js']).split('\n').filter(l=>/ph_boss/.test(l)).length;
+let headMain=run(['show','HEAD:src/main.js']);
+out.headMainPh=(headMain.match(/ph_boss/g)||[]).length;
+out.trackCount=run(['show','HEAD:src/game/musicTracks.js']).split('\n').filter(l=>/^\s{4}key: /.test(l)).length;
+out.curTrackCount=fs.readFileSync('src/game/musicTracks.js','utf8').split('\n').filter(l=>/^\s{4}key: /.test(l)).length;
+fs.writeFileSync('tools/build/_yuk_kit/_git4.json',JSON.stringify(out,null,1));
+console.log('ok');

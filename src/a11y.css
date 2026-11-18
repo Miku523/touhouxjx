@@ -1,0 +1,72 @@
+/*
+ * 无障碍设置的 DOM 侧样式。只被 a11y.js 用，不碰 style.css / title.css。
+ *
+ * 变量由 src/game/a11y.js 的 applyDom() 写到 :root：
+ *   --hks-bullet-1/2/3  当前预设的三个代表色（预设色块预览）
+ *   --hks-hitbox        判定点颜色
+ *   --hks-veil          背景压暗强度（0..1，仅展示用）
+ * 之所以走 CSS 变量而不是 JS 直接改元素样式：设置页每帧重建 innerHTML，
+ * 变量挂在 :root 上就不会被重建冲掉，也省得逐个元素查。
+ */
+
+:root {
+  --hks-bullet-1: #ff5ea8;
+  --hks-bullet-2: #8fd8ff;
+  --hks-bullet-3: #ffd23f;
+  --hks-hitbox: #ff5ea8;
+  --hks-veil: 0;
+}
+
+/* 预设色块：设置页里那一排小圆点 */
+.hks-a11y-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+}
+
+.hks-a11y-dots > i {
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(8, 10, 26, 0.75) inset;
+}
+
+/* 高对比开启时，色块自己也要有描边——否则在浅色面板上白点会消失 */
+.hks-a11y-contrast .hks-a11y-dots > i {
+  box-shadow: 0 0 0 1px rgba(6, 8, 22, 0.9), 0 0 6px currentColor;
+}
+
+/* 判定点色块的额外示形（一个大一点的圈） */
+.hks-a11y-dots > i.hks-a11y-hit {
+  width: 12px;
+  height: 12px;
+  background: var(--hks-hitbox) !important;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(6, 8, 22, 0.95);
+}
+
+/*
+ * 降低闪烁：DOM 侧的动画一律停掉。
+ * 游戏本体走 canvas，靠 a11y.js 的 getFxLevel()；这里只兜住设置界面自己
+ * （标题呼吸、面板滑入等），否则「我把闪烁关了」和眼前还在闪的菜单互相打脸。
+ */
+.hks-a11y-reduced *,
+.hks-a11y-reduced *::before,
+.hks-a11y-reduced *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* 尊重系统的减少动态偏好：与上面的显式开关同样处理 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

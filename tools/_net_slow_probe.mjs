@@ -1,0 +1,18 @@
+import { launch, sleep } from './_pt_core.mjs';
+const T = await launch({ port: 9570, width: 1280, height: 720, headless: false });
+await T.send('Network.setCacheDisabled', { cacheDisabled: true });
+await T.send('Network.emulateNetworkConditions', { offline:false, latency: 400, downloadThroughput: 17*1024, uploadThroughput: 8*1024 });
+const t0 = Date.now();
+await T.nav('http://127.0.0.1:8138/index.html?slow=1');
+await T.waitFor("document.querySelector('#boot') && getComputedStyle(document.querySelector('#boot')).opacity === '0'", 240000).catch(()=>{});
+const tMenu = Date.now()-t0;
+await T.waitFor("!!window.__game", 60000).catch(()=>{});
+const tGame = Date.now()-t0;
+const res = await T.eval("JSON.stringify(performance.getEntriesByType('resource').map(e=>({n:e.name.replace('http://127.0.0.1:8138/',''),t:Math.round(e.startTime),d:Math.round(e.duration),s:e.transferSize})))");
+const list = JSON.parse(res);
+console.log('menu_at_ms', tMenu, 'game_at_ms', tGame, 'count', list.length);
+const total = list.reduce((a,b)=>a+(b.s||0),0);
+console.log('bytes', total);
+const byType = {};
+list.sort((a,b)=>b.d-a.d).slice(0,15).forEach(e=>console.log(String(e.d).padStart(6), 'end'+String(e.t+e.d).padStart(7), String(e.s).padStart(7), e.n));
+await T.close(); process.exit(0);

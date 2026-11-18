@@ -10,6 +10,9 @@
  *   同一颗粒子的所有随机量在出生时确定（确定性 PRNG），整段生命周期外观稳定不闪烁。
  */
 
+// 「降低闪烁」（无障碍）：只读全局开关，把最扎眼的特效压下去。a11y.js 无依赖，不会成环。
+import { isReducedFx } from './a11y.js';
+
 const MAX_PARTICLES = 900;
 const SS = 2;              // 精灵超采样倍率
 const GLOW_R = 2.4;        // 光点精灵绘制半径 = size * GLOW_R
@@ -273,6 +276,11 @@ export class Fx {
 
   /** 击破/受击的爆散光点 */
   burst(x, y, color, n = 12, speed = 260) {
+    // 降低闪烁：粒数压到 1/3、速度降到 0.7 —— 便宜且观感差别最小
+    if (isReducedFx()) {
+      n = Math.max(2, Math.ceil(n / 3));
+      speed *= 0.7;
+    }
     const [r, g, b] = this._hexToRgb(color);
     for (let i = 0; i < n; i++) {
       const ang = (i / n) * Math.PI * 2 + rnd() * 0.6;
@@ -292,6 +300,11 @@ export class Fx {
 
   /** 闪光扩散环（双环：亮芯 + 外扩散） */
   shockwave(x, y, color, size = 20, grow = 420, life = 0.4) {
+    // 降低闪烁：扩散慢一半、存续短四成 —— 大面积高频扩张是最刺眼的一种
+    if (isReducedFx()) {
+      grow *= 0.5;
+      life *= 0.6;
+    }
     const [r, g, b] = this._hexToRgb(color);
     const p = this._base(this._take(), x, y, r, g, b, life);
     p.type = P_RING;
@@ -346,6 +359,8 @@ export class Fx {
 
   /** 冲击波式的方框闪（Boss 出场／符卡宣告）：克制，不刺眼 */
   flash(x, y, color, size = 40) {
+    // 降低闪烁：方框闪本身就是为了「闪」而存在，降不了就干脆不出
+    if (isReducedFx()) return;
     const [r, g, b] = this._hexToRgb(color);
     const p = this._base(this._take(), x, y, r, g, b, 0.26);
     p.type = P_RING;

@@ -28,6 +28,8 @@ import { drawSky, drawParallax, drawTiles, drawAmbient } from '../art/scenes.js'
 import { linkTier } from '../engine/lazy_preload.js';
 import { drawCardFx } from './cardfx.js';
 import { updateCardEffect } from './cardEffects.js';
+import { Score } from './score.js';
+import { installPool, drawHitboxAura } from './a11y.js';
 
 /**
  * EXTRA = 连环 Boss Rush：进关就开打，没有道中。
@@ -936,8 +938,13 @@ export class Stage {
 
     this.fx = new Fx();
     this.bullets = new BulletPool();
+    // 无障碍：给弹池打上换色猴补丁（a11y.js）。不改判定范围，只改观感。
+    installPool(this.bullets);
     this.shots = new PlayerShots();
     this.camera = new Camera(this.level);
+    // 本关计分器（src/game/score.js）：擦弹连击倍率、击破/道具/符卡/通关加分。
+    // 与 POWER 是两条独立的账：POWER 给资源，Score 只给数字，互不影响平衡。
+    this.score = new Score();
 
     this.t = 0;
     this.time = 0;
@@ -1174,6 +1181,8 @@ export class Stage {
     // 符卡屏幕染色的余韵，和 DOM cut-in 一起淡出
     if (this.castFx > 0) this.castFx = Math.max(0, this.castFx - dt * 1.05);
     this.camera.beginStep();
+    // 擦弹连击的衰减走逻辑时钟，跟关卡其余部分同一套 dt（暂停时自然停表）
+    this.score.tick(dt);
 
     const p = this.player;
     p.shootCd = Math.max(0, (p.shootCd || 0) - dt);
@@ -1216,7 +1225,7 @@ export class Stage {
       if (hit) {
         this.fx.burst(hit.x, hit.y, hit.color, 10, 260);
         hit.active = false;
-        p.hurt(hit.x < hp.x ? -1 : 1);
+        p.hurt(hit.x < hp.x ? -1 : 1, 'bullet');
       }
       if (this.mode === 'stg') {
         // 擦弹：POWER 收益照旧，但 1UP 进度只加 0.02 点 / 颗（99 点 = 1 命）。
@@ -1225,6 +1234,8 @@ export class Stage {
         if (g > 0) {
           this._addPower(g * POWER.graze, false);
           this._addExtend(g * POWER.grazePoints);
+          // 擦弹是最高倍率的加分来源：倍率按累计擦弹升档，停手 2s 后回落
+          this.score.graze(g);
         }
       }
     }
@@ -1236,6 +1247,7 @@ export class Stage {
         onHit: () => this.onEvent('shotHit'),
         onKill: () => {
           this._addPower(POWER.kill);
+          this.score.kill('fairy');
           this.onEvent('enemyKill');
         },
       });
@@ -1443,6 +1455,7 @@ export class Stage {
         onStomp: () => this.onEvent('stomp'),
         onKill: () => {
           this._addPower(POWER.kill);
+          this.score.kill('fairy');
           this.onEvent('enemyKill');
         },
       });
@@ -1483,6 +1496,7 @@ export class Stage {
       onHit: () => this.onEvent('shotHit'),
       onKill: () => {
         this._addPower(POWER.killStg);
+        this.score.kill('fairy');
         this.onEvent('enemyKill');
       },
     });
@@ -1655,7 +1669,7 @@ export class Stage {
     if (this.chainIdx >= EXTRA_CHAIN.length - 1) {
       this.state = 'clear';
       this.finished = true;
-      this.onEvent('clear', { boss: enc ? enc.key : 'flandre' });
+      this.onEvent('clear', { boss: enc ? enc.key : 'flandre', score: this.score.total });
       return;
     }
     this.state = 'play';
@@ -1791,6 +1805,7 @@ export class Stage {
       this.enemies.damageArea(hp.x, hp.y, 900, 99, this.fx, {
         onKill: () => {
           this._addPower(POWER.kill);
+          this.score.kill('fairy');
           // 符卡清屏也会报击杀，但 onHit 不接（99 伤害会瞬间刷屏）
           this.onEvent('enemyKill');
         },
@@ -1832,17 +1847,20 @@ export class Stage {
         it.taken = true;
         if (it.kind === 'coin') {
           this.fx.sparkle(it.x, it.y, '#ffd23f');
+          this.score.item('coin');
           this.onEvent('coin', { value: 1 });
         } else if (it.kind === 'oneup') {
           // 1UP 道具：回一条残机（走和满槽奖励同一条 _addExtend 通道，横幅/音效统一）
           this.fx.sparkle(it.x, it.y, '#ff9ad5');
           this.fx.shockwave(it.x, it.y, '#ffd6ef', 12, 320, 0.45);
           this._addExtend(POWER.extend);
+          this.score.item('oneup');
           this.onEvent('oneup', { lives: p.lives });
         } else {
           // 吃 P 点：涨 POWER，火力等级可能随之提升
           this.fx.sparkle(it.x, it.y, '#6ee7ff');
           this._addPower(POWER.pickup);
+          this.score.item('power');
           this.onEvent('power', { value: POWER.pickup, level: p.fireLevel });
         }
       }
@@ -1931,6 +1949,8 @@ export class Stage {
       this._addExtend(10);
       reward = 'points';
     }
+    // ---- 分数：符卡按「是否按时 + 是否无伤」结算（按时+无伤 = 双倍）----
+    const cardScore = this.score.cardClear({ onTime: !!res.ok, noHit });
     // ---- 连环 Boss Rush 专属奖励：咲夜第 2 / 第 4 张卡击破 → 各 +1 残机 ----
     // 用整张卡表里的全局卡号判断（本场是切片，spellIdx 只是本场内序号）。
     // 只有真的打完（拿到 cardResult）才走到这里：限时到点被强制送走的卡不算击破。
@@ -1944,7 +1964,7 @@ export class Stage {
     }
     // reward 交给 main.js 决定横幅：'power'（+火力）/ 'life'（1UP）/ 'points'（+10 点）
     // noHit/base/bonus 供横幅与验证脚本区分「普通击破」「无伤」「满槽」三种情况。
-    this.onEvent('cardResult', { ...res, reward, noHit, base, bonus });
+    this.onEvent('cardResult', { ...res, reward, noHit, base, bonus, score: cardScore, scoreTotal: this.score.total });
   }
 
   _onPlayerEvent(ev) {
@@ -2066,8 +2086,9 @@ export class Stage {
     this.boss = new Boss(key, bx, by, {
       difficulty: this.difficulty,
       // 连锁战：只取这个 Boss 卡表里的一段（咲夜 4 张卡拆成前后两场，各 2 张）
-      cardFrom: chainEnc ? (chainEnc.cardFrom || 0) : undefined,
-      cardCount: chainEnc ? chainEnc.cardCount : undefined,
+      // 符卡练习：opts 显式给卡切片时优先（?? 而非 ||，cardFrom:0 是合法值）
+      cardFrom: opts.cardFrom ?? (chainEnc ? (chainEnc.cardFrom || 0) : undefined),
+      cardCount: opts.cardCount ?? (chainEnc ? chainEnc.cardCount : undefined),
       // Extra 不参与 4/5/6 面的难符卡裁剪
       stageNumber: this.extra ? 0 : this.index + 1,
       // 平台关启用近战系统：踩踏 / 冲刺破势 / 破势硬直 / 俯冲砸地
@@ -2077,7 +2098,9 @@ export class Stage {
         : by + 240,
     });
     // 本场第一张卡在整张卡表里的偏移：1UP 奖励 / 卡号都靠它换算
-    this.cardGlobalFrom = (this.boss && this.boss.cardGlobalFrom) || (chainEnc ? (chainEnc.cardFrom || 0) : 0);
+    this.cardGlobalFrom = this.boss && this.boss.cardGlobalFrom
+      ? this.boss.cardGlobalFrom
+      : (opts.cardFrom ?? (chainEnc ? (chainEnc.cardFrom || 0) : 0));
     this.boss.x = Math.max(300, Math.min(this.boss.x, this.level.w - 200));
     // EXTRA：本场窗口里的小头目（§6-D3）。放在 beginBoss 里而不是 _triggerChain，
     // 是因为 beginBoss 开头的 removeAll/clearActive 会把场上清空，入场必须在清场之后。
@@ -2157,6 +2180,7 @@ export class Stage {
     // 计时器归零后由 _updatePlatform 在「能自由跑图」时累加。
     this._midClearT = 0;
     this._midClearX = p ? p.x + p.w / 2 : 0;
+    this.score.kill('midboss', b ? b.key : 'remilia');
     this.onEvent('midbossClear', { key: b ? b.key : 'remilia' });
   }
 
@@ -2189,7 +2213,8 @@ export class Stage {
     const b = this.boss;
     this.fx.burst(b.x, b.y - 80, b.def.accent, 40, 500);
     this.fx.shockwave(b.x, b.y - 80, '#ffffff', 30, 1400, 0.8);
-    this.onEvent('clear', { boss: b.key });
+    this.score.kill('boss', b.key);
+    this.onEvent('clear', { boss: b.key, score: this.score.total });
   }
 
   _updateCamera(dt) {
@@ -2697,6 +2722,11 @@ export class Stage {
     if (this.mode === 'stg') {
       ctx.save();
       this.player.draw(ctx);
+      // 判定点高亮（无障碍）：这一层是屏幕坐标，hitPoint 是世界坐标，必须减相机。
+      const hpk = this.playerHitPoint;
+      if (hpk && Number.isFinite(hpk.x) && Number.isFinite(hpk.y)) {
+        drawHitboxAura(ctx, { x: hpk.x - cam.x, y: hpk.y - cam.y, r: hpk.r }, this.t);
+      }
       ctx.restore();
     }
 
@@ -3290,6 +3320,10 @@ export class Stage {
       castCost: POWER.castCost,
       perLevel: POWER.perLevel,
       char: this.char,
+      // 分数：/game/score.js 的账，与 POWER 完全独立
+      score: this.score.total,
+      scoreGraze: this.score.grazeCount,
+      scoreMult: this.score.mult,
       // EXTRA 显示本次挑战的累计时间（连环 Boss 战没有道中，计时一路走）
       time: this.extra ? this.extraT : this.time,
       boss: this.boss && this.boss.state !== 'dead'

@@ -81,7 +81,8 @@ try {
   const songsAll = (smoke && smoke.songsAll) || [];
   chk('全曲库模块在揭幕前到货（>=18）', songsAll.length >= 18,
     `n=${songsAll.length} late=${songsAll.filter((s) => !(s.end <= smoke.revealedAt + 5)).length}`);
-  chk('7 个主题低清背景在揭幕前到货（14 张）', (smoke && smoke.bgLq) >= 14, `lq=${smoke && smoke.bgLq}`);
+  // 1.6.90 起启动只预热第 1 面背景，高清档改空闲升档（弱网首屏省 12 张图的带宽）
+  chk('第 1 面低清背景在揭幕前到货（>=2）', (smoke && smoke.bgLq) >= 2, `lq=${smoke && smoke.bgLq}`);
   chk('Boss 立绘在揭幕前到货（>=7）', (smoke && smoke.boss) >= 7, `boss=${smoke && smoke.boss}`);
   chk('自机动作帧在揭幕前到货（>=8）', (smoke && smoke.chars) >= 8, `run=${smoke && smoke.chars}`);
   const kit = (smoke && smoke.kit) || [];
@@ -107,11 +108,12 @@ try {
   })()`);
   await T.key('Enter');
   let reachedPlay = false;
-  for (let i = 0; i < 25 && !reachedPlay; i += 1) {
-    const ok = await T.waitFor('window.__game.state === "play"', 700);
+  // 开场对话有 18 句，每句要两次 Enter（一次跳过打字机、一次翻页），所以次数放宽到 90 次。
+  for (let i = 0; i < 90 && !reachedPlay; i += 1) {
+    const ok = await T.waitFor('window.__game.state === "play"', 400);
     if (ok) { reachedPlay = true; break; }
     await T.key('Enter');
-    await sleep(320);
+    await sleep(120);
   }
   await sleep(2500);
   const play = await T.eval(`(() => {

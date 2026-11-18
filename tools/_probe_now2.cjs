@@ -1,0 +1,11 @@
+const fs=require('fs'),cp=require('child_process');
+const out={};
+const g=(a)=>{try{return cp.execSync(a,{encoding:'utf8'}).trim()}catch(e){return 'ERR '+e.message}};
+out.head=g('git log --oneline -3');
+out.status=g('git status --short -- index.html sw.js src/ui/platform.js src/engine/songs/index.js src/game/musicTracks.js src/main.js');
+out.verIndex=g("grep -o '1\\.6\\.[0-9]*' index.html | sort -u | tr '\\n' ' '");
+out.verSw=g("grep -o 'hks-v1\\.6\\.[0-9]*' sw.js | sort -u | tr '\\n' ' '");
+out.ph=g("grep -c ph_boss src/game/musicTracks.js src/engine/songs/index.js");
+out.songReg=g("grep -n 'yukari_ph' src/engine/songs/index.js | head -5");
+out.md5=g("md5sum src/assets/bgm/yukari_ph.mp3 src/assets/bgm/yukari_ph2.mp3");
+fs.writeFileSync('tools/build/_yuk_kit/_probe_now2.txt', JSON.stringify(out,null,1));

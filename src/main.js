@@ -68,6 +68,12 @@ import { SpellCutin } from './game/spellCutin.js';
 import { BootScreen } from './game/bootScreen.js';
 import { Dialogue } from './game/dialogue.js';
 import { DIFFICULTY_KEYS, DIFFICULTIES, getDifficulty } from './game/difficulty.js';
+import { submitScore, formatScore } from './game/score.js';
+import { initA11y, getA11y, setA11y, cyclePalette, getPalette, paletteDotsHtml, drawContrastVeil, isReducedFx, onA11yChange } from './game/a11y.js';
+// 排行榜 / 每日挑战 与 录像（都只 ~16-20KB，且标题页一进去就要用，静态加载不伤首屏）
+import { RankingRoom, markDailyDone } from './game/ranking.js';
+import { Recorder, ReplayStore } from './game/replay.js';
+import { ReplayRoom } from './game/replayRoom.js';
 
 /* ============================================================
    首屏之后才加载的重模块（代码分割）
@@ -265,6 +271,11 @@ const STAGE_KEY = (i) => `stage${i + 1}`;
 const CHAR_KEYS = ['reimu', 'marisa'];
 const PROGRESS_KEY = 'hks.progress.v1';
 /**
+ * 断局续玩：只存「跨关状态」，不存关内敌人/弹幕（那些是活动对象，序列化不动）。
+ * 读档 = 从存档那一面的开头重开，火力/残机/1UP 进度/续命次数照旧带过来。
+ */
+const RUN_KEY = 'hks.run.v1';
+/**
  * EXTRA 解锁秘籍：在标题画面或「操作说明」页依次按下这 16 个数字键。
  * 与真结局解锁等价（写进 hks.progress.v1），只是给不想等到真结局的玩家 / 排查用。
  */
@@ -423,6 +434,12 @@ class Game {
     this._audioSilent = false;      // 实测总线无输出（系统音量 / 站点静音 / 输出设备）
     this._audioProbed = false;
     this._loadSettings();
+    // 无障碍状态独立存盘（hks.a11y.v1），只写 CSS 变量与 root class，放在设置之后即可
+    initA11y();
+    // 「降低闪烁」可能在对局中途被切换，震屏开关要跟着重算（bindCamera 只认 fxLevel）
+    onA11yChange(() => {
+      if (this.stage?.camera) this.stage.camera.shakeEnabled = this.screenShake && !isReducedFx();
+    });
     // 设置加载完再把操作方式同步给 Input（Input 在 105 行就建好了，必须先有设置值）
     this._applyControlScheme();
     this._loadProgress();
@@ -497,8 +514,12 @@ class Game {
       if (!this._bootDone) return;
       // 隐藏跳关：Shift + 1–6 直达主线第 1–6 面（回忆室 / 改键页里会让位）
       if (this._tryStageWarp(e)) return;
-      // 音乐回忆室是整屏页面：按键先交给它，消费掉就不再漏进标题菜单
+      // 音乐回忆室 / 符卡练习 / 图鉴都是整屏页面：按键先交给它们，消费掉就不再漏进标题菜单
       if (this.musicRoom?.handleKey(e)) return;
+      if (this.practiceRoom?.handleKey(e)) return;
+      if (this.galleryRoom?.handleKey(e)) return;
+      if (this.rankingRoom?.handleKey(e)) return;
+      if (this.replayRoom?.handleKey(e)) return;
       // 秘籍：依次按下 16 位数字解锁 EXTRA（标题画面 / 操作说明页，见 SECRET_EXTRA_CODE）
       if (this._trySecretCode(e)) return;
       // 静音键：标题页的 M 另有用途（音乐室），其余状态（暂停 / 对话 / 结局 /
@@ -525,6 +546,21 @@ class Game {
     // 音乐回忆室：独立整屏层，进入时收起标题菜单，返回时由 showTitle 复原。
     // 53KB 的模块只在真正进去时才加载，先留空（showMusicRoom 里补建）。
     this.musicRoom = null;
+    // 符卡练习 / 幻想乡图鉴：同回忆室的整屏层 + 懒加载，进过一次才建。
+    this.practiceRoom = null;
+    this.galleryRoom = null;
+    // 练习局上下文（bossKey / cardIndex / hostStageIndex），非练习局为 null
+    this._practiceRun = null;
+    // 两个记录模块的缓存（ESM 本身也缓存，这里只是免得每次 cardResult 都走一遍 import 解析）
+    this._practiceMod = null;
+    this._galleryMod = null;
+    // 排行榜 / 每日挑战 与 录像室：都是轻量模块，已在顶部静态 import，直接建
+    this.rankingRoom = null;
+    this.replayRoom = null;
+    // 录像：一个共享 store（ReplayRoom 也用它，别开两份 IndexedDB）
+    this._replayStore = new ReplayStore();
+    this._recorder = new Recorder();
+    this._dailyRun = null;   // 本局是不是每日挑战：{ seed, key }
 
     // HUD 右上角设置键：打开暂停菜单（继续 / 设置 / 退出）
     document.getElementById('settingsBtn')?.addEventListener('click', () => {
@@ -1633,8 +1669,28 @@ class Game {
           onPick: () => this._extraLockedFeedback(),
         },
     ];
+    // 断局续玩：只有真有一份正式局存档时才出现（死了、通关了都会清掉，不会赖着）
+    const run = this._readRun();
+    if (run) {
+      const where = run.inExtra
+        ? `EXTRA ${Math.min((run.chainIdx | 0) + 1, EXTRA_CHAIN.length)}/${EXTRA_CHAIN.length}`
+        : `${tr('第 {n} 面', { n: (run.levelIndex | 0) + 1 })} · ${getDifficulty(run.difficulty).label}`;
+      buttons.push({
+        label: tr('继续上次'),
+        en: 'CONTINUE',
+        value: `${where} · ${run.char === 'marisa' ? tr('魔理沙') : tr('灵梦')}`,
+        key: 'C',
+        hotkey: 'KeyC',
+        onPick: () => this._resumeRun(),
+      });
+    }
     buttons.push({ label: tr('操作说明'), en: 'MANUAL', key: '?', hotkey: 'Slash', onPick: () => this.showHelp() });
     buttons.push({ label: tr('音乐回忆室'), en: 'MUSIC ROOM', key: 'M', hotkey: 'KeyM', onPick: () => this.showMusicRoom() });
+    // 符卡练习 / 图鉴：与回忆室同属「回顾型」入口，连成一排
+    buttons.push({ label: tr('符卡练习'), en: 'SPELL PRACTICE', key: 'P', hotkey: 'KeyP', onPick: () => this.showPractice() });
+    buttons.push({ label: tr('幻想乡图鉴'), en: 'GALLERY', key: 'G', hotkey: 'KeyG', onPick: () => this.showGallery() });
+    buttons.push({ label: tr('排行榜'), en: 'RANKING', key: 'R', hotkey: 'KeyR', onPick: () => this.showRanking() });
+    buttons.push({ label: tr('录像回顾'), en: 'REPLAYS', key: 'V', hotkey: 'KeyV', onPick: () => this.showReplays() });
     buttons.push({ label: tr('设置'), en: 'SETTINGS', key: 'S', hotkey: 'KeyS', onPick: () => this._showSettings(this._settingsIndex || 0, 'title') });
     buttons.push({ label: tr('退出游戏'), en: 'QUIT', key: 'Q', hotkey: 'KeyQ', cls: 'danger', onPick: () => this.showQuit() });
 
@@ -1718,6 +1774,151 @@ class Game {
   /** 从回忆室返回标题（MusicRoom 的 onExit） */
   _leaveMusicRoom() {
     this.showTitle();
+  }
+
+  /**
+   * 符卡练习：标题菜单进入，整屏接管。模块只在真进去时下。
+   * EXTRA 三个 Boss 的卡按通档状态锁着（未通 EXTRA 显示「？？？」不可选）。
+   */
+  async showPractice() {
+    if (!this.practiceRoom) {
+      kitLoading(true, '正在载入符卡练习…');
+      try {
+        const { PracticeRoom } = await import('./game/practice.js');
+        this.practiceRoom = new PracticeRoom({
+          input: this.input,
+          host: this.uiEl,
+          isExtraUnlocked: () => !!this.unlockedExtra,
+          onStart: (run) => { this.practiceRoom.hide(); this._startPracticeRun(run); },
+          onExit: () => this._leavePractice(),
+        });
+      } catch (err) {
+        console.error('[practice] 载入失败', err);
+        kitLoading(true, '符卡练习载入失败，请检查网络后重试');
+        setTimeout(() => kitLoading(false), 2200);
+        return;
+      }
+      kitLoading(false);
+    }
+    this.state = 'menu';
+    this._hidePanel();
+    this.hudEl?.classList.add('hidden');
+    this.practiceRoom.show();
+  }
+
+  /** 幻想乡图鉴：同回忆室的整屏层。 */
+  async showGallery() {
+    if (!this.galleryRoom) {
+      kitLoading(true, '正在载入幻想乡图鉴…');
+      try {
+        const { GalleryRoom } = await import('./game/gallery.js');
+        this.galleryRoom = new GalleryRoom({
+          input: this.input,
+          host: this.uiEl,
+          isExtraUnlocked: () => !!this.unlockedExtra,
+          onExit: () => this._leaveGallery(),
+        });
+      } catch (err) {
+        console.error('[gallery] 载入失败', err);
+        kitLoading(true, '幻想乡图鉴载入失败，请检查网络后重试');
+        setTimeout(() => kitLoading(false), 2200);
+        return;
+      }
+      kitLoading(false);
+    }
+    this.state = 'menu';
+    this._hidePanel();
+    this.hudEl?.classList.add('hidden');
+    this.galleryRoom.show();
+  }
+
+  _leavePractice() { this.practiceRoom?.hide(); this.showTitle(); }
+  _leaveGallery() { this.galleryRoom?.hide(); this.showTitle(); }
+
+  /** 一局结束：把录像封包存进 IndexedDB，存失败静默（ReplayStore 内部已降级到内存）。 */
+  _finishRecording() {
+    const rec = this._recorder?.stop();
+    if (rec) this._replayStore?.save(rec)?.catch?.(() => {});
+  }
+
+  /** 排行榜 / 每日挑战：轻量模块，静态 import 过了，直接建。 */
+  showRanking() {
+    this.rankingRoom ||= new RankingRoom({
+      input: this.input,
+      host: this.uiEl,
+      // 页面自己只管调 onExit，不 hide：不 hide 的话 handleKey 仍在吃键，后续按键全被吞掉
+      onExit: () => { this.rankingRoom?.hide(); this.showTitle(); },
+      // 每日挑战 = 把今天的种子塞进 ?seed= 重开一局（main.js 顶部 IIFE 会接管 Math.random）
+      onDailyStart: ({ seed, key }) => {
+        this._dailyRun = { seed, key };
+        const u = new URL(location.href);
+        u.search = '?seed=' + seed;
+        location.href = u.href;
+      },
+    });
+    this.state = 'menu';
+    this._hidePanel();
+    this.hudEl?.classList.add('hidden');
+    this.rankingRoom.show();
+  }
+
+  /** 录像回顾：幽灵轨迹列表 + 播放。store 与录制共用一份。 */
+  showReplays() {
+    this.replayRoom ||= new ReplayRoom({
+      input: this.input,
+      host: this.uiEl,
+      onExit: () => { this.replayRoom?.hide(); this.showTitle(); },
+      store: this._replayStore,
+    });
+    this.state = 'menu';
+    this._hidePanel();
+    this.hudEl?.classList.add('hidden');
+    this.replayRoom.show();
+  }
+
+  /**
+   * 卡结算记一笔：图鉴收录 + 练习局结果。一张卡只发一次 cardResult，两件事都挂这里。
+   * 两个模块都懒加载（练习页/图鉴页可能还没进过），加载失败不影响对局。
+   */
+  async _noteCardResult(data) {
+    if (!data) return;
+    const bossKey = this.stage?.boss?.key || this._practiceRun?.bossKey;
+    if (!bossKey) return;
+    // 全局卡序号：Boss 的 spellIdx 已经加过本次开打时的起点（cardGlobalFrom）
+    const cardIndex = Number.isFinite(data.globalIndex) ? data.globalIndex : (data.index | 0);
+    try {
+      const g = (this._galleryMod ||= await import('./game/gallery.js'));
+      g.markCardSeen(bossKey, cardIndex);
+    } catch (err) {
+      console.error('[gallery] 收录失败', err);
+    }
+    const run = this._practiceRun;
+    if (!run) return;
+    try {
+      const p = (this._practiceMod ||= await import('./game/practice.js'));
+      p.recordPracticeResult(run.bossKey, run.cardIndex, {
+        livesLeft: this.stage?.player?.lives || 0,
+        survived: !!(data && data.ok),
+      });
+    } catch (err) {
+      console.error('[practice] 记录失败', err);
+    }
+  }
+
+  /**
+   * 练习局开局：只打 run.opts.cardFrom 这一张卡，残机/火力按 PRACTICE_RULES。
+   * 走普通关（hostStageIndex）+ resumeBoss 的现成路径，不碰 EXTRA 连锁。
+   */
+  async _startPracticeRun(run) {
+    if (!run) return;
+    this._practiceRun = run;
+    await this.startStage(run.hostStageIndex, {
+      ...run.opts,
+      lives: run.lives,
+      power: run.power,
+      char: this.char,
+      difficulty: 'N',
+    });
   }
 
   showCharSelect() {
@@ -2284,6 +2485,7 @@ class Game {
     if (!e || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
     if (this._captureAction) return false;
     if (this.musicRoom?.visible) return false;
+    if (this.practiceRoom?.visible || this.galleryRoom?.visible) return false;
     // 只在菜单类页面（标题 / 难度 / 说明 / 设置）生效；游戏里、暂停里都不吃数字键
     if (this.state !== 'menu') return false;
     if (!this.overlay || this.overlay.classList.contains('hidden')) return false;
@@ -2336,6 +2538,7 @@ class Game {
     // 按键设置页里 Shift 本身可能正被绑成某个动作，别抢它的按键
     if (this.state === 'paused' && this._page === 'keybinds') return false;
     if (this.musicRoom?.visible) return false;
+    if (this.practiceRoom?.visible || this.galleryRoom?.visible) return false;
     const m = /^(?:Digit|Numpad)([1-6])$/.exec(e.code || '');
     if (!m) return false;
     e.preventDefault();
@@ -2436,8 +2639,10 @@ class Game {
     this.state = 'play';
     this.levelIndex = index;
     // 本局残机：1UP 拿到的会一路带下去；没有就按设置页的开局值
-    const startLives = this.runLives ?? this.lives;
-    this.runLives = startLives;
+    // 符卡练习：opts 显式给的就用（练习局固定 3 命，且不写回 runLives 污染正式局）
+    const practice = !!opts.practice;
+    const startLives = practice ? opts.lives : (this.runLives ?? this.lives);
+    if (!practice) this.runLives = startLives;
     seedReset?.(); // ?seed= 时把关卡随机序列拨回起点，保证弹幕可复现
     // 本关音乐：配了 musicPre 的关卡（1–6 面 + EXTRA）先进道中曲，Boss 登场时再切 Boss 曲；
     // 其余关卡没有 musicPre，照旧一首到底。必须在 beginBoss() 之前登记——resumeBoss 会在
@@ -2459,12 +2664,12 @@ class Game {
       def,
       index,
       // EXTRA 用选人页选中的主角（普通关卡用当前选择）
-      char: (isExtra && this.extraChar) ? this.extraChar : this.char,
+      char: opts.char ?? ((isExtra && this.extraChar) ? this.extraChar : this.char),
       lives: startLives,
       extendPts: this.carryExtend,
       // Extra 的强度在 Stage 内固定为 H；主线使用本局选择的难度
-      difficulty: isExtra ? 'EX' : this.difficulty,
-      power: this.carryPower,
+      difficulty: opts.difficulty ?? (isExtra ? 'EX' : this.difficulty),
+      power: opts.power ?? this.carryPower,
       // 软件光栅低配：关卡据此降低纹理采样质量、跳过全屏混合层（perf.md §8）
       lowSpec: this.renderer.lowSpec,
       onEvent: (type, data) => this._onStageEvent(type, data),
@@ -2489,7 +2694,8 @@ class Game {
     // 道中剧情节点：重来 / 再战 / EXTRA 不再重复播放
     this._midShown = [false, false, false];
     this._skipBeats = !!(isExtra || opts.skipIntro || opts.resumeBoss);
-    if (this.stage.camera) this.stage.camera.shakeEnabled = this.screenShake;
+    // 震屏 = 玩家设置 且 未被无障碍的「降低闪烁」关掉（两边写同一个字段，必须取与）
+    if (this.stage.camera) this.stage.camera.shakeEnabled = this.screenShake && !isReducedFx();
     // STG 关的玩家是另一个类（StgPlayer），这里统一补一次火力继承。
     // 注意：EXTRA 是「零火力开局」，0 是合法值，不能当成「没取到」再补满。
     if (this.stage.player && !this.stage.player.power && !isExtra) {
@@ -2524,7 +2730,7 @@ class Game {
         p.vx = 0; p.vy = 0;
         p.invuln = Math.max(p.invuln || 0, 1.5);  // 出场给一小段无敌，别一复活就挨弹
         this.stage.midbossDone = !!opts.midbossDone;
-        if (opts.bossKey) this.stage.beginBoss(opts.bossKey, { midboss: !!opts.bossMid });
+        if (opts.bossKey) this.stage.beginBoss(opts.bossKey, { midboss: !!opts.bossMid, cardFrom: opts.cardFrom, cardCount: opts.cardCount });
         this.stage.camera?.snapTo?.(p.x + p.w / 2);
       }
     }
@@ -2562,6 +2768,22 @@ class Game {
     } else {
       this.state = 'play';
     }
+
+    // 录像：一进关就开始录。对话期 state 不是 'play'，帧循环不会喂帧，录进来是空的 —— 正合适。
+    // 练习局不录（没有存榜意义，还会把录像列表刷满）。
+    if (opts.practice) this._recorder.stop();
+    else {
+      this._recorder.start({
+        seed: this._dailyRun?.seed || 0,
+        stage: index,
+        difficulty: this.inExtra ? 'EX' : this.difficulty,
+        char: this.char,
+        lives: startLives,
+      });
+    }
+
+    // 断局续玩：每面开始写一次档，玩家中途关页面下次能从这一面开头接着打
+    this._saveRun();
   }
 
   /**
@@ -2605,6 +2827,8 @@ class Game {
         this._haptic('hurt');
         break;
       case 'death':
+        // 记下死因，游戏结束面板上告诉玩家是被什么打死的
+        this._lastDeathCause = (data && data.cause) || '';
         this.audio.play?.('die');
         this._haptic('death');
         break;
@@ -2649,25 +2873,38 @@ class Game {
         this._sfx('extend');
         break;
       case 'cardResult': {
+        // 符卡练习 / 图鉴：这张卡打过了就记一笔（收录 + 练习记录），与奖励横幅无关。
+        this._noteCardResult(data);
         // 符卡限时结算（spec 3.5）：Stage 决定 reward —— 按时击破/坚持到点给 1/4P（满槽改残机），
         // 本卡无伤再追加 1/2P；超时仍只给 10 点。
         const reward = data && data.reward;
         const noHit = !!(data && data.noHit);
+        // 符卡得分：按时 +5 万，无伤翻倍到 10 万，超时 8 千（score.js 的 SCORE 表）。
+        // 横幅只有两行，奖励与得分合并进副标题，不另开一条（会被下一次 banner 覆盖掉）。
+        const cardScore = data && Number.isFinite(data.score) ? data.score : 0;
+        const withScore = (base) => (cardScore > 0 ? `${base}  +${cardScore}` : base);
         if (reward === 'power') {
           if (noHit) {
-            this.hud.banner(tr('无伤通过'), tr('火力 +3/4P'), 1.8);
+            this.hud.banner(tr('无伤通过'), withScore(tr('火力 +3/4P')), 1.8);
           } else {
-            this.hud.banner(tr('符卡击破'), tr('火力 +1/4P'), 1.4);
+            this.hud.banner(tr('符卡击破'), withScore(tr('火力 +1/4P')), 1.4);
           }
           this._sfx('checkpoint'); // 复用存档点双音上行：小奖励，不盖过 Boss 主题曲
         } else if (reward === 'life') {
           // 满火力基础奖励残机：stage 侧走 _addExtend 已同步 emit 'extend'，
           // 1UP 横幅与音效交给上面的 case 'extend' 播一次即可；
           // 无伤时补一条合并提示（1UP + 额外 1/2P），覆盖同帧的 1UP 横幅。
-          if (noHit) this.hud.banner(tr('无伤通过'), tr('1UP + 1/2P'), 1.8);
+          if (noHit) this.hud.banner(tr('无伤通过'), withScore(tr('1UP + 1/2P')), 1.8);
+          else if (cardScore > 0) this.hud.banner(tr('符卡击破'), `+${cardScore}`, 1.2);
         } else if (reward === 'points') {
-          this.hud.banner(tr('超时'), tr('奖励 +10 点'), 1.4);
+          if (cardScore > 0) {
+            this.hud.banner(tr('超时'), withScore(tr('奖励 +10 点')), 1.4);
+          } else {
+            this.hud.banner(tr('超时'), tr('奖励 +10 点'), 1.4);
+          }
           this._sfx('bossStagger'); // 复用破势警报：超时提示要能一下听出来
+        } else if (cardScore > 0) {
+          this.hud.banner(tr('符卡得分'), `+${cardScore}`, 1.2);
         }
         break;
       }
@@ -2770,6 +3007,12 @@ class Game {
         this._sfx('spell');
         break;
       case 'clear':
+        // 练习局到此为止：不进结算（_onStageClear 会写 hks.progress.v1），直接回练习页
+        if (this._practiceRun) {
+          this._practiceRun = null;
+          this.showPractice();
+          break;
+        }
         this._haptic('clear');
         this._onStageClear();
         break;
@@ -2855,8 +3098,47 @@ class Game {
     return Array.isArray(alt) && alt.length ? alt : [];
   }
 
+  /**
+   * 通关当前关的分数结算 + 上传榜单。
+   *
+   * 只在这一关真正打完时调用（_onStageClear），死亡重开不走这里 ——
+   * 所以擦弹、击破攒的分是一关一结，跨关不累加（原作也是每面算一次）。
+   */
+  _settleScore() {
+    const st = this.stage;
+    if (!st || !st.score) return;
+    const p = st.player;
+    const detail = st.score.stageClear({
+      lives: p ? p.lives : 0,
+      graze: st.score.grazeCount,
+      continues: this.continues || 0,
+    });
+    const stageId = this.inExtra ? 'extra' : STAGE_KEY(this.levelIndex);
+    // EXTRA 存 'EX'：排行榜页（ranking.js 的 DIFFICULTY_TABS）按 'EX' 查，两边必须一致
+    const difficulty = this.inExtra ? 'EX' : this.difficulty;
+    const res = submitScore(stageId, difficulty, {
+      score: detail.total,
+      char: this.char,
+      graze: st.score.grazeCount,
+    });
+    // 每日挑战：记一笔今日最好，否则排行榜页永远显示「今日尚未挑战」
+    if (this._dailyRun) markDailyDone(new Date(), detail.total);
+    // best 是「旧纪录」，已经刷新过榜单后它还是旧值，所以有 isNew 时要取当前分
+    const best = res.isNew ? detail.total : res.best;
+    // 横幅分两行：上面是明细，下面是总分与新纪录提示；没有就只报总分
+    const tip = res.isNew
+      ? `${tr('新纪录')} · BEST ${formatScore(best)}`
+      : `BEST ${formatScore(best)}`;
+    this._lastClearScore = { ...detail, rank: res.rank, isNew: res.isNew, stageId, difficulty };
+    // 横幅不在这里播 —— _onStageClear 紧接着的 STAGE CLEAR 会覆盖掉。
+    // 把文案返回给调用方，合成一条横幅（一次 _after 只有一个槽位，也不能排队）。
+    return { sub: `${tr('总分')} ${formatScore(detail.total)}`, tip };
+  }
+
   _onStageClear() {
     this.state = 'clear';
+    // 通关结算：残机 / 擦弹 / 无续命三项加分，记进同一本 score 账
+    const settled = this._settleScore();
     // 火力继承：打完这关的 POWER 带进下一关
     if (this.stage?.player) {
       const p = this.stage.player;
@@ -2865,7 +3147,11 @@ class Game {
       this.runLives = p.lives;
       this.carryExtend = this.stage.extendPts || 0;
     }
-    this.hud.banner('STAGE CLEAR', '', 1.6);
+    // 过关后立刻刷新存档：下次续玩从下一面开头接上，火力/残机都是最新的
+    this._saveRun();
+    // 分数并进这一条横幅：横幅只有两行，标题给关卡，副标题给总分与纪录
+    const clearSub = settled ? `${settled.sub}   ${settled.tip}` : '';
+    this.hud.banner('STAGE CLEAR', clearSub, 2.0);
     this.audio.play?.('win');
 
     const isExtra = this.inExtra;
@@ -2897,6 +3183,9 @@ class Game {
   }
 
   _onAllCleared() {
+    this._finishRecording();
+    // 通关了：存档作废，回标题不会再出现「继续上次」
+    this._clearRun();
     const diff = getDifficulty(this.inExtra ? 'EX' : this.difficulty);
 
     // E 只有前 5 面：没有真结局；
@@ -2958,6 +3247,9 @@ class Game {
 
   _onGameOver() {
     this.state = 'gameover';
+    this._finishRecording();
+    // 死了就清档：此处有「重新挑战」按钮，不需要靠续玩赖着
+    this._clearRun();
     this.hudEl?.classList.add('hidden');
     this.audio.playMusic?.('gameover');
     this.audio.play?.('die');
@@ -2984,9 +3276,19 @@ class Game {
       ? tr('将从第 {n} 战（{name}）重新开始', { n: extraIdx + 1, name: extraName })
       : '';
     const canTrue = !this.inExtra && getDifficulty(this.difficulty).unlockExtra;
-    const sub = this.inExtra
+    // 死因：让玩家知道是被什么打死的，而不是笼统的「残机用尽」
+    const causeText = ({
+      bullet: tr('被弹幕命中'),
+      boss: tr('败于 Boss 之手'),
+      enemy: tr('撞上了妖怪'),
+      miniboss: tr('被中头目击倒'),
+      spike: tr('踩中了地刺'),
+      fall: tr('坠入了深渊'),
+    })[this._lastDeathCause] || '';
+    const baseSub = this.inExtra
       ? tr('残机用尽 · EXTRA STAGE')
       : tr('残机用尽 · STAGE {n} · 续命 {c} 次', { n: this.levelIndex + 1, c: this.continues });
+    const sub = causeText ? `${baseSub}　—— ${causeText}` : baseSub;
     const foot = this.inExtra
       ? tr('EXTRA 关失败不会触发结局') + '\n' + extraFoot
       : [
@@ -3169,6 +3471,21 @@ class Game {
      主循环
      ============================================================ */
 
+  /**
+   * HUD 每帧刷新。
+   *
+   * hud.update() 只负责残机 / 火力 / Boss 血条这些「本来就塞在 stageState 里」的字段；
+   * 分数和擦弹倍率是另外两条账（/game/score.js），必须显式灌进去。
+   * hudState 是个 getter，取一次复用，别在下面重复调。
+   */
+  _hudTick(dt) {
+    if (!this.stage) return;
+    const st = this.stage.hudState;
+    this.hud.update(st, dt);
+    this.hud.setScore(st.score);
+    this.hud.setGraze(st.scoreGraze, st.scoreMult);
+  }
+
   update(dt) {
     this.t += dt;
 
@@ -3192,6 +3509,10 @@ class Game {
 
     // 音乐回忆室：播放进度 / 均衡器 / 状态灯（与游戏状态机无关，开着就刷新）
     this.musicRoom?.update(dt);
+    this.practiceRoom?.update(dt);
+    this.galleryRoom?.update(dt);
+    this.rankingRoom?.update(dt);
+    this.replayRoom?.update(dt);
 
     // 延迟回调（暂停期间冻结：否则玩家一暂停就会把排在 1.8s 后的道中/关底对话吞掉）
     if (this._pendingTimeout && this.state !== 'paused') {
@@ -3225,7 +3546,7 @@ class Game {
         this.hudEl?.classList.add('hidden');
         this.hud.hideBossBar();
       } else {
-        this.hud.update(this.stage.hudState, dt);
+        this._hudTick(dt);
       }
       if (this.input.pressed('confirm') || this.input.pressed('jump') || this.input.pressed('shoot')) {
         this.dialogue.advance();
@@ -3239,7 +3560,7 @@ class Game {
     // 看起来像卡死。这里用空输入继续推进场景，让镜头 / 粒子 / 待机动画保持流动。
     if (this.state === 'dialogue' && !this.dialogue.active && this.stage) {
       this.stage.update(dt, this._idleInput());
-      this.hud.update(this.stage.hudState, dt);
+      this._hudTick(dt);
       this.input.endFrame();
       return;
     }
@@ -3256,7 +3577,9 @@ class Game {
       if (this.input.pressed('restart')) { this._showRestartRun(); this.input.endFrame(); return; }
       if (this.input.pressed('mute')) this._toggleMute();
       this.stage.update(dt, this.input);
-      this.hud.update(this.stage.hudState, dt);
+      this._hudTick(dt);
+      // 录像：必须在 endFrame() 之前采样，否则这一帧的输入位已经被清掉了
+      this._recorder.frame(this.input, this.stage.player, this.input.pressed('cast'));
       this._maybeMidDialogue();
     }
 
@@ -3471,7 +3794,7 @@ class Game {
         html: row(tr('屏幕震动'), sw(this.screenShake), 'H'),
         onPick: (i) => {
           this.screenShake = !(this.screenShake !== false);
-          if (this.stage?.camera) this.stage.camera.shakeEnabled = this.screenShake;
+          if (this.stage?.camera) this.stage.camera.shakeEnabled = this.screenShake && !isReducedFx();
           this._saveSettings();
           this._showSettings(i, origin);
         },
@@ -3485,6 +3808,41 @@ class Game {
           this._showSettings(this.menuIndex, origin);
         },
         onPick: (i) => this.cycleFrameCap(true, i),
+      },
+
+      /* ---- 无障碍（只改弹幕与判定点的外观，不动判定范围） ---- */
+      {
+        group: 'a11y', groupTitle: tr('无障碍'), glyph: '兼',
+        cls: 'set-row', key: 'A', hotkey: 'KeyA',
+        html: row(tr('弹幕高对比'), sw(!!getA11y().contrast), 'A'),
+        onPick: (i) => {
+          setA11y({ contrast: !getA11y().contrast });
+          this._showSettings(i, origin);
+        },
+      },
+      {
+        group: 'a11y',
+        cls: 'set-row', key: 'C', hotkey: 'KeyC',
+        html: row(tr('弹幕配色'),
+          paletteDotsHtml(getA11y().palette) +
+            ` <span class="sld-num">${tr(getPalette().label)}</span>`, 'C'),
+        adjust: (d) => {
+          cyclePalette(d);
+          this._showSettings(this.menuIndex, origin);
+        },
+        onPick: (i) => {
+          cyclePalette(1);
+          this._showSettings(i, origin);
+        },
+      },
+      {
+        group: 'a11y',
+        cls: 'set-row', key: 'Z', hotkey: 'KeyZ',
+        html: row(tr('降低闪烁'), sw(getA11y().fxLevel === 'reduced'), 'Z'),
+        onPick: (i) => {
+          setA11y({ fxLevel: getA11y().fxLevel === 'reduced' ? 'full' : 'reduced' });
+          this._showSettings(i, origin);
+        },
       },
 
       /* ---- 操作与外设（触屏 / 蓝牙手柄专属；桌面无手柄时整组不出现） ---- */
@@ -3926,6 +4284,82 @@ class Game {
     }
   }
 
+  /* ---------------- 断局续玩 ---------------- */
+
+  /** 读存档：没有 / 损坏 / 过期 一律当没有。 */
+  _readRun() {
+    try {
+      const raw = window.localStorage.getItem(RUN_KEY);
+      if (!raw) return null;
+      const r = JSON.parse(raw);
+      if (!r || typeof r !== 'object' || r.v !== 1) return null;
+      const n = this._mainStages().length;
+      if (!r.inExtra && !(r.levelIndex >= 0 && r.levelIndex < n)) return null;
+      if (!CHAR_KEYS.includes(r.char)) return null;
+      return r;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** 存一次。练习局 / 每日挑战之外，正式局每面开始和过关后都写。 */
+  _saveRun() {
+    if (this._practiceRun) return;
+    try {
+      window.localStorage.setItem(RUN_KEY, JSON.stringify({
+        v: 1,
+        at: Date.now(),
+        levelIndex: this.levelIndex | 0,
+        inExtra: !!this.inExtra,
+        chainIdx: (this._extraChainIdx | 0) || 0,
+        difficulty: this.inExtra ? 'EX' : this.difficulty,
+        char: this.char,
+        lives: this.lives | 0,
+        continues: this.continues | 0,
+        carryPower: this.carryPower | 0,
+        runLives: Number.isFinite(this.runLives) ? this.runLives : null,
+        carryExtend: this.carryExtend | 0,
+      }));
+    } catch (e) {
+      // 隐私模式：不存就是了
+    }
+  }
+
+  _clearRun() {
+    try {
+      window.localStorage.removeItem(RUN_KEY);
+    } catch (e) {
+      // 忽略
+    }
+  }
+
+  /** 标题页「继续上次」：回填跨关字段，然后从存档那一面的开头重开。 */
+  async _resumeRun() {
+    const r = this._readRun();
+    if (!r) { this.showTitle(); return; }
+    this._clearRun();
+    this._hidePanel();
+    this.char = r.char;
+    this.difficulty = r.difficulty === 'EX' ? this.difficulty : r.difficulty;
+    this.inExtra = r.inExtra;
+    this.lives = r.lives > 0 ? r.lives : 3;
+    this.continues = r.continues | 0;
+    this.carryPower = r.carryPower | 0;
+    this.runLives = Number.isFinite(r.runLives) ? r.runLives : null;
+    this.carryExtend = r.carryExtend | 0;
+    this.hudEl?.classList.remove('hidden');
+    this.hud.setMaxLives(this.runLives ?? this.lives, this.char);
+    this.audio.setMusic?.(this.musicOn !== false);
+    if (r.inExtra) {
+      this.extraChar = r.char;
+      this._warmStageMusic(EXTRA_STAGE(), 0, true);
+      await this._startExtraStage({ chainFrom: r.chainIdx, skipIntro: true });
+    } else {
+      this._warmStageMusic(this._mainStages()[r.levelIndex], r.levelIndex, false);
+      await this.startStage(r.levelIndex, { skipIntro: true });
+    }
+  }
+
   /* ---------------- 音乐回忆（听过的曲目） ---------------- */
 
   /**
@@ -4283,6 +4717,8 @@ class Game {
       // 立绘预热等待期（state=dialogue 但未激活）场景同样在推进，也要插值
       const a = (this.state === 'play' || this.state === 'dialogue') && !this.dialogue.active ? alpha : 1;
       this.stage.draw(ctx, a);
+      // 高对比：整屏压暗一层，弹幕/判定点相对更亮（世界与背景一起吃暗，效果最稳）。
+      drawContrastVeil(ctx, VIEW_W, VIEW_H);
       if (this.state === 'paused') this._drawDim(ctx, 0.45);
       // 只在对话真的开播后压暗；立绘预热等待期保持正常亮度，避免「忽然变暗并静止」
       if (this.dialogue.active) this._drawDim(ctx, 0.35);
