@@ -11,7 +11,7 @@
  * 版本：改动本文件后记得同步 index.html 里的 ?v= 与 sw.js 的 CACHE_VERSION。
  */
 
-export const PLATFORM_VERSION = '1.7.3';
+export const PLATFORM_VERSION = '1.7.4';
 
 const VERSION = PLATFORM_VERSION;
 /** 只在同一个 origin + 安全上下文里注册（GitHub Pages / 本地 8138 都满足） */
@@ -1040,6 +1040,27 @@ function htmlVersionGuard() {
  * @param {{ onBack?: (() => void) }} [opts]
  * @returns 环境识别结果 { ios, android, harmony, wechat, qq, webview, standalone, touch, coarse, safari }
  */
+/* ============================================================
+   11.5) 版本号标签：一处真相
+   ------------------------------------------------------------
+   标题页右下角（index.html 的 .title-ver）与启动幕（#boot::after）
+   都是「几乎看不见」的版本水印，以前各写死一份，升版本时漏改过
+   （页面上长期停在 1.6.90 / 1.6.92）。现在两边都读 PLATFORM_VERSION：
+     - .title-ver 的文本尾巴在这里改写
+     - #boot::after 的 content 读 CSS 变量 --hks-ver（CSS 里留 fallback）
+   ============================================================ */
+function applyVersionLabels() {
+  const doc = W && W.document;
+  if (!doc || !doc.documentElement) return;
+  const label = 'ver ' + VERSION;
+  // CSS content 需要带引号的值，JSON.stringify 正好产生 "ver 1.7.4"
+  doc.documentElement.style.setProperty('--hks-ver', JSON.stringify(label));
+  const nodes = doc.querySelectorAll('.title-ver');
+  for (const el of nodes) {
+    el.textContent = String(el.textContent || '').replace(/ver\s+[\w.\-]+/i, label);
+  }
+}
+
 export function initPlatform(opts = {}) {
   if (!CAN) return platform.env;
   const o = opts && typeof opts === 'object' ? opts : {};
@@ -1050,6 +1071,9 @@ export function initPlatform(opts = {}) {
 
   // R5：旧 HTML + 新平台层 → 带 ?hks_v= 重载一次绕开 CDN 旧缓存（详见 htmlVersionGuard）
   safely(htmlVersionGuard);
+
+  // 版本水印跟着 PLATFORM_VERSION 走（标题页 + 启动幕）
+  safely(applyVersionLabels);
 
   // 环境识别 → <html> class
   const detected = detectEnv();
