@@ -2445,6 +2445,65 @@ class Game {
     // 厚涂背景图（低清档）：没到就先等，别进关后先画程序化天空再突变
     await this._ensureStageBg(def);
     this._createStage(def, index, false, opts);
+    this._tutorialOnce();
+  }
+
+  /**
+   * 首次进关的 10 秒引导：只在第一次真正开局时出现一次（localStorage 记一笔）。
+   *
+   * 不做遮罩、不拦输入——玩家该按的键立刻就能按，引导条自己浮在下方淡出。
+   * 键帽文案走 input.labelFor()，改过键位的人看到的也是自己那套。
+   */
+  _tutorialOnce() {
+    const KEY = 'hks.tut.v1';
+    try {
+      if (localStorage.getItem(KEY)) return;
+      localStorage.setItem(KEY, '1');
+    } catch (err) {
+      // 隐私模式下读写受限：放一次就算了，别因此挡住进关
+    }
+    const label = (a) => {
+      try { return this.input.labelFor(a) || ''; } catch (err) { return ''; }
+    };
+    const mouse = this.input && this.input.scheme === 'wasd-mouse';
+    const items = [
+      [label('left') + ' ' + label('right'), tr('移动')],
+      [label('slow'), tr('低速 · 显判定点')],
+      [mouse ? tr('鼠标左键') : label('shoot'), tr('射击')],
+      [mouse ? tr('鼠标右键') : label('cast'), tr('符卡 · 清屏')],
+    ].filter((it) => it[0]);
+
+    const box = document.createElement('div');
+    box.className = 'hks-tut';
+    for (const [key, name] of items) {
+      const cell = document.createElement('span');
+      const k = document.createElement('b');
+      k.textContent = key;
+      const n = document.createElement('i');
+      n.textContent = name;
+      cell.append(k, document.createTextNode(' '), n);
+      box.append(cell);
+    }
+    const tip = document.createElement('u');
+    tip.textContent = tr('暂停键可看全部按键');
+    box.append(tip);
+
+    (document.getElementById('ui') || document.body).appendChild(box);
+    const close = () => {
+      box.classList.remove('show');
+      setTimeout(() => box.remove(), 600);
+    };
+    // 进关时的剧情对话会盖在底部，等它讲完再弹，否则引导条被压在对话框下面
+    const waitDialogue = (tries) => {
+      if (!box.isConnected) return;
+      if (this.dialogue && this.dialogue.active && tries < 300) {
+        setTimeout(() => waitDialogue(tries + 1), 100);
+        return;
+      }
+      requestAnimationFrame(() => box.classList.add('show'));
+      setTimeout(close, 10000);
+    };
+    waitDialogue(0);
   }
 
   /**

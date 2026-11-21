@@ -3060,7 +3060,7 @@ body {
 /* 右下角版本号：纯 CSS 生成，不动 DOM。东方的版本号就是这种「几乎看不见」的存在。
    值由 src/ui/platform.js 写入 --hks-ver；fallback 只在 JS 没跑起来时露脸。 */
 #boot::after {
-  content: var(--hks-ver, "ver 1.7.7");
+  content: var(--hks-ver, "ver 1.7.8");
   position: absolute;
   right: calc(var(--s) * 28px);
   bottom: calc(var(--s) * 24px);
@@ -5104,4 +5104,163 @@ html[lang="en"] .overlay.screen-mode .set-row-lang .seg b {
 
 .rr.is-empty .rr-body {
   min-height: calc(var(--s-ui) * 240px);
+}
+
+/* ============================================================
+ * 视觉重心 & 版面再分配（v2.4）
+ * ------------------------------------------------------------
+ * ① 设置页宽屏改「按内容分配」的不规则网格：声音/显示各占一列两行，
+ *    无障碍与游戏叠在同一列上下，避免每张卡都被拉成同样高再留一片空白。
+ * ② 四子页面标题加重、加竖线导视，端面右下角压一枚淡符印，给每页一个视觉落点。
+ * ③ 排行榜空态垂直居中；窄屏上有子页面打开时让出平台 toast 的位置。
+ * ============================================================ */
+
+/* ① 设置页：不规则版面（宽屏横屏才用，窄屏仍走 auto-fit 单列/双列） */
+@media (min-width: 1101px) and (orientation: landscape) {
+  .overlay.screen-mode .set-grid {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 0.9fr);
+    grid-template-areas:
+      "sound display a11y"
+      "sound display game";
+    align-items: stretch;
+  }
+  /* 触屏设备才有「操作」分组：有它才排四列 */
+  .overlay.screen-mode .set-grid:has(> .set-group[data-g="device"]) {
+    grid-template-columns:
+      minmax(0, 1.12fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1fr);
+    grid-template-areas:
+      "sound display a11y device"
+      "sound display game device";
+  }
+  .overlay.screen-mode .set-grid > .set-group[data-g="sound"] { grid-area: sound; }
+  .overlay.screen-mode .set-grid > .set-group[data-g="display"] { grid-area: display; }
+  .overlay.screen-mode .set-grid > .set-group[data-g="a11y"] { grid-area: a11y; }
+  .overlay.screen-mode .set-grid > .set-group[data-g="device"] { grid-area: device; }
+  .overlay.screen-mode .set-grid > .set-group[data-g="game"] { grid-area: game; }
+}
+
+/* ② 四子页面：标题做视觉重心 */
+.gg .gg-head,
+.rk .rk-head,
+.rr .rr-head,
+.mr .mr-head { position: relative; align-items: center; }
+
+.gg .gg-title,
+.rk .rk-title,
+.rr .rr-title,
+.mr .mr-heading {
+  position: relative;
+  padding-left: calc(var(--s-ui) * 15px);
+  font-size: calc(var(--s-ui) * 25px);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-shadow: 0 2px 14px rgba(255, 190, 90, 0.22);
+}
+
+.gg .gg-title::before,
+.rk .rk-title::before,
+.rr .rr-title::before,
+.mr .mr-heading::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: calc(var(--s-ui) * 4px);
+  height: calc(var(--s-ui) * 19px);
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: linear-gradient(180deg, #ffd66f, rgba(255, 214, 111, 0.05));
+}
+
+/* 端面右下角淡符印：每页一个，压低到几乎只是质感 */
+.gg .gg-frame::after,
+.rk .rk-frame::after,
+.rr .rr-frame::after,
+.mr .mr-frame::after {
+  position: absolute;
+  right: calc(var(--s-ui) * 14px);
+  bottom: calc(var(--s-ui) * 2px);
+  font-family: var(--serif, "Songti SC", serif);
+  font-size: calc(var(--s-ui) * 92px);
+  line-height: 1;
+  color: rgba(255, 214, 111, 0.055);
+  pointer-events: none;
+  user-select: none;
+}
+
+.gg .gg-frame::after { content: "図"; }
+.rk .rk-frame::after { content: "録"; }
+.rr .rr-frame::after { content: "映"; }
+.mr .mr-frame::after { content: "音"; }
+
+/* ③ 排行榜空态：视口再高也居中，不留一整片死黑 */
+.rk .rk-frame:has(.rk-empty) .rk-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rk .rk-frame:has(.rk-empty) .rk-empty { margin: 0; }
+
+/* 窄屏上有子页面打开时，让平台提示条别压住页头标题 */
+@media (max-width: 900px), (orientation: portrait) {
+  body:has(.gg.is-in) .rotate-hint,
+  body:has(.rk.is-in) .rotate-hint,
+  body:has(.rr.is-in) .rotate-hint,
+  body:has(.mr.is-in) .rotate-hint { opacity: 0; visibility: hidden; }
+}
+
+/* ============================================================
+ * 首次进关引导（10 秒自动消失，只出现一次）
+ * ============================================================ */
+.hks-tut {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 6vh);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--s-ui, 1) * 14px);
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
+  padding: calc(var(--s-ui, 1) * 10px) calc(var(--s-ui, 1) * 16px);
+  border: 1px solid rgba(255, 214, 111, 0.28);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(24, 16, 34, 0.94), rgba(9, 6, 16, 0.96));
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: var(--text, #f2e9d8);
+  font: calc(var(--s-ui, 1) * 13px)/1.5 var(--serif, "Songti SC", serif), "PingFang SC", sans-serif;
+  transform: translate(-50%, calc(100% + 24px));
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.42s cubic-bezier(0.22, 0.9, 0.28, 1), opacity 0.3s ease;
+}
+
+.hks-tut.show {
+  transform: translate(-50%, 0);
+  opacity: 1;
+}
+
+.hks-tut i {
+  font-style: normal;
+  letter-spacing: 0.1em;
+  color: rgba(255, 214, 111, 0.86);
+}
+
+.hks-tut b {
+  font-weight: 400;
+  padding: 1px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 0.92em;
+}
+
+.hks-tut u {
+  text-decoration: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.86em;
+}
+
+@media (max-width: 640px) {
+  .hks-tut { flex-wrap: wrap; justify-content: center; gap: 4px 10px; text-align: center; }
 }

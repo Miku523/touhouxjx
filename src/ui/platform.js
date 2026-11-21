@@ -11,7 +11,7 @@
  * 版本：改动本文件后记得同步 index.html 里的 ?v= 与 sw.js 的 CACHE_VERSION。
  */
 
-export const PLATFORM_VERSION = '1.7.7';
+export const PLATFORM_VERSION = '1.7.8';
 
 const VERSION = PLATFORM_VERSION;
 /** 只在同一个 origin + 安全上下文里注册（GitHub Pages / 本地 8138 都满足） */
