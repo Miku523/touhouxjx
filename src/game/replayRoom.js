@@ -331,6 +331,7 @@ export class ReplayRoom {
     const rows = this.allRows || [];
     const showEmpty = rows.length === 0;
     if (this.emptyEl) this.emptyEl.classList.toggle('hidden', !showEmpty);
+    if (this.el) this.el.classList.toggle('is-empty', showEmpty);
     this.rows.forEach((row, i) => {
       const data = rows[i];
       if (!data) {

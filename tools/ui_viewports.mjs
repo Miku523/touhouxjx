@@ -178,8 +178,16 @@ for (const vp of SUB_VPS) {
     })()`);
     report.push({ viewport: tag, ...m });
     console.log(tag, JSON.stringify(m));
+    // 真实交互里退出一页是 Esc；只用 showTitle() 会让上一页留在 is-in 状态，
+    // 截图便成了两页相叠的假象
+    await evaluate(`(() => {
+      for (const t of [document, window]) {
+        t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+      }
+    })()`);
+    await sleep(500);
     await evaluate('window.__game?.showTitle?.()');
-    await sleep(900);
+    await sleep(700);
   }
 }
 

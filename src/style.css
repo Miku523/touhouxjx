@@ -3060,7 +3060,7 @@ body {
 /* 右下角版本号：纯 CSS 生成，不动 DOM。东方的版本号就是这种「几乎看不见」的存在。
    值由 src/ui/platform.js 写入 --hks-ver；fallback 只在 JS 没跑起来时露脸。 */
 #boot::after {
-  content: var(--hks-ver, "ver 1.7.6");
+  content: var(--hks-ver, "ver 1.7.7");
   position: absolute;
   right: calc(var(--s) * 28px);
   bottom: calc(var(--s) * 24px);
@@ -4909,4 +4909,188 @@ html[lang="en"] .overlay.screen-mode .set-row-lang .seg b {
   body:has(> .hks-install.show) .rr-frame {
     padding-bottom: calc(env(safe-area-inset-bottom) + 84px);
   }
+}
+
+/* ============================================================================
+   视觉收敛 v2.2 —— 设置页容器化 / 四页层次与空状态
+   上一版的内容都浮在景上：等间距、等字重、各自带阴影的深色方块，看着既散
+   又机械。这一层只做三件事：
+     1. 设置页收成一块有边界的面板，卡片齐底，底栏按钮不再各占半屏；
+     2. 四页页头拉开层级，正文区给一层内衬，让"列表 / 详情"有前后关系；
+     3. 录像室空状态居中成留白卡，别让整屏只剩左上角一行灰字。
+   ========================================================================== */
+
+/* ---- 1) 设置页：整页收成一块面板 ---- */
+/* 面板吃满可用宽度：卡片才排得成 4 列，行数少一行，纵向就挤不爆 */
+.overlay.screen-mode .panel {
+  width: min(92vw, calc(var(--s-ui) * 1240px));
+  max-width: none;
+}
+
+.overlay.screen-mode .set-grid {
+  position: relative;
+  gap: calc(var(--s-ui) * 14px);
+  padding: calc(var(--s-ui) * 16px) calc(var(--s-ui) * 16px) calc(var(--s-ui) * 14px);
+  border-radius: calc(var(--s-ui) * 16px);
+  border: 1px solid rgba(255, 214, 160, .12);
+  background:
+    radial-gradient(130% 70% at 50% -10%, rgba(255, 214, 140, .07), transparent 62%),
+    linear-gradient(180deg, rgba(15, 10, 24, .88), rgba(5, 3, 10, .93));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .05),
+    0 calc(var(--s-ui) * 18px) calc(var(--s-ui) * 48px) rgba(0, 0, 0, .52);
+  -webkit-backdrop-filter: blur(12px) saturate(1.04);
+  backdrop-filter: blur(12px) saturate(1.04);
+  align-items: stretch;      /* 同一排卡片齐底，去掉参差的锯齿边 */
+}
+
+/* 面板内一层 3px 极淡扫描线，抹掉大面积渐变的塑料感 */
+.overlay.screen-mode .set-grid::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .015) 0 1px, transparent 1px 3px);
+}
+.overlay.screen-mode .set-grid > * { position: relative; }
+
+/* 卡片降级成面板里的"分区"：不再是各自带投影的浮块 */
+.overlay.screen-mode .set-grid > .set-group {
+  padding: calc(var(--s-ui) * 13px) calc(var(--s-ui) * 15px) calc(var(--s-ui) * 11px);
+  border: 1px solid rgba(255, 255, 255, .055);
+  border-radius: calc(var(--s-ui) * 11px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .014));
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* 内容少的卡片把行推开一点，别在底部留一条空槽 */
+.overlay.screen-mode .set-grid > .set-group > .set-rows {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: calc(var(--s-ui) * 2px);
+  height: 100%;
+}
+
+/* 底栏两颗按钮：居中、等宽，不再各拉半屏 */
+.overlay.screen-mode .set-grid > .set-group[data-g$="foot"] {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  margin-top: calc(var(--s-ui) * 2px);
+}
+.overlay.screen-mode .set-grid > .set-group[data-g$="foot"] > .set-rows {
+  display: flex;
+  flex-direction: row;
+  gap: calc(var(--s-ui) * 10px);
+  width: 100%;
+  max-width: calc(var(--s-ui) * 470px);
+  margin: 0 auto;
+  height: auto;
+}
+.overlay.screen-mode .set-grid > .set-group[data-g$="foot"] > .set-rows > .set-row {
+  flex: 1 1 0;
+  justify-content: center;
+}
+
+/* ---- 2) 四页页头：大字标题 / 小字提示 / 一道收束横线 ---- */
+.mr .mr-head,
+.gg .gg-head,
+.rk .rk-head,
+.rr .rr-head {
+  padding-bottom: calc(var(--s-ui) * 10px);
+  border-bottom: 1px solid rgba(255, 214, 160, .16);
+  background: linear-gradient(180deg, rgba(255, 214, 160, .045), transparent 90%);
+}
+.mr .mr-heading,
+.gg .gg-title,
+.rk .rk-title,
+.rr .rr-title {
+  letter-spacing: .2em;
+  text-shadow: 0 calc(var(--s-ui) * 2px) calc(var(--s-ui) * 12px) rgba(0, 0, 0, .55);
+}
+.gg .gg-count,
+.mr .mr-head-sub,
+.rr .rr-hint,
+.rk .rk-hint {
+  opacity: .78;
+}
+
+/* 正文区给一层内衬：列表在底，详情抬起来，前后关系一眼看得出 */
+.gg .gg-list-wrap,
+.rk .rk-body {
+  background: linear-gradient(180deg, rgba(0, 0, 0, .18), transparent 70%);
+}
+.gg .gg-side,
+.rr .rr-stage,
+.mr .mr-detail {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(255, 255, 255, .01));
+}
+
+/* ---- 3) 录像室空状态：居中留白卡 ---- */
+.rr.is-empty .rr-body {
+  align-items: center;
+  justify-content: center;
+}
+.rr.is-empty .rr-list {
+  width: auto;
+  flex: 0 1 auto;
+  overflow: visible;
+  align-items: center;
+}
+.rr.is-empty .rr-stage { display: none; }
+.rr .rr-empty {
+  margin: 0 auto;
+  max-width: calc(var(--s-ui) * 360px);
+  padding: calc(var(--s-ui) * 26px) calc(var(--s-ui) * 24px);
+  border: 1px dashed rgba(255, 214, 111, .2);
+  border-radius: calc(var(--s-ui) * 12px);
+  background: radial-gradient(80% 130% at 50% 0%, rgba(255, 214, 111, .06), transparent 72%);
+  color: rgba(220, 210, 190, .72);
+  font-size: calc(var(--s-ui) * 13px);
+  line-height: 1.9;
+  letter-spacing: .04em;
+  text-align: center;
+}
+
+/* =====================================================================
+   视觉收敛 v2.3：子页面遮幕 / 端面不透明 / 空状态收窄
+   —— 四子页面浮在上一页之上，半透明端面会把下层列表透出来（"鬼影"）。
+   根节点挂全屏遮幕 + 端面提到接近不透明，才是"一张面板"而不是"叠了两层"。
+   ===================================================================== */
+
+.rr::before,
+.gg::before,
+.rk::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(120% 90% at 50% 0%, rgba(10, 7, 16, .5), rgba(3, 2, 6, .78));
+  pointer-events: none;
+}
+
+.rr .rr-frame,
+.gg .gg-frame,
+.rk .rk-frame {
+  background: linear-gradient(180deg, rgba(14, 10, 22, .965), rgba(5, 3, 10, .98));
+}
+
+/* 子页面开着时把常驻的音乐室盖掉：它是底页，两页同时可见会从端面后透出大标题 */
+#ui:has(.gg.is-in) .mr,
+#ui:has(.rk.is-in) .mr,
+#ui:has(.rr.is-in) .mr {
+  visibility: hidden;
+}
+
+/* 录像室空状态：没有列表就别撑满整屏，端面收到内容里，居中一张留白卡 */
+.rr.is-empty .rr-frame {
+  height: auto;
+  min-height: 0;
+}
+
+.rr.is-empty .rr-body {
+  min-height: calc(var(--s-ui) * 240px);
 }
