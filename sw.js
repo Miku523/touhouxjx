@@ -44,8 +44,10 @@ const WARM_MAX_BYTES = 1.5 * 1024 * 1024;
 const WARM_MAX_MS = 8000;
 /** 本次 SW 生命周期里 hks:warm 已经额外下载的字节数（两次 warm 共享同一份预算） */
 let warmSpentBytes = 0;
-/** 预缓存离线壳；单个失败（404/网络抖动）不影响安装 */
-const PRECACHE = ['./', './index.html', './manifest.webmanifest', './src/ui/platform.css?v=1.7.2'];
+/** 预缓存离线壳；单个失败（404/网络抖动）不影响安装。
+ *  platform.css 的 ?v= 从 CACHE_VERSION 派生，别再手写（曾经漏改过一次）。 */
+const PRECACHE = ['./', './index.html', './manifest.webmanifest',
+  './src/ui/platform.css?v=' + CACHE_VERSION.replace(/^hks-v/, '')];
 
 const OFFLINE_HTML =
   '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' +
