@@ -5078,6 +5078,17 @@ html[lang="en"] .overlay.screen-mode .set-row-lang .seg b {
   background: linear-gradient(180deg, rgba(14, 10, 22, .965), rgba(5, 3, 10, .98));
 }
 
+/* 排行榜空态：和录像室一样给虚线留白卡（窄屏那份在下方 media 里，这里补全尺寸） */
+.rk .rk-empty {
+  margin: calc(var(--s-ui) * 18px) auto;
+  max-width: 22em;
+  padding: calc(var(--s-ui) * 22px) calc(var(--s-ui) * 16px);
+  border: 1px dashed rgba(255, 214, 111, .18);
+  border-radius: calc(var(--s-ui) * 10px);
+  background: radial-gradient(80% 120% at 50% 0%, rgba(255, 214, 111, .05), transparent 70%);
+  text-align: center;
+}
+
 /* 子页面开着时把常驻的音乐室盖掉：它是底页，两页同时可见会从端面后透出大标题 */
 #ui:has(.gg.is-in) .mr,
 #ui:has(.rk.is-in) .mr,
