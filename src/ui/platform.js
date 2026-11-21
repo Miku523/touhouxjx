@@ -11,7 +11,7 @@
  * 版本：改动本文件后记得同步 index.html 里的 ?v= 与 sw.js 的 CACHE_VERSION。
  */
 
-export const PLATFORM_VERSION = '1.7.4';
+export const PLATFORM_VERSION = '1.7.5';
 
 const VERSION = PLATFORM_VERSION;
 /** 只在同一个 origin + 安全上下文里注册（GitHub Pages / 本地 8138 都满足） */
@@ -1061,6 +1061,80 @@ function applyVersionLabels() {
   }
 }
 
+/* ============================================================
+   11.6) 远端版本探针：卡在旧 Service Worker 壳的自愈
+   ------------------------------------------------------------
+   症状：网络到本站慢/被拦截时，sw.js 的导航分支 4s 超时后回退到
+   缓存的 index.html 旧壳，于是页面永远停在老版本，连刷新都没用
+   （新 HTML 压根没下载过，页面自己也不知道该更新）。
+   破局点：pathname 以 /sw.js 结尾的请求被 SW 放行，只要能联网就
+   一定读到远端的 CACHE_VERSION（sw.js 是版本的一处真相）。
+   远端比我新 → 清 caches + 注销 SW + 带 ?hks_v= 硬重载一次。
+   sessionStorage 记「已为哪个版本重启过」，防止来回刷。
+   ============================================================ */
+const SS_SWVER = 'hks.swver.v1';
+
+/** 语义化版本比较：a>b → 1，a<b → -1，相等 → 0 */
+function cmpVer(a, b) {
+  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
+/**
+ * 读远端 sw.js 的 CACHE_VERSION，比本地新就清缓存重载。
+ * @returns {Promise<string|false>} 触发的重载 URL；没触发返回 false
+ */
+async function remoteVersionGuard() {
+  if (!CAN || typeof W.fetch !== 'function') return false;
+  const nav = W.navigator || {};
+  if (nav.onLine === false) return false;
+  const seen = safely(() => (W.sessionStorage ? W.sessionStorage.getItem(SS_SWVER) : null), null);
+  if (seen === VERSION) return false; // 本会话已经为这一版重启过
+
+  let remote = '';
+  try {
+    const res = await W.fetch('./sw.js?verprobe=' + Date.now(), { cache: 'no-store' });
+    if (!res || !res.ok) return false;
+    const txt = await res.text();
+    const m = /CACHE_VERSION\s*=\s*['"]([^'"]+)['"]/.exec(txt);
+    if (m) remote = String(m[1]).replace(/^hks-v/, '');
+  } catch (e) {
+    return false; // 离线/被拦截：静默，下一次也不该反复撞
+  }
+  if (!remote || cmpVer(remote, VERSION) <= 0) return false;
+
+  safely(() => {
+    if (W.sessionStorage) W.sessionStorage.setItem(SS_SWVER, remote);
+  });
+
+  // 先清干净：整包缓存 + SW 注册（否则重载回来还是旧壳）
+  try {
+    if (W.caches && W.caches.keys) {
+      const keys = await W.caches.keys();
+      await Promise.all(keys.map(k => W.caches.delete(k)));
+    }
+  } catch (e) {}
+  try {
+    if (nav.serviceWorker && nav.serviceWorker.getRegistrations) {
+      const regs = await nav.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+  } catch (e) {}
+
+  const loc = W.location || {};
+  const base = String(loc.href || '').replace(/([?&])hks_v=[^&]*(&|$)/g, '$1').replace(/[?&]$/, '');
+  const target = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'hks_v=' + encodeURIComponent(VERSION);
+  W.setTimeout(() => safely(() => loc.replace(target)), 120);
+  return target;
+}
+
 export function initPlatform(opts = {}) {
   if (!CAN) return platform.env;
   const o = opts && typeof opts === 'object' ? opts : {};
@@ -1074,6 +1148,12 @@ export function initPlatform(opts = {}) {
 
   // 版本水印跟着 PLATFORM_VERSION 走（标题页 + 启动幕）
   safely(applyVersionLabels);
+
+  // 卡在旧 SW 壳时自愈：远端 sw.js 的 CACHE_VERSION 比本地新就清缓存重载
+  safely(() => {
+    const p = remoteVersionGuard();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  });
 
   // 环境识别 → <html> class
   const detected = detectEnv();
@@ -1097,6 +1177,7 @@ export function initPlatform(opts = {}) {
     W.__hksPlatform = platform;
     W.__hksEnv = env;
     W.__hksHtmlVerGuard = htmlVersionGuard; // QA/自动化：手动复跑版本对账
+    W.__hksRemoteVerGuard = remoteVersionGuard; // QA/自动化：手动复跑远端版本探针
   });
 
   return platform.env;
