@@ -11,7 +11,7 @@
  * 版本：改动本文件后记得同步 index.html 里的 ?v= 与 sw.js 的 CACHE_VERSION。
  */
 
-export const PLATFORM_VERSION = '1.7.5';
+export const PLATFORM_VERSION = '1.7.6';
 
 const VERSION = PLATFORM_VERSION;
 /** 只在同一个 origin + 安全上下文里注册（GitHub Pages / 本地 8138 都满足） */
@@ -1096,7 +1096,6 @@ async function remoteVersionGuard() {
   const nav = W.navigator || {};
   if (nav.onLine === false) return false;
   const seen = safely(() => (W.sessionStorage ? W.sessionStorage.getItem(SS_SWVER) : null), null);
-  if (seen === VERSION) return false; // 本会话已经为这一版重启过
 
   let remote = '';
   try {
@@ -1109,25 +1108,29 @@ async function remoteVersionGuard() {
     return false; // 离线/被拦截：静默，下一次也不该反复撞
   }
   if (!remote || cmpVer(remote, VERSION) <= 0) return false;
+  // 已经为「这一版或更新版」重启过就不再重启。
+  // 必须和 remote 比，不能和 VERSION 比 —— 若重载后拿回的仍是旧壳，
+  // 和 VERSION 比会永远不等，变成无限重载。
+  if (seen && cmpVer(seen, remote) >= 0) return false;
+
+  // 重载前先确认「网络确实拿得到新壳」——否则清完缓存断网时
+  // 用户会连离线壳都没有，直接看到浏览器的错误页。
+  // 唯一查询串 → 不命中 SW 的任意缓存分支，一定走网络。
+  let online = false;
+  try {
+    const probe = await W.fetch('./index.html?verprobe=' + Date.now(), { cache: 'no-store' });
+    online = !!(probe && probe.ok);
+  } catch (e) {
+    online = false;
+  }
+  if (!online) return false;
 
   safely(() => {
     if (W.sessionStorage) W.sessionStorage.setItem(SS_SWVER, remote);
   });
 
-  // 先清干净：整包缓存 + SW 注册（否则重载回来还是旧壳）
-  try {
-    if (W.caches && W.caches.keys) {
-      const keys = await W.caches.keys();
-      await Promise.all(keys.map(k => W.caches.delete(k)));
-    }
-  } catch (e) {}
-  try {
-    if (nav.serviceWorker && nav.serviceWorker.getRegistrations) {
-      const regs = await nav.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r => r.unregister()));
-    }
-  } catch (e) {}
-
+  // 不清 caches、不注销 SW：新版 sw.js 一旦激活会自己删掉旧版本缓存
+  // （activate 里按 CACHE_PREFIX 过滤）。提前清空只会让弱网用户失去兜底。
   const loc = W.location || {};
   const base = String(loc.href || '').replace(/([?&])hks_v=[^&]*(&|$)/g, '$1').replace(/[?&]$/, '');
   const target = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'hks_v=' + encodeURIComponent(VERSION);

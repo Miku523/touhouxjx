@@ -3060,7 +3060,7 @@ body {
 /* 右下角版本号：纯 CSS 生成，不动 DOM。东方的版本号就是这种「几乎看不见」的存在。
    值由 src/ui/platform.js 写入 --hks-ver；fallback 只在 JS 没跑起来时露脸。 */
 #boot::after {
-  content: var(--hks-ver, "ver 1.7.5");
+  content: var(--hks-ver, "ver 1.7.6");
   position: absolute;
   right: calc(var(--s) * 28px);
   bottom: calc(var(--s) * 24px);
