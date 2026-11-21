@@ -240,13 +240,13 @@ still / glow / mote / shots: [ { bg, cast: [{ key, x, h }], lines: [{ who, text 
 
 ---
 
-## 5. 音乐映射（19 首曲目）
+## 5. 音乐映射（21 首曲目）
 
 字段约定见 `src/game/musicTracks.js:4-15`：`key / no / title / sub / cat / place / orig / tone / glow / time / note`。**`bpm` 不在曲目表里**，音乐室从 `SONGS` 现取（`src/game/musicRoom.js:49-52`）。
 
 | 编号 | key | 曲名 | 分类 | 对应场景 | 原曲出处 | 曲长 s | 解说行 |
 |---|---|---|---|---|---|---|---|
-| 01 | `title` | 東方新紀行 ～ Chronicle of Gensokyo | TITLE | 博丽神社 · 黄昏缘侧 | 历代主题曲改编 · 编曲：本作 | 144 | `src/game/musicTracks.js:29` |
+| 01 | `title` | 東方新紀行 ～ Chronicle of Gensokyo | TITLE | 博丽神社 · 黄昏缘侧 | 历代主题曲改编 · 编曲：本作 | 148.7 | `src/game/musicTracks.js:29` |
 | 02 | `pre1` | 像鬼灯一样鲜红的灵魂（夜樱小径编） | STAGE 1 · 道中 | 博丽神社 · 夜樱小径 | 原曲 / ZUN（逐音搬入重配器） | 92.7 | `:33` |
 | 03 | `stage1` | 妖魔夜行（宵暗夜路编） | STAGE 1 | 博丽神社 · 夜樱小径 | 原曲 / ZUN（逐音搬入重配器） | 103.7 | `:62` |
 | 04 | `pre2` | 幻视之夜 ～ Ghostly Eyes（萤火夜雾编） | STAGE 2 · 道中 | 魔法森林 · 萤火夜雾 | 原曲 / ZUN（逐音搬入重配器） | 111.3 | `:63` |
@@ -265,9 +265,11 @@ still / glow / mote / shots: [ { bg, cast: [{ key, x, h }], lines: [{ who, text 
 | 17 | `gameover` | 失われた道標 | GAME OVER | 无名的路口 | 原创 · 本作 | 33.3 | `:302` |
 | 18 | `ending` | 帰り道の夕暮れ | ENDING | 归途 · 黄昏坂道 | 原创 · 本作 | 70 | `:317` |
 | 19 | `endingW` | 今宵未尽的祭典 | EXTRA ENDING | 祭典 · 八音盒房间 | 原曲 / ZUN · 整曲八音盒改编（WAV） | 219.1 | `:333` |
+| 20 | `ph_boss` | 隙间妖蝶 | 追加曲 | 幻想乡境外 · 红月与隙间 | 原曲 / ZUN（逐音搬入重配器） | 170.9 | — |
+| 21 | `draft` | 废稿 | 追加曲 | 未收录 · 试作废案 | 历代主题曲 / 编曲：本作（现代混曲 v3） | 91.2 | — |
 
 - 曲目表顺序 = 游戏流程顺序，也决定音乐室编号（`src/game/musicTracks.js:15`）。
-- 音乐室遍历整张 `MUSIC_TRACKS`（`src/game/musicRoom.js:49`），所以**道中曲（pre1–pre6、ex_pre、ex_mid）也进目录**，实际是 19 首。
+- 音乐室遍历整张 `MUSIC_TRACKS`（`src/game/musicRoom.js:49`），所以**道中曲（pre1–pre6、ex_pre、ex_mid）也进目录**，实际是 21 首。
 - 每首的 `note` 都是 100–220 字的第一人称杂谈，**大量剧透角色与剧情**（例如 `:29` 提到灵梦/魔理沙，`:263` 提到「姐姐」，`:282` 提到芙兰），换剧情时必须整段重写，而不是只改曲名。
 
 ---

@@ -28,7 +28,7 @@ function loadAudioModule() {
 }
 
 /**
- * 只取曲库索引（songs/index.js + title_full.js，纯数据，不建 AudioContext）。
+ * 只取曲库索引（songs/index.js + title_full_opt3.js，纯数据，不建 AudioContext）。
  *
  * 启动幕门禁要等第 1 面曲目模块，而 1.6.54 把曲库索引也挪到了首次手势之后，
  * 门禁这一路就没东西可等（恒为空转通过）。曲库索引本身不碰音频硬件、不违反
@@ -97,8 +97,8 @@ let _gameKitPromise = null;
 const BOOT_GATE_TIMEOUT_MS = 180000;
 /** 进关依赖图模块数的估计值（tools/gen_modulepreload.py 统计约 49 项）；只用于进度条观感刻度 */
 const KIT_MODULE_EST = 49;
-/** 曲库懒加载模块数（songs/index.js 的 DEFS 18 项 + 共享数据模块）；只用于进度条观感刻度 */
-const MUSIC_MODULE_EST = 20;
+/** 曲库懒加载模块数（songs/index.js 的 DEFS 19 项 + 共享数据模块）；只用于进度条观感刻度 */
+const MUSIC_MODULE_EST = 21;
 /** 门禁里的「美术」一路（背景低清档 / 自机动作帧 / Boss 立绘 / 对话立绘）单项上限：
  *  单张图挂住不该把整段门禁拖死，超时当就绪处理（该素材进关时还有二次兜底）。 */
 const BOOT_ART_ITEM_MS = 20000;
@@ -1752,7 +1752,7 @@ class Game {
           audio: this.audio,
           input: this.input,
           host: this.uiEl,
-          isHeard: (key) => key === 'ph_boss' || this._heardSongs.has(key),
+          isHeard: (key) => key === 'ph_boss' || key === 'draft' || this._heardSongs.has(key),
           markHeard: (key) => this._rememberSong(key),
           onExit: () => this._leaveMusicRoom(),
           onMute: () => this._toggleMute(),

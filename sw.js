@@ -22,7 +22,7 @@
      - 不碰：非 GET、跨域、range 请求、非 200、chrome-extension://、sw.js 自身
    ============================================================ */
 
-const CACHE_VERSION = 'hks-v1.7.9';
+const CACHE_VERSION = 'hks-v1.7.10';
 const CACHE_PREFIX = 'hks-';
 const OFFLINE_URL = './index.html';
 const NETWORK_TIMEOUT = 4000;

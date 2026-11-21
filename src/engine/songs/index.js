@@ -27,7 +27,7 @@
  * 懒加载（首访只带标题曲）
  * ---------------------------------------------------------------------------
  * 19 首曲子的音符表合起来占首访 JS 的四成多，而标题画面只需要 title 一首。
- * 所以这里只静态 import title_full.js，其余 18 个模块改成按名字动态 import：
+ * 所以这里只静态 import title_full_opt3.js（标题曲现行版），其余模块改成按名字动态 import：
  *
  *   getSong(name)        同步取曲目数据；没加载过就是 undefined（调用方自行降级）。
  *   ensureSong(name)     异步加载该曲目所属模块并 resolve 曲目数据。
@@ -45,15 +45,21 @@
  * 求值时用 require 同步装满全部曲目，保持既有工具链的同步语义；浏览器不做这件事。
  */
 
-import { TITLE_FULL } from './title_full.js';
+import { TITLE_FULL_OPT3 } from './title_full_opt3.js';
 
 /**
  * 已加载曲目（实时集合）。首屏只有标题曲，其余由 ensureSong()/preloadSongs() 按需填入。
  * @type {Record<string, object>}
  */
 export const SONGS = {
-  // 标题画面：13 作主题曲融合 medley 的完整曲式版（去 8bit 音色，见 tools/title_arrange.py）
-  title: TITLE_FULL.title,
+  // 标题画面：14 作主题曲融合 medley 的优化重编 A3 —— 接音式主题连接 + 分段电平配平
+  // （见 tools/build/_title_chron_opt3.py）。audio 指向离线渲染成品 src/assets/bgm/title.mp3，
+  // 加载失败时自动回退这里的合成数据；曲名沿用现名，不改。
+  title: {
+    ...TITLE_FULL_OPT3.title,
+    title: '東方新紀行 ～ Chronicle of Gensokyo (13th Anniversary Medley)（完整编曲版·完整曲式）',
+    audio: 'src/assets/bgm/title.mp3?v=1.7.10',
+  },
 };
 
 /**
@@ -63,7 +69,7 @@ export const SONGS = {
  * @type {{ id: string, url: string, keys: string[], pick: (m: object) => Record<string, object|undefined> }[]}
  */
 const DEFS = [
-  // 失败 / 结局曲。original.js 里的 title 被 title_full.js 的完整版覆盖，这里不再取。
+  // 失败 / 结局曲。original.js 里的 title 被 title_full_opt3.js 的完整版覆盖，这里不再取。
   { id: 'original', url: './original.js', keys: ['gameover', 'ending'],
     pick: (m) => ({ gameover: m.ORIGINAL_SONGS?.gameover, ending: m.ORIGINAL_SONGS?.ending }) },
   // EXTRA 结局曲：整曲八音盒版《今宵未尽的祭典》（离线渲染，见 tools/build/build_festival_ending.py
@@ -138,6 +144,12 @@ const DEFS = [
   // 鼓组补滚奏/加花/末段双踩、铜管加倍铺满全曲（见 tools/build/_yuk_compose2.py）。
   { id: 'yukari_ph', url: './yukari_ph.js', keys: ['ph_boss'],
     pick: (m) => ({ ph_boss: m.YUKARI_PH?.ph_boss ? { ...m.YUKARI_PH.ph_boss, audio: 'src/assets/bgm/yukari_ph.mp3?v=1.6.91' } : undefined }) },
+
+  // 追加曲《废稿》：标题曲的另一个方案（现代混曲 v3 —— 13 作接音串烧，弃前 5 作，
+  // 段间以共享音衔接，鼓全程不断），最终没采用，留档在音乐回忆室末尾 21 号
+  // （见 tools/build/_title_gen3.py）。同样是纯听曲：没有遭遇演出，也没有曲名解说。
+  { id: 'title_draft', url: './title_full_v3.js', keys: ['draft'],
+    pick: (m) => ({ draft: m.TITLE_FULL_V3?.title ? { ...m.TITLE_FULL_V3.title, key: 'draft', audio: 'src/assets/bgm/title_v3.mp3?v=1.7.10' } : undefined }) },
 ];
 
 /** key → 所属动态模块 */

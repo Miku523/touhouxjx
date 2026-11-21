@@ -2192,4 +2192,8 @@ export default {
   "隙间妖蝶": "Gap Phantom Butterfly",
   "幻想乡境外 · 红月与隙间": "Beyond Gensokyo · Red Moon and Boundaries",
   "原曲「ネクロファンタジア」/ 作曲：ZUN / 编曲：Miku523（逐音搬入重配器）": "Original \"Necrofantasia\" / Composer: ZUN / Arrangement: Miku523 (note-for-note re-orchestration)",
+  "废稿": "Waste Draft",
+  "现代混曲 v3 · 未采用方案": "Modern Mashup v3 · unused cut",
+  "未收录 · 试作废案": "Unreleased · scrapped draft",
+  "历代主题曲 / 作曲：ZUN / 编曲：Miku523（现代混曲 v3·接音串烧）": "Original theme series / Composer: ZUN / Arrangement: Miku523 (modern mashup v3 · seamless chain)",
 };

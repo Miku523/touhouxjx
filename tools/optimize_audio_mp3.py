@@ -52,7 +52,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BGM = ROOT / "src" / "assets" / "bgm"
 
 # 目标曲目（离线渲染产物，原 WAV 一律保留）
-TRACKS = ("sakuya_ex", "flandre_devil", "festival_box", "remilia_septette", "youma_stage1", "wriggle_stage2", "cirno_stage3", "aya_stage4", "kaguya_stage6", "pre1", "pre2", "pre3", "pre4", "pre6", "yukari_ph", "youmu_pre5", "yuyuko_stage5")
+TRACKS = ("sakuya_ex", "flandre_devil", "festival_box", "remilia_septette", "youma_stage1", "wriggle_stage2", "cirno_stage3", "aya_stage4", "kaguya_stage6", "pre1", "pre2", "pre3", "pre4", "pre6", "yukari_ph", "youmu_pre5", "yuyuko_stage5", "title", "title_v3")
 
 # 母版不在 src/assets/bgm 的曲目（体积超过 Cloudflare Pages 单文件 25 MiB 上限，只发 MP3）
 MASTERS = {"remilia_septette": ROOT / "tools" / "build" / "_remi_kit" / "remilia_septette_stereo.wav",
@@ -68,7 +68,11 @@ MASTERS = {"remilia_septette": ROOT / "tools" / "build" / "_remi_kit" / "remilia
            "kaguya_stage6": ROOT / "tools" / "build" / "_kag_kit" / "kaguya_stage6_stereo.wav",
            "yukari_ph": ROOT / "tools" / "build" / "_yuk_kit" / "yukari_ph_stereo.wav",
            "youmu_pre5": ROOT / "tools" / "build" / "_youmu_kit" / "youmu_pre5_stereo.wav",
-           "yuyuko_stage5": ROOT / "tools" / "build" / "_yuyuko_kit" / "yuyuko_stage5_stereo.wav"}
+           "yuyuko_stage5": ROOT / "tools" / "build" / "_yuyuko_kit" / "yuyuko_stage5_stereo.wav",
+           # 标题曲正式资产 = 优化重编 A3 的母版（成品 src/assets/bgm/title.mp3）
+           "title": ROOT / "tools" / "build" / "_title_opt3_kit" / "title_opt3_final.wav",
+           # 追加曲《废稿》= 现代混曲 v3 的母版（成品 src/assets/bgm/title_v3.mp3）
+           "title_v3": ROOT / "tools" / "build" / "_title_v3_kit" / "title_v3_stereo.wav"}
 
 SR = 22050          # 离线渲染采样率（WAV 侧，MP3 不做重采样）
 SPF = 576           # MPEG-1/2 Layer III 每帧采样数
