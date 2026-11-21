@@ -175,7 +175,6 @@ body {
   font-size: max(9px, calc(var(--s) * 10px));
   letter-spacing: .32em;
   color: var(--gold);
-  opacity: .84;
   padding-left: calc(var(--s) * 2px);
 }
 .pl::before {
@@ -192,11 +191,10 @@ body {
   padding-bottom: calc(var(--s) * 1px);
   font-size: max(9px, calc(var(--s) * 9.5px));
   letter-spacing: .06em;
-  color: rgba(242, 233, 216, .42);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.pdim b { font-weight: 400; color: rgba(242, 233, 216, .62); }
+.pdim b { font-weight: 400; }
 .power-body { position: relative; display: flex; align-items: center; gap: calc(var(--s) * 8px); }
 .pbar {
   position: relative;
@@ -268,7 +266,7 @@ body {
   color: rgba(255, 235, 180, .9);
   white-space: nowrap;
 }
-.plv b { font-weight: 400; font-size: max(8px, calc(var(--s) * 8px)); letter-spacing: .14em; opacity: .62; }
+.plv b { font-weight: 400; font-size: max(8px, calc(var(--s) * 8px)); letter-spacing: .14em; }
 .plv > i {
   font-style: normal;
   font-size: calc(var(--s) * 12px);
@@ -374,12 +372,10 @@ body {
   font-size: max(9px, calc(var(--s) * 11px));
   letter-spacing: .28em;
   color: var(--gold);
-  opacity: .92;
 }
 .tm {
   font-size: max(10px, calc(var(--s) * 12.5px));
   letter-spacing: .06em;
-  color: rgba(242, 233, 216, .75);
   font-variant-numeric: tabular-nums;
   padding-left: calc(var(--s) * 10px);
   border-left: 1px solid rgba(242, 210, 75, .25);
@@ -401,7 +397,6 @@ body {
   font-family: var(--serif);
   font-size: max(9px, calc(var(--s) * 11px));
   letter-spacing: .18em;
-  color: rgba(242, 233, 216, .72);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(0, 0, 0, .18)),
     rgba(10, 6, 18, .42);
@@ -415,7 +410,6 @@ body {
   font-size: calc(var(--s) * 10px);
   margin-right: calc(var(--s) * 5px);
   color: var(--gold);
-  opacity: .75;
 }
 .hud-settings:hover {
   color: #fff;
@@ -432,7 +426,6 @@ body {
   top: calc(var(--s) * 92px);
   width: calc(var(--s) * 560px);
   padding: calc(var(--s) * 6px) calc(var(--s) * 12px) calc(var(--s) * 8px);
-  background: radial-gradient(ellipse 60% 120% at 50% 40%, rgba(5, 3, 10, .48), rgba(5, 3, 10, 0) 78%);
   border-radius: calc(var(--s) * 4px);
   opacity: .96;
 }
@@ -443,12 +436,8 @@ body {
   margin-bottom: calc(var(--s) * 4px);
   font-size: calc(var(--s) * 13.5px);
   letter-spacing: .14em;
-  color: var(--sakura);
-  text-shadow:
-    0 0 calc(var(--s) * 12px) rgba(255, 94, 168, .8),
-    0 1px calc(var(--s) * 4px) rgba(0, 0, 0, .9);
 }
-#bossPhase { font-size: calc(var(--s) * 11px); color: var(--gold); opacity: .8; }
+#bossPhase { font-size: calc(var(--s) * 11px); }
 .bbar {
   height: calc(var(--s) * 9px);
   position: relative;
@@ -591,10 +580,9 @@ body {
   bottom: calc(var(--s) * 10px);
   font-size: calc(var(--s) * 11px);
   letter-spacing: .1em;
-  color: rgba(242, 233, 216, .45);
   animation: dlgBlink 1.4s ease-in-out infinite;
 }
-@keyframes dlgBlink { 0%, 100% { opacity: .25; } 50% { opacity: .9; } }
+@keyframes dlgBlink { 0%, 100% { } 50% { } }
 
 /* ---------- 菜单层 ---------- */
 .overlay {
@@ -633,7 +621,6 @@ body {
   font-size: calc(var(--s) * 14px);
   letter-spacing: .34em;
   color: var(--sakura);
-  opacity: .82;
 }
 #subtitle::after {
   content: "";
@@ -705,8 +692,8 @@ body {
   transform: none;
 }
 .btn.locked .k { display: none; }
-.title-mode .btn.locked .label { color: rgba(216, 208, 196, .55); }
-.title-mode .btn.locked .en { color: rgba(255, 211, 154, .2); }
+.title-mode .btn.locked .label { }
+.title-mode .btn.locked .en { }
 
 /* 操作说明里的纯文本行：不可点，不要按钮外观 */
 .btn.info {
@@ -725,8 +712,6 @@ body {
   font-size: calc(var(--s) * 12px);
   line-height: 1.85;
   letter-spacing: .06em;
-  color: var(--dim);
-  opacity: .85;
   white-space: pre-line;
 }
 
@@ -922,7 +907,6 @@ body {
   font-size: calc(var(--s) * 23px);
   font-weight: 400;
   letter-spacing: calc(var(--s) * 3px);
-  color: rgba(255, 242, 226, .66);
   text-align: left;
   text-shadow: 0 calc(var(--s) * 2px) calc(var(--s) * 8px) rgba(0, 0, 0, .9);
   transition: color .13s, background .13s, transform .13s;
@@ -960,7 +944,6 @@ body {
   font-size: calc(var(--s) * 10px);
   letter-spacing: calc(var(--s) * 2.6px);
   color: #ffd39a;
-  opacity: .42;
   text-transform: uppercase;
   vertical-align: middle;
 }
@@ -994,10 +977,8 @@ body {
 .title-mode .hint {
   margin: calc(var(--s) * 20px) 0 0;
   padding-left: calc(var(--s) * 40px);
-  font-size: calc(var(--s) * 11.5px);
   line-height: 1.95;
   letter-spacing: calc(var(--s) * 1.2px);
-  color: rgba(255, 232, 208, .48);
   white-space: pre-line;
   text-shadow: 0 1px 6px rgba(0, 0, 0, .9);
 }
@@ -1027,7 +1008,6 @@ body {
   font-family: "Optima", "Palatino Linotype", "Times New Roman", serif;
   font-size: calc(var(--s) * 10px);
   letter-spacing: calc(var(--s) * 2.2px);
-  color: rgba(255, 228, 196, .4);
   text-shadow: 0 1px 6px rgba(0, 0, 0, .85);
 }
 
@@ -1057,7 +1037,6 @@ body {
 
 .title-mode .hint {
   font-size: calc(var(--s) * 12.5px);
-  color: rgba(255, 232, 208, .58);
 }
 
 /* ---------- 设置 / 按键设置：两列网格 ---------- */
@@ -1141,17 +1120,6 @@ body {
 .overlay.screen-mode .panel {
   position: relative;
   width: min(calc(var(--s) * 1080px), 95vw);
-  max-width: none;
-  padding: calc(var(--s) * 26px) calc(var(--s) * 40px) calc(var(--s) * 26px);
-  border-radius: calc(var(--s) * 12px);
-  border: 1px solid rgba(242, 210, 75, .16);
-  background:
-    radial-gradient(ellipse 110% 80% at 50% -30%, rgba(104, 42, 116, .42), transparent 62%),
-    radial-gradient(ellipse 90% 60% at 100% 110%, rgba(232, 54, 79, .16), transparent 60%),
-    linear-gradient(180deg, rgba(22, 13, 34, .94), rgba(7, 4, 13, .97));
-  box-shadow:
-    0 0 calc(var(--s) * 100px) rgba(0, 0, 0, .9),
-    inset 0 1px 0 rgba(255, 255, 255, .06);
 }
 
 /* 顶沿一道描金细线 + 居中菱形，压掉「系统对话框」的方正感 */
@@ -1172,10 +1140,6 @@ body {
   font-weight: 400;
   letter-spacing: .24em;
   text-indent: .24em;
-  text-shadow:
-    0 0 calc(var(--s) * 2px) rgba(255, 246, 236, .5),
-    0 0 calc(var(--s) * 22px) rgba(232, 54, 79, .55),
-    0 0 calc(var(--s) * 56px) rgba(255, 94, 168, .28);
 }
 .overlay.screen-mode #title::before {
   content: attr(data-en);
@@ -1195,7 +1159,6 @@ body {
   margin: calc(var(--s) * 10px) 0 calc(var(--s) * 18px);
   font-size: calc(var(--s) * 11.5px);
   letter-spacing: .18em;
-  color: rgba(255, 232, 208, .55);
   opacity: 1;
 }
 .overlay.screen-mode #subtitle::after {
@@ -1229,12 +1192,6 @@ body {
 }
 .overlay.screen-mode .btn:hover,
 .overlay.screen-mode .btn.sel {
-  color: #fff;
-  background: linear-gradient(90deg, rgba(232, 54, 79, .17), rgba(232, 54, 79, .04) 70%, transparent);
-  border-color: rgba(232, 54, 79, .40);
-  box-shadow:
-    inset calc(var(--s) * 2px) 0 0 var(--reimu),
-    0 0 calc(var(--s) * 16px) rgba(232, 54, 79, .14);
 }
 .overlay.screen-mode .btn:active { transform: none; }
 .overlay.screen-mode .btn .k {
@@ -1243,7 +1200,6 @@ body {
   float: none;
   font-size: calc(var(--s) * 10.5px);
   letter-spacing: .1em;
-  color: rgba(242, 210, 75, .72);
 }
 .overlay.screen-mode .btn .label { flex: 1 1 auto; }
 .overlay.screen-mode .btn.capturing {
@@ -1254,13 +1210,6 @@ body {
 
 /* ---------- 分组卡片 ---------- */
 .overlay.screen-mode .set-group {
-  min-width: 0;
-  padding: calc(var(--s) * 12px) calc(var(--s) * 12px) calc(var(--s) * 12px);
-  border: 1px solid rgba(242, 233, 216, .09);
-  border-radius: calc(var(--s) * 10px);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(255, 255, 255, .008) 45%, rgba(0, 0, 0, .10));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035);
 }
 .overlay.screen-mode .set-group-title {
   position: relative;
@@ -1291,20 +1240,12 @@ body {
 
 /* 设置：左列声音（跨两行），右列画面 / 游戏 */
 .overlay.screen-mode .set-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr);
-  gap: calc(var(--s) * 12px) calc(var(--s) * 14px);
-  align-items: start;
 }
 .overlay.screen-mode .set-grid > .set-group[data-g="sound"] {
-  grid-column: 1;
-  grid-row: 1 / span 2;
 }
 
 /* 行内：左标签 / 右控件 / 热键 */
 .overlay.screen-mode .set-row .set-label {
-  flex: 1 1 auto;
-  min-width: 0;
   display: flex;
   align-items: center;
 }
@@ -1422,7 +1363,6 @@ body {
   font-size: calc(var(--s) * 10.5px);
   font-weight: 400;
   text-align: center;
-  color: rgba(242, 233, 216, .42);
   transition: color .16s, background .16s, box-shadow .16s;
 }
 .seg b.on {
@@ -1551,7 +1491,6 @@ body {
 .help-tip {
   font-size: calc(var(--s) * 10px);
   letter-spacing: .04em;
-  color: rgba(242, 233, 216, .40);
   white-space: nowrap;
 }
 
@@ -1571,10 +1510,6 @@ body {
   padding: calc(var(--s) * 20px);
   border: 1px solid rgba(255, 255, 255, .10);
   border-radius: calc(var(--s) * 12px);
-  background:
-    radial-gradient(circle at 6% 0%, rgba(var(--glow, 255, 200, 200), .14), transparent 58%),
-    radial-gradient(ellipse 80% 70% at 100% 100%, rgba(var(--glow, 255, 200, 200), .12), transparent 62%),
-    linear-gradient(180deg, rgba(255, 255, 255, .03) 0%, rgba(0, 0, 0, .06) 40%, rgba(4, 2, 9, .74) 100%);
   text-align: left;
   transition: border-color .2s, box-shadow .2s, transform .2s;
 }
@@ -1654,7 +1589,6 @@ body {
   margin-top: calc(var(--s) * 4px);
   font-size: calc(var(--s) * 11px);
   letter-spacing: .06em;
-  color: rgba(242, 233, 216, .62);
 }
 .cc-key {
   position: absolute;
@@ -1668,9 +1602,7 @@ body {
   height: calc(var(--s) * 24px);
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, .22);
-  background: rgba(0, 0, 0, .38);
   font-size: calc(var(--s) * 11px);
-  color: rgba(242, 233, 216, .72);
 }
 
 /* ---------- EXTRA 选人：未解锁的主角卡 ----------
@@ -1743,9 +1675,6 @@ body {
   border: 1px solid rgba(255, 255, 255, .12);
   border-radius: calc(var(--s) * 14px);
   text-align: center;
-  background:
-    radial-gradient(ellipse 92% 60% at 50% 0%, rgba(var(--glow, 255, 158, 203), .13), transparent 64%),
-    linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(0, 0, 0, .30) 62%, rgba(0, 0, 0, .42));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, .05),
     inset 0 0 0 1px rgba(0, 0, 0, .25),
@@ -1756,9 +1685,6 @@ body {
 .overlay.screen-mode .diff-card.sel {
   transform: translateY(calc(var(--s) * -5px));
   border-color: rgba(var(--glow, 255, 158, 203), .78);
-  background:
-    radial-gradient(ellipse 92% 62% at 50% 0%, rgba(var(--glow, 255, 158, 203), .26), transparent 68%),
-    linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(0, 0, 0, .26) 62%, rgba(0, 0, 0, .38));
   box-shadow:
     0 0 calc(var(--s) * 34px) rgba(var(--glow, 255, 158, 203), .30),
     0 calc(var(--s) * 18px) calc(var(--s) * 34px) rgba(0, 0, 0, .45),
@@ -1846,7 +1772,6 @@ body {
   border: 1px solid rgba(255, 255, 255, .14);
   font-size: calc(var(--s) * 9px);
   letter-spacing: 0;
-  color: rgba(242, 233, 216, .34);
 }
 .dc-now {
   display: none;
@@ -1881,14 +1806,12 @@ body {
   background: rgba(255, 255, 255, .012);
   font-size: calc(var(--s) * 12px);
   letter-spacing: .26em;
-  color: rgba(242, 233, 216, .55);
 }
 .overlay.screen-mode .back-ghost .label { flex: 0 1 auto; text-indent: .26em; }
 .overlay.screen-mode .hint {
   margin-top: calc(var(--s) * 14px);
   font-size: calc(var(--s) * 10.5px);
   letter-spacing: .1em;
-  color: rgba(242, 233, 216, .34);
 }
 
 /* ============================================================
@@ -2011,7 +1934,6 @@ body {
   transform: translateY(-50%);
   writing-mode: vertical-rl;
   text-align: center;
-  color: rgba(242, 210, 75, .40);
   text-shadow: 0 0 calc(var(--s) * 12px) rgba(0, 0, 0, .85);
 }
 .ov-bg-caption span {
@@ -2025,7 +1947,6 @@ body {
   font-style: normal;
   font-size: calc(var(--s) * 8px);
   letter-spacing: .38em;
-  color: rgba(242, 233, 216, .22);
 }
 .ov-corner {
   position: absolute;
@@ -2047,7 +1968,6 @@ body {
   padding: calc(var(--s) * 14px) calc(var(--s) * 30px) calc(var(--s) * 16px);
   border: 0;
   border-radius: 0;
-  background: none;
   box-shadow: none;
   backdrop-filter: none;
 }
@@ -2063,15 +1983,6 @@ body {
   padding: calc(var(--s) * 14px) calc(var(--s) * 14px) calc(var(--s) * 12px);
   border: 1px solid rgba(242, 210, 75, .15);
   border-radius: calc(var(--s) * 6px);
-  background:
-    linear-gradient(166deg,
-      rgba(32, 18, 44, .62) 0%,
-      rgba(14, 8, 23, .56) 56%,
-      rgba(8, 5, 15, .64) 100%);
-  backdrop-filter: blur(10px) saturate(1.08);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .06),
-    0 calc(var(--s) * 16px) calc(var(--s) * 38px) rgba(0, 0, 0, .30);
 }
 .overlay.screen-mode .set-group::after {
   content: attr(data-glyph);
@@ -2097,10 +2008,7 @@ body {
 
 /* ---------- 设置页：左声音（跨两行）/ 右画面 + 游戏，三张卡上下对齐 ---------- */
 .overlay.screen-mode .set-grid {
-  grid-template-columns: minmax(0, 1.06fr) minmax(0, 1fr);
   grid-template-rows: auto auto;
-  gap: calc(var(--s) * 12px) calc(var(--s) * 14px);
-  align-items: stretch;
 }
 .overlay.screen-mode .set-grid > .set-group[data-g="sound"] {
   grid-column: 1;
@@ -2117,13 +2025,10 @@ body {
   min-height: 0;
 }
 .overlay.screen-mode .set-grid > .set-group[data-g="device"] .set-rows {
-  display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   column-gap: calc(var(--s) * 14px);
-  justify-content: initial;
 }
 .overlay.screen-mode .set-grid > .set-group[data-g="device"] .set-rows > .set-row + .set-row {
-  border-top: 0;
 }
 /* 行高按列均分，长短卡都不会在底部留一截空 */
 .overlay.screen-mode .set-grid .set-rows {
@@ -2132,7 +2037,7 @@ body {
 }
 /* 三张选项卡给足最小高度：内容自然高度约 179，低于它会被 overflow 裁掉 */
 .overlay.screen-mode .set-grid > .set-group { min-height: calc(var(--s) * 180px); }
-.overlay.screen-mode .set-grid > .set-group[data-g$="foot"] { min-height: 0; }
+.overlay.screen-mode .set-grid > .set-group[data-g$="foot"] { }
 .overlay.screen-mode .set-rows > .set-row + .set-row {
   border-top: 1px solid rgba(255, 255, 255, .045);
 }
@@ -2173,12 +2078,10 @@ body {
   padding: calc(var(--s) * 1px) calc(var(--s) * 4px);
   border-radius: calc(var(--s) * 3px);
   border: 1px solid rgba(242, 210, 75, .13);
-  background: rgba(0, 0, 0, .16);
   font-size: calc(var(--s) * 9px);
   line-height: 1.4;
   letter-spacing: .02em;
   text-align: center;
-  color: rgba(242, 210, 75, .55);
 }
 
 /* ---------- 页脚：从整条横杠收成居中小键 ---------- */
@@ -2189,7 +2092,6 @@ body {
   padding: calc(var(--s) * 8px) calc(var(--s) * 16px);
   border-radius: calc(var(--s) * 3px);
   border: 1px solid rgba(242, 233, 216, .13);
-  background: rgba(8, 5, 15, .46);
   backdrop-filter: blur(8px);
 }
 .overlay.screen-mode .set-group[data-g$="foot"] .set-rows > .btn:only-child {
@@ -2197,8 +2099,6 @@ body {
   justify-self: center;
 }
 .overlay.screen-mode .hint {
-  color: rgba(242, 233, 216, .40);
-  text-shadow: 0 0 calc(var(--s) * 10px) rgba(0, 0, 0, .9);
 }
 
 /* ---------- 难度卡：当前标记收回卡内 ---------- */
@@ -2240,9 +2140,6 @@ body {
     linear-gradient(180deg, rgba(26, 16, 38, .66), rgba(8, 4, 15, .76) 62%, rgba(4, 2, 9, .84));
 }
 .overlay.screen-mode .cc-card {
-  background:
-    radial-gradient(ellipse 88% 58% at 50% 8%, rgba(var(--glow, 255, 158, 203), .14), transparent 66%),
-    linear-gradient(180deg, rgba(20, 12, 30, .58), rgba(6, 3, 12, .78));
   backdrop-filter: blur(10px) saturate(1.04);
 }
 /* 顶栏标题再压一点暗，避免亮景吃掉字 */
@@ -4548,3 +4445,467 @@ html[lang="en"] .overlay.screen-mode .set-row-lang .seg b {
   text-shadow: 0 0 calc(var(--s) * 26px) rgba(120, 160, 255, .38);
 }
 
+
+/* ============================================================
+   响应式与布局层：缩放 / 断点 / 点击区 / 层级
+   1) 菜单子树用自己的缩放 --s-ui（0.78~1.5），不跟画布一起被压到 5px 级。
+   2) 窄屏 / 竖屏：菜单层铺满视口 —— stage 只有 16:9 letterbox 那么高。
+   3) 设置页自动流网格，废弃手工 grid-row 摆位。
+   4) 点击区 / 断点 / z-index 统一到 :root token。
+   注意：这一段是叠加层（部分带 html.touch / 媒体查询条件），
+   和上面的基础样式不是重复定义；删任何一条都要跑 tools/_css_snapshot.mjs 比对。
+   ============================================================ */
+
+:root {
+  --s-ui: 1;
+  --gap-1: calc(var(--s-ui) * 8px);
+  --gap-2: calc(var(--s-ui) * 14px);
+  --gap-3: calc(var(--s-ui) * 22px);
+  --row-h: calc(var(--s-ui) * 36px);
+  --tap: 44px;                        /* 最小点击区（真机像素，不参与缩放） */
+  --z-hud: 10;
+  --z-banner: 20;
+  --z-menu: 30;
+  --z-toast: 40;
+  --z-confirm: 50;
+}
+
+/* ---- 1) 缩放：菜单子树里 --s 指到 --s-ui ---- */
+.overlay { --s: var(--s-ui); z-index: var(--z-menu); }
+#hud { z-index: var(--z-hud); }
+
+/* 正文最小可读字号：窄屏不再跟着 --s 掉到个位数 */
+.overlay .btn,
+.overlay .set-row,
+.overlay .set-label,
+.overlay .hint,
+.overlay .set-group-title {
+  font-size: max(calc(var(--s-ui) * 15px), 12px);
+}
+.overlay #hint,
+.overlay .set-row.info {
+  font-size: max(calc(var(--s-ui) * 13px), 11px);
+}
+
+/* 点击区下限：短按钮也够拇指点 */
+.overlay .btn,
+.overlay .set-row { min-height: var(--tap); }
+
+/* ---- 2) 窄屏 / 竖屏：菜单层铺满视口 ---- */
+@media (max-width: 900px), (orientation: portrait) {
+  .overlay {
+    position: fixed;
+    inset: 0;
+    padding: var(--gap-3) 0;
+    align-items: center;
+    overflow: hidden;
+  }
+  .overlay .panel {
+    width: 100%;
+    max-width: min(100%, 640px);
+    max-height: calc(100dvh - var(--gap-3) * 2);
+    overflow-y: auto;
+    padding: var(--gap-2) var(--gap-3) var(--gap-3);
+    -webkit-overflow-scrolling: touch;
+  }
+  /* 标题页：按钮区从「绝对贴底」改成随内容流动，竖屏不会掉出可视区 */
+  .overlay.title-mode { position: fixed; inset: 0; }
+  .overlay.title-mode .panel {
+    position: relative;
+    inset: auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: var(--gap-2);
+    max-height: 100dvh;
+    overflow-y: auto;
+  }
+  .overlay.title-mode .menu-block {
+    position: static;
+    left: auto;
+    bottom: auto;
+    width: 100%;
+    /* 立绘会从按钮后面透出来，给菜单一层渐深底，字才咬得住 */
+    padding-top: var(--gap-3);
+    background: linear-gradient(180deg,
+      rgba(4, 3, 9, 0) 0%,
+      rgba(4, 3, 9, .86) 18%,
+      rgba(4, 3, 9, .94) 100%);
+  }
+  .overlay.title-mode .buttons { align-items: stretch; }
+  .overlay.title-mode .btn { width: 100%; }
+  .overlay.title-mode #title { font-size: calc(var(--s-ui) * 44px); }
+  .overlay.title-mode #subtitle { font-size: calc(var(--s-ui) * 15px); }
+
+  /* 窄屏内容常超一屏：底栏吸底，返回键永远够得着 */
+  .overlay.screen-mode .set-grid > .set-group[data-g$="foot"] {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
+    padding-top: var(--gap-1);
+    background: linear-gradient(180deg,
+      rgba(8, 5, 15, 0) 0%,
+      rgba(8, 5, 15, .92) 38%,
+      rgba(8, 5, 15, .98) 100%);
+  }
+}
+
+/* 桌面指针设备不需要 44px 触摸高度，行距回到密集档 */
+@media (hover: hover) and (pointer: fine) {
+  .overlay .btn,
+  .overlay .set-row { min-height: calc(var(--s-ui) * 34px); }
+}
+
+/* ---- 3) 设置页：自动流网格 ---- */
+.overlay.screen-mode .panel { max-width: min(96vw, calc(var(--s-ui) * 1180px)); }
+.overlay.screen-mode .set-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  align-items: start;
+  gap: var(--gap-2);
+  width: 100%;
+  min-width: 0;
+}
+.overlay.screen-mode .set-grid > .set-group {
+  min-width: 0;          /* 否则内容宽度撑破列，整排溢出面板 */
+}
+.overlay.screen-mode .set-grid > .set-group[data-g] {
+  grid-column: auto;
+  grid-row: auto;
+  min-height: 0;
+}
+
+/* 一行 = 左标签 + 右控件。装不下就换行，不许把控件裁掉。 */
+.overlay.screen-mode .set-row {
+  gap: var(--gap-1);
+  flex-wrap: wrap;
+}
+.overlay.screen-mode .set-row .set-label {
+  flex: 1 1 auto;
+  min-width: 4.5em;      /* 控件多时标签也不许缩成 0 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.overlay.screen-mode .set-row .set-ctl {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+  margin-left: auto;     /* 换行后仍然贴右，不掉到行首 */
+}
+.overlay.screen-mode .set-row.info {
+  flex-direction: column;
+  align-items: stretch;
+  gap: calc(var(--s-ui) * 2px);
+}
+.overlay.screen-mode .set-row.info .set-ctl {
+  display: block;        /* flex 容器里的文本不换行，会横着被裁 */
+  max-width: 100%;
+  text-align: left;
+  line-height: 1.35;
+}
+.overlay.screen-mode .set-row.info .set-ctl .qinfo {
+  white-space: normal;   /* 旧规则是 nowrap，长文案会被裁掉 */
+  display: block;
+}
+/* 热键 chip 被挤到第二行时靠右，别贴到标签下面 */
+.overlay.screen-mode .set-row > .k {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* 操作组原来的 3 列小 chip 在自动流下会挤成一排，改回逐行 */
+.overlay.screen-mode .set-grid > .set-group[data-g="device"] .set-rows {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+.overlay.screen-mode .set-grid > .set-group[data-g="device"] .set-rows > .set-row + .set-row {
+  border-top: 1px solid rgba(255, 255, 255, .045);
+}
+
+/* 底栏：默认跟在流末尾；窄屏才吸底（见下方媒体查询） */
+.overlay.screen-mode .set-grid > .set-group[data-g$="foot"] {
+  order: 9;              /* DOM 里操作组可能排在它后面，靠 order 拉到最后 */
+  grid-column: 1 / -1;
+  min-height: 0;
+}
+
+/* ---- 4) 安全区：刘海屏不压字 ---- */
+#hud {
+  padding-top: max(calc(var(--s) * 12px), env(safe-area-inset-top));
+  padding-left: max(calc(var(--s) * 26px), env(safe-area-inset-left));
+  padding-right: max(calc(var(--s) * 26px), env(safe-area-inset-right));
+}
+
+/* 焦点可见：键盘/手柄导航时统一描边，鼠标点击不描 */
+.overlay .btn:focus-visible,
+.overlay .set-row:focus-visible {
+  outline: 2px solid rgba(242, 210, 75, .85);
+  outline-offset: 2px;
+}
+
+/* 短屏（竖屏手机 640 高）：纵向本来就紧，标题别占三行，按钮略矮一档，
+   否则一进标题页菜单就要滚。 */
+@media (max-height: 720px) and ((max-width: 900px) or (orientation: portrait)) {
+  .overlay.title-mode #title { font-size: calc(var(--s-ui) * 32px); }
+  .overlay.title-mode #subtitle { display: none; }
+  .overlay .btn,
+  .overlay .set-row { min-height: 38px; }
+}
+
+/* ============================================================================
+   四子页面：音乐回忆室 / 幻想乡图鉴 / 排行榜 / 录像回顾
+   这四页的样式来自两处：musicRoom 在 style.css 里，另外三页各自注入 <style>
+   （后插入 → 同特异性它赢）。所以下面针对那三页一律多带一层祖先选择器
+   （`.gg .x` / `body .gg`），靠特异性压过去，而不是靠顺序。
+
+   窄屏的核心问题不是排版，是坐标系：四页都是 `position:absolute;inset:0`，
+   被锁在 16:9 letterbox 的 stage 里，360 宽的手机上只有 205px 高，
+   于是整页缩成中间一条。这里一律改成 `position:fixed` 铺满真实视口。
+   ========================================================================== */
+
+/* ---- 面板质感：四页共用的一层"玻璃 + 金线 + 顶部掠光"，避免纯色块发闷 ---- */
+.mr .mr-frame,
+.gg .gg-frame,
+.rk .rk-frame,
+.rr .rr-frame {
+  background-color: rgba(9, 7, 16, .96);
+  background-image:
+    radial-gradient(120% 75% at 10% 0%, rgba(255, 214, 111, .085), transparent 58%),
+    radial-gradient(90% 60% at 100% 100%, rgba(120, 150, 255, .07), transparent 62%),
+    linear-gradient(180deg, rgba(20, 15, 30, .9), rgba(8, 6, 14, .96));
+  border: 1px solid rgba(255, 214, 160, .14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .07),
+    0 calc(var(--s-ui, 1) * 16px) calc(var(--s-ui, 1) * 44px) rgba(0, 0, 0, .48);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+/* 背景幕布：加一层极淡的扫描线与边角压暗，让整屏不至于一片平 */
+.gg .gg-veil,
+.rk .rk-veil {
+  background-image:
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, .016) 0 1px, transparent 1px 3px),
+    radial-gradient(140% 100% at 50% 0%, rgba(60, 46, 92, .5), transparent 70%),
+    radial-gradient(120% 90% at 50% 100%, rgba(0, 0, 0, .55), transparent 72%);
+  background-blend-mode: overlay, normal, normal;
+}
+
+/* 列表表头统一一条细金线，读起来有"目录页"的分节感 */
+.mr .mr-list-head,
+.rk .rk-row.is-head,
+.gg .gg-grp {
+  border-bottom: 1px solid rgba(255, 214, 160, .22);
+}
+
+/* 行悬浮：左侧亮一道竖线，比整行变色克制 */
+.mr .mr-row,
+.gg .gg-row,
+.rr .rr-row {
+  position: relative;
+  transition: background-color .16s ease, color .16s ease, transform .16s ease;
+}
+.mr .mr-row:hover,
+.gg .gg-row:hover,
+.rr .rr-row:hover {
+  background-color: rgba(255, 214, 111, .06);
+}
+
+/* ---- 窄屏：逃出 stage，铺满视口 ---- */
+@media (max-width: 900px), (orientation: portrait) {
+  body .mr,
+  body .gg,
+  body .rk,
+  body .rr {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-menu);
+    /* 页面内部的 calc(var(--s) * Npx) 全部跟着菜单层缩放走，
+       否则竖屏手机上还是按 0.3 倍的舞台缩放算，字只有 4~5px。 */
+    --s: var(--s-ui);
+  }
+
+  .mr .mr-frame,
+  .gg .gg-frame,
+  .rk .rk-frame,
+  .rr .rr-frame {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
+    max-height: none;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
+    padding: calc(var(--s-ui) * 12px) calc(var(--s-ui) * 12px)
+             calc(env(safe-area-inset-bottom) + 10px);
+  }
+
+  /* ---------- 音乐回忆室 ---------- */
+  .mr .mr-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: calc(var(--s-ui) * 8px);
+    padding-bottom: calc(var(--s-ui) * 8px);
+  }
+  .mr .mr-heading { font-size: calc(var(--s-ui) * 24px); }
+  .mr .mr-head-sub { display: none; }   /* 长句在小屏只会挤掉列表 */
+  .mr .mr-body {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+    gap: calc(var(--s-ui) * 10px);
+    padding-top: calc(var(--s-ui) * 8px);
+  }
+  /* 列表自己滚、详情常驻可见（列表不再把详情顶到屏幕外） */
+  .mr .mr-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .mr .mr-list-wrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .mr .mr-list { flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; overscroll-behavior: contain; }
+  .mr .mr-detail { flex: 0 0 auto; }
+  .mr .mr-list-head { grid-template-columns: 2.4em minmax(0, 1fr) 3.4em; }
+  .mr .mr-detail {
+    grid-template-columns: calc(var(--s-ui) * 104px) minmax(0, 1fr);
+  }
+  .mr .mr-foot {
+    flex-direction: column;
+    align-items: stretch;
+    gap: calc(var(--s-ui) * 8px);
+  }
+  .mr .mr-keys { flex-wrap: wrap; gap: calc(var(--s-ui) * 6px); }
+
+  /* ---------- 幻想乡图鉴：列表滚动，详情固定吸底 ---------- */
+  .gg .gg-head {
+    flex-wrap: wrap;
+    gap: calc(var(--s-ui) * 8px);
+    padding: calc(var(--s-ui) * 10px) calc(var(--s-ui) * 12px) 0;
+  }
+  .gg .gg-body { flex-direction: column; min-height: 0; }
+  .gg .gg-list-wrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 0; }
+  .gg .gg-side {
+    flex: 0 0 auto;
+    max-height: 40%;
+    overflow-y: auto;
+    border-left: 0;
+    border-top: 1px solid rgba(255, 214, 111, .16);
+    padding: calc(var(--s-ui) * 10px) calc(var(--s-ui) * 12px);
+    gap: calc(var(--s-ui) * 6px);
+  }
+  .gg .gg-desc { line-height: 1.6; }
+  .gg .gg-row { padding: calc(var(--s-ui) * 8px) calc(var(--s-ui) * 12px); }
+
+  /* ---------- 排行榜：四列压成三列（擦弹数在小屏只是噪音） ---------- */
+  .rk .rk-head {
+    flex-wrap: wrap;
+    gap: calc(var(--s-ui) * 8px);
+    padding: calc(var(--s-ui) * 10px) calc(var(--s-ui) * 12px) calc(var(--s-ui) * 8px);
+  }
+  .rk .rk-body { padding: calc(var(--s-ui) * 10px) calc(var(--s-ui) * 12px) 0; gap: calc(var(--s-ui) * 10px); }
+  .rk .rk-row {
+    grid-template-columns: 2.4em minmax(0, 1fr) 4.6em;
+    gap: calc(var(--s-ui) * 8px);
+  }
+  .rk .rk-row > .rk-graze { display: none; }
+
+  /* ---------- 录像回顾：列表在上（限高滚动），播放区在下 ---------- */
+  .rr .rr-head { flex-wrap: wrap; gap: calc(var(--s-ui) * 6px); }
+  .rr .rr-body { flex-direction: column; gap: calc(var(--s-ui) * 10px); }
+  .rr .rr-list,
+  .rr.is-play .rr-list {
+    width: auto;
+    flex: 0 0 auto;
+    max-height: 42%;
+    overflow-y: auto;
+  }
+  .rr .rr-stage { flex: 1 1 auto; min-height: 0; }
+}
+
+/* 触屏设备不需要键盘提示，占地方还容易让人以为要接键盘 */
+@media (hover: none) and (pointer: coarse) {
+  .mr .mr-keys > span { display: none; }
+  .mr .mr-preview-btn,
+  .mr .mr-back { flex: 1 1 auto; }
+}
+
+/* ---- 四子页面：小屏（<=900px / 竖屏）细节 ----
+   1) 页头挤成一行会互相压字 → 一律改成「标题 + 右侧 tab」两栏网格；
+   2) 音乐室唱片按舞台缩放算死 180px，塞进 flex 会压到文字 → 固定小一号；
+   3) 排行榜的关卡 chip 横排出界 → 独占一行、可横向滑动。 */
+@media (max-width: 900px), (orientation: portrait) {
+  .mr .mr-head,
+  .gg .gg-head,
+  .rk .rk-head,
+  .rr .rr-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: calc(var(--s-ui) * 8px);
+    row-gap: calc(var(--s-ui) * 4px);
+  }
+  .mr .mr-head-main,
+  .gg .gg-title,
+  .rk .rk-title,
+  .rr .rr-title { grid-area: 1 / 1; }
+  .mr .mr-count,
+  .gg .gg-count,
+  .rk .rk-tabs,
+  .rr .rr-hint { grid-area: 1 / 2; padding-bottom: 0; }
+  .gg .gg-count { grid-area: 2 / 1 / 3 / -1; }
+  .gg .gg-title,
+  .rk .rk-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gg .gg-tabs,
+  .rk .rk-tabs { margin-left: 0; }
+  .rr .rr-hint { display: none; }   /* 纯键盘提示，小屏只是噪音 */
+
+  /* 音乐室：唱片与正文并排，唱片给固定小尺寸，文字才有地方 */
+  .mr .mr-detail {
+    display: flex;
+    align-items: flex-start;
+    gap: calc(var(--s-ui) * 12px);
+    padding: calc(var(--s-ui) * 12px);
+  }
+  .mr .mr-disc {
+    flex: 0 0 auto;
+    width: calc(var(--s-ui) * 92px);
+    height: calc(var(--s-ui) * 92px);
+  }
+  .mr .mr-detail-body { flex: 1 1 auto; min-width: 0; }
+
+  /* 排行榜：筛选区一行一条，chip 溢出就横向滑动 */
+  .rk .rk-filters { flex-direction: column; align-items: stretch; gap: calc(var(--s-ui) * 4px); }
+  .rk .rk-fgroup {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .rk .rk-fgroup::-webkit-scrollbar { display: none; }
+  .rk .rk-chip { flex: 0 0 auto; }
+
+  /* 空状态：给一块虚线的"留白卡"，别让整页只剩一行灰字 */
+  .rk .rk-empty,
+  .rr .rr-empty {
+    margin: calc(var(--s-ui) * 18px) auto;
+    max-width: 22em;
+    padding: calc(var(--s-ui) * 22px) calc(var(--s-ui) * 16px);
+    border: 1px dashed rgba(255, 214, 111, .18);
+    border-radius: calc(var(--s-ui) * 10px);
+    background: radial-gradient(80% 120% at 50% 0%, rgba(255, 214, 111, .05), transparent 70%);
+    text-align: center;
+  }
+}
+
+/* 安装条浮在底部时会盖住页面底栏：窄屏且条在的时候给它让位（桌面 frame 有固定高度，不需要） */
+@media (max-width: 900px), (orientation: portrait) {
+  body:has(> .hks-install.show) .mr-frame,
+  body:has(> .hks-install.show) .gg-frame,
+  body:has(> .hks-install.show) .rk-frame,
+  body:has(> .hks-install.show) .rr-frame {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 84px);
+  }
+}

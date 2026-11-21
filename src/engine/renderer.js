@@ -201,6 +201,12 @@ export class Renderer {
     // DOM 叠加层用 --s 跟随画面等比缩放
     document.documentElement.style.setProperty('--s', String(scale));
     document.documentElement.style.setProperty('--px', (scale / 100) + 'px');
+    // 菜单层单独一套缩放：竖屏手机 stage 只有 16:9 letterbox 那么高，
+    // 直接沿用 --s 会把正文压到 5px 级。这里给 UI 一个下限，宽屏大显示器再封顶。
+    const uiScale = Math.min(1.5, Math.max(0.78, scale));
+    document.documentElement.style.setProperty('--s-ui', String(uiScale));
+    // 手机竖屏 stage 狭窄，菜单层改为铺满视口（见 style.css「响应式与布局层」）
+    try { document.documentElement.dataset.uiDense = uiScale < 0.95 ? '1' : '0'; } catch (e) {}
 
     this.letterbox = { x: (vw - cssW) / 2, y: (vh - cssH) / 2 };
 
