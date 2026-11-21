@@ -584,6 +584,33 @@ body {
 }
 @keyframes dlgBlink { 0%, 100% { } 50% { } }
 
+/* 跳过整段对话：贴在设计框右下角，安静但按得到（移动端 40px 高） */
+.dlg-skip {
+  position: absolute;
+  right: calc(var(--s) * 18px);
+  bottom: calc(var(--s) * 34px);
+  min-height: calc(var(--s) * 30px);
+  padding: 0 calc(var(--s) * 12px);
+  font: inherit;
+  font-size: calc(var(--s) * 12px);
+  letter-spacing: .1em;
+  color: rgba(242, 233, 216, .62);
+  background: rgba(12, 10, 20, .42);
+  border: 1px solid rgba(242, 210, 75, .22);
+  border-radius: calc(var(--s) * 999px);
+  cursor: pointer;
+  transition: color .16s, border-color .16s, background .16s;
+}
+.dlg-skip:hover,
+.dlg-skip:focus-visible {
+  color: var(--gold, #f2d24b);
+  border-color: rgba(242, 210, 75, .55);
+  background: rgba(12, 10, 20, .66);
+}
+@media (pointer: coarse) {
+  .dlg-skip { min-height: 40px; padding: 0 14px; font-size: 13px; }
+}
+
 /* ---------- 菜单层 ---------- */
 .overlay {
   position: absolute;
@@ -1603,6 +1630,21 @@ body {
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, .22);
   font-size: calc(var(--s) * 11px);
+}
+
+/* 选人卡右上角「上次」标记：一眼看出上一次用的是谁 */
+.cc-last {
+  position: absolute;
+  z-index: 1;
+  top: calc(var(--s) * 13px);
+  right: calc(var(--s) * 13px);
+  padding: calc(var(--s) * 2px) calc(var(--s) * 8px);
+  font-size: calc(var(--s) * 10px);
+  letter-spacing: .12em;
+  color: #ffdf8a;
+  background: rgba(242, 210, 75, .12);
+  border: 1px solid rgba(242, 210, 75, .35);
+  border-radius: calc(var(--s) * 999px);
 }
 
 /* ---------- EXTRA 选人：未解锁的主角卡 ----------
@@ -3060,7 +3102,7 @@ body {
 /* 右下角版本号：纯 CSS 生成，不动 DOM。东方的版本号就是这种「几乎看不见」的存在。
    值由 src/ui/platform.js 写入 --hks-ver；fallback 只在 JS 没跑起来时露脸。 */
 #boot::after {
-  content: var(--hks-ver, "ver 1.7.8");
+  content: var(--hks-ver, "ver 1.7.9");
   position: absolute;
   right: calc(var(--s) * 28px);
   bottom: calc(var(--s) * 24px);

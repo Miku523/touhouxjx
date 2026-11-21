@@ -164,6 +164,15 @@ export class Dialogue {
       if (this.active) this._onClick();
     };
     this.el?.addEventListener('pointerdown', this._clickHandler);
+
+    // 跳过按钮在 .dlg-box 里，pointerdown 会冒泡到 #dialogue 触发 advance，
+    // 所以必须先 stopPropagation，否则「跳过」变成「翻一页 + 跳过」。
+    this._skipEl = document.getElementById('dlgSkip');
+    this._skipHandler = (e) => {
+      e.stopPropagation();
+      this.skip();
+    };
+    this._skipEl?.addEventListener('pointerdown', this._skipHandler);
   }
 
   get isTyping() {
@@ -208,6 +217,18 @@ export class Dialogue {
     this.shown = 0;
     this.onEnd = null;
     this.el?.classList.add('hidden');
+  }
+
+  /**
+   * 跳过整段对话：一次到底，直接走 close() 的收尾回调。
+   *
+   * 开场白动辄十几句、每句要等打字机打完，重复周目的人只想快点开打。
+   * 用 advance() 逐句推进等于把「跳过」做成了新形式的等待。
+   */
+  skip() {
+    if (!this.active) return;
+    this.index = this.script.length;
+    this.close();
   }
 
   _onClick() {
@@ -363,5 +384,6 @@ export class Dialogue {
 
   destroy() {
     this.el?.removeEventListener('pointerdown', this._clickHandler);
+    this._skipEl?.removeEventListener('pointerdown', this._skipHandler);
   }
 }

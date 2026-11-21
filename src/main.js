@@ -1929,11 +1929,13 @@ class Game {
         key: 'reimu', name: tr('博丽灵梦'), en: 'HAKUREI REIMU',
         note: tr('追踪御札 · 符卡「梦想封印」'), digit: '1',
         tone: '#ff92a8', glow: '255, 120, 145', img: art('reimu_title.webp'),
+        last: this._lastChar === 'reimu',
       },
       {
         key: 'marisa', name: tr('雾雨魔理沙'), en: 'KIRISAME MARISA',
         note: tr('扩散穿透 · 符卡「魔炮」'), digit: '2',
         tone: '#ffd45e', glow: '255, 205, 110', img: art('marisa_title.webp'),
+        last: this._lastChar === 'marisa',
       },
     ];
 
@@ -1945,6 +1947,7 @@ class Game {
       html:
         '<span class="cc-portrait"><img src="' + artUrl(c.img) + '" data-art-webp="' + c.img + '" alt="" decoding="async" draggable="false" /></span>' +
         '<span class="cc-key">' + c.digit + '</span>' +
+        (c.last ? '<span class="cc-last">' + tr('上次') + '</span>' : '') +
         '<span class="cc-body">' +
           '<span class="cc-en">' + c.en + '</span>' +
           '<span class="cc-name">' + c.name + '</span>' +
@@ -1987,11 +1990,13 @@ class Game {
         key: 'reimu', name: tr('博丽灵梦'), en: 'HAKUREI REIMU',
         note: tr('追踪御札 · 符卡「梦想封印」'), digit: '1',
         tone: '#ff92a8', glow: '255, 120, 145', img: art('reimu_title.webp'),
+        last: this._lastChar === 'reimu',
       },
       {
         key: 'marisa', name: tr('雾雨魔理沙'), en: 'KIRISAME MARISA',
         note: tr('扩散穿透 · 符卡「魔炮」'), digit: '2',
         tone: '#ffd45e', glow: '255, 205, 110', img: art('marisa_title.webp'),
+        last: this._lastChar === 'marisa',
       },
     ];
 
@@ -2008,6 +2013,7 @@ class Game {
           (on ? '' : '<span class="cc-lock">' + tr('未解锁') + '</span>') +
           '<span class="cc-portrait"><img src="' + artUrl(c.img) + '" data-art-webp="' + c.img + '" alt="" decoding="async" draggable="false" /></span>' +
           '<span class="cc-key">' + c.digit + '</span>' +
+          (c.last ? '<span class="cc-last">' + tr('上次') + '</span>' : '') +
           '<span class="cc-body">' +
             '<span class="cc-en">' + c.en + '</span>' +
             '<span class="cc-name">' + c.name + '</span>' +
@@ -2799,7 +2805,12 @@ class Game {
     this.hudEl?.classList.remove('hidden');
     this.hud.reset();
     this.hud.setMaxLives(startLives, this.char);
-    this.hud.setStageName(isExtra ? 'EXTRA' : `STAGE ${index + 1}`, tr(def.title) || '');
+    // 面数进度写进 HUD：玩家随时知道「还剩几面」，不用回标题页数
+    const totalStages = isExtra ? 0 : (getDifficulty(this.difficulty).stageCount || 6);
+    this.hud.setStageName(
+      isExtra ? 'EXTRA' : (totalStages > 0 ? `STAGE ${index + 1} / ${totalStages}` : `STAGE ${index + 1}`),
+      tr(def.title) || ''
+    );
     // STG 面（第 4 面）开场 1s 就有弹幕和道具列车，横幅再压 2.6s 会挡住视线；
     // 横向卷轴面缩到 1.6s，平台面保持原来的节奏。
     const bannerSec = this.stage?.mode === 'stg' ? 1.6 : 2.6;
@@ -3191,7 +3202,16 @@ class Game {
     this._lastClearScore = { ...detail, rank: res.rank, isNew: res.isNew, stageId, difficulty };
     // 横幅不在这里播 —— _onStageClear 紧接着的 STAGE CLEAR 会覆盖掉。
     // 把文案返回给调用方，合成一条横幅（一次 _after 只有一个槽位，也不能排队）。
-    return { sub: `${tr('总分')} ${formatScore(detail.total)}`, tip };
+    // 结算明细：总分在前，三项加分拆开摆在后面（横幅副行放得下，也解释了分从哪来）
+    const bonus = [
+      detail.graze ? `${tr('擦弹')} +${formatScore(detail.graze)}` : '',
+      detail.lives ? `${tr('残机')} +${formatScore(detail.lives)}` : '',
+      detail.noContinue ? tr('无续命') : '',
+    ].filter(Boolean).join('　');
+    return {
+      sub: `${tr('总分')} ${formatScore(detail.total)}${bonus ? '　' + bonus : ''}`,
+      tip,
+    };
   }
 
   _onStageClear() {
@@ -3609,6 +3629,12 @@ class Game {
       }
       if (this.input.pressed('confirm') || this.input.pressed('jump') || this.input.pressed('shoot')) {
         this.dialogue.advance();
+      }
+      // Esc / 暂停键 = 跳过整段：二周目只想快点开打，逐句翻页等于把「跳过」做成了等待
+      if (this.input.pressed('pause')) {
+        this.dialogue.skip();
+        this.input.endFrame();
+        return;
       }
       this.input.endFrame();
       return;
@@ -4258,6 +4284,7 @@ class Game {
       if (Number.isFinite(s.musicVolume)) this._settingsMusicVolume = Math.max(0, Math.min(1, s.musicVolume));
       if (Number.isFinite(s.sfxVolume)) this._settingsSfxVolume = Math.max(0, Math.min(1, s.sfxVolume));
       if (typeof s.sfxOn === 'boolean') this._settingsSfxOn = s.sfxOn;
+      if (s.char === 'reimu' || s.char === 'marisa') { this.char = s.char; this._lastChar = s.char; }
       if (s.controlScheme === 'keys' || s.controlScheme === 'wasd-mouse') this.controlScheme = s.controlScheme;
     } catch (e) {
       // 无 localStorage / 数据损坏：用默认值
@@ -4272,6 +4299,11 @@ class Game {
         quality: this.quality || 'auto',
         lives: Math.max(1, Math.min(4, this.lives)),
         difficulty: this.difficulty,
+        // 上次用的自机：选人页据此标记「上次」，
+        char: this.char === 'marisa' ? 'marisa' : 'reimu',
+        // 同会话内选完人再回选人页也要立刻看到「上次」标记，_lastChar 就地跟上
+        // （这里写一次即可，_saveSettings 每次开局/改设置都会走到）
+        _lastChar: (this._lastChar = this.char === 'marisa' ? 'marisa' : 'reimu'),
         // 静音不进存档：否则玩家下次打开「整局没声」却看不出原因（静音只在本会话有效）
         musicVolume: this.audio.musicVolume,
         sfxVolume: this.audio.sfxVolume,
